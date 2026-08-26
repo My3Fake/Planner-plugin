@@ -1,3 +1,5 @@
 node_modules/
 *.log
 .DS_Store
+main.dev.js
+build_once_tmp.mjs

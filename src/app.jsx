@@ -1,5 +1,6 @@
-var { useState, useMemo, useEffect, useRef, useId } = React;
-var Jalali = typeof window !== "undefined" && window.Jalali || null;
+import React, { useState, useMemo, useEffect, useRef, useId } from "react";
+import ReactDOM from "react-dom";
+import * as Jalali from "./jalali.js";
 var QUADRANTS = [
   { id: "q1", label: "\u0641\u0648\u0631\u06CC \u0648 \u0645\u0647\u0645", sub: "\u0647\u0645\u06CC\u0646 \u0627\u0644\u0627\u0646", color: "#DB2777" },
   { id: "q2", label: "\u0645\u0647\u0645\u060C \u063A\u06CC\u0631\u0641\u0648\u0631\u06CC", sub: "\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC \u06A9\u0646", color: "#C026D3" },
@@ -449,87 +450,25 @@ function Ic({ name, size = 16, className = "", style = {}, color }) {
   );
 }
 function GlassCard({ children, className = "" }) {
-  return /* @__PURE__ */ React.createElement("div", { className: `glass-panel rounded-2xl overflow-hidden ${className}` }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement("div", { className: "relative z-[1]" }, children));
-}
-function GalaxyBackground() {
-  const canvasRef = useRef(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    let raf, stars = [], w = 0, h = 0, frame = 0;
-    function resize() {
-      w = canvas.clientWidth;
-      h = canvas.clientHeight;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const count = Math.min(110, Math.floor(w * h / 8e3));
-      stars = Array.from({ length: count }, () => ({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        r: Math.random() * 1.2 + 0.25,
-        speed: Math.random() * 0.015 + 5e-3,
-        phase: Math.random() * Math.PI * 2,
-        tint: Math.random() > 0.88 ? "196,181,253" : Math.random() > 0.75 ? "125,211,252" : "255,255,255"
-      }));
-    }
-    resize();
-    window.addEventListener("resize", resize);
-    const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let t2 = 0;
-    function draw() {
-      frame++;
-      if (!reduceMotion && frame % 2 === 0) {
-        t2 += 1;
-        ctx.clearRect(0, 0, w, h);
-        for (const s of stars) {
-          const tw = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t2 * s.speed + s.phase));
-          ctx.beginPath();
-          ctx.fillStyle = `rgba(${s.tint},${tw})`;
-          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else if (reduceMotion && frame === 1) {
-        ctx.clearRect(0, 0, w, h);
-        for (const s of stars) {
-          ctx.beginPath();
-          ctx.fillStyle = `rgba(${s.tint},0.6)`;
-          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      raf = requestAnimationFrame(draw);
-    }
-    draw();
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
-  return /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-0 overflow-hidden pointer-events-none", style: { background: "#050308", contain: "strict" } }, /* @__PURE__ */ React.createElement("div", { className: "nebula nebula-1" }), /* @__PURE__ */ React.createElement("div", { className: "nebula nebula-2" }), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, className: "absolute inset-0 w-full h-full" }), /* @__PURE__ */ React.createElement("div", { className: "absolute inset-0", style: { background: "radial-gradient(ellipse 90% 60% at 50% 105%, rgba(0,0,0,.75), transparent 60%)" } }), /* @__PURE__ */ React.createElement("div", { className: "absolute inset-0", style: { background: "radial-gradient(ellipse 70% 40% at 50% -10%, rgba(0,0,0,.55), transparent 60%)" } }));
+  return /* @__PURE__ */ React.createElement("div", { className: `glass-panel rounded-2xl overflow-hidden ${className}` }, /* @__PURE__ */ React.createElement("div", { className: "relative z-[1]" }, children));
 }
 function PageTransition({ pageKey, children }) {
-  return /* @__PURE__ */ React.createElement("div", { style: { perspective: 1400 } }, /* @__PURE__ */ React.createElement("div", { key: pageKey, className: "glass-pane-enter" }, children));
-}
-function LightBackground() {
-  return /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-0 overflow-hidden pointer-events-none", style: { background: "linear-gradient(160deg,#F5F3FB 0%,#EFEAFB 45%,#F7EEF5 100%)" } }, /* @__PURE__ */ React.createElement("div", { className: "nebula", style: { width: 480, height: 480, top: -160, left: -120, background: "radial-gradient(circle,#E9A5F1,transparent 70%)", opacity: 0.5, animation: "nebulaDrift 34s ease-in-out infinite alternate" } }), /* @__PURE__ */ React.createElement("div", { className: "nebula", style: { width: 520, height: 520, bottom: -220, right: -180, background: "radial-gradient(circle,#93E4F5,transparent 70%)", opacity: 0.45, animation: "nebulaDrift 40s ease-in-out infinite alternate", animationDelay: "-9s" } }));
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { key: pageKey, className: "glass-pane-enter" }, children));
 }
 function StatPill({ icon, label, value, color }) {
   return /* @__PURE__ */ React.createElement(GlassCard, { className: "flex items-center gap-3 px-4 py-3 flex-1 min-w-[130px]" }, /* @__PURE__ */ React.createElement("div", { className: "w-9 h-9 rounded-xl flex items-center justify-center shrink-0", style: { background: `${color}22` } }, /* @__PURE__ */ React.createElement(Ic, { name: icon, size: 18 })), /* @__PURE__ */ React.createElement("div", { className: "flex flex-col leading-tight min-w-0" }, /* @__PURE__ */ React.createElement("span", { className: "text-white font-bold text-base truncate" }, value), /* @__PURE__ */ React.createElement("span", { className: "text-slate-400 text-[11px] truncate" }, label)));
 }
 function PriorityBars({ level }) {
-  return /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-[2px]" }, [1, 2, 3, 4].map((i) => /* @__PURE__ */ React.createElement("span", { key: i, className: "w-[3px] rounded-full", style: { height: 3 + i * 2, background: i <= level ? "#DB2777" : "rgba(255,255,255,0.12)" } })));
+  return /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-[2px]" }, [1, 2, 3, 4].map((i) => /* @__PURE__ */ React.createElement("span", { key: i, className: "w-[3px] rounded-full", style: { height: 3 + i * 2, background: i <= level ? "var(--interactive-accent)" : "var(--background-modifier-border)" } })));
 }
-function Chip({ active, onClick, children, color = "#C026D3" }) {
+function Chip({ active, onClick, children, color }) {
   return /* @__PURE__ */ React.createElement(
     "button",
     {
       type: "button",
       onClick,
-      className: "rounded-lg px-2.5 py-1.5 text-[11px] font-medium border transition-all duration-200",
-      style: { borderColor: active ? color : "rgba(255,255,255,.1)", background: active ? `${color}26` : "rgba(255,255,255,.03)", color: active ? color : "#94a3b8", boxShadow: active ? `0 0 12px ${color}44, inset 0 1px 0 rgba(255,255,255,.15)` : "none" }
+      className: `rounded-lg px-2.5 py-1.5 text-[11px] font-medium border transition-all duration-200 ${active ? "lf-chip-active" : "lf-chip"}`,
+      style: color && active ? { borderColor: color, color } : void 0
     },
     children
   );
@@ -539,7 +478,8 @@ function ModalShell({ title, onClose, onSubmit, footer, children }) {
     "div",
     {
       onClick: onClose,
-      style: { position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }
+      className: "lf-modal-backdrop",
+      style: { position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "flex-end", justifyContent: "center" }
     },
     /* @__PURE__ */ React.createElement(
       "form",
@@ -549,28 +489,22 @@ function ModalShell({ title, onClose, onSubmit, footer, children }) {
           e.preventDefault();
           if (onSubmit) onSubmit();
         },
-        className: "modal-glass-pop",
+        className: "modal-glass-pop lf-modal-sheet",
         style: {
           width: "100%",
           maxWidth: 440,
           maxHeight: "85%",
           display: "flex",
           flexDirection: "column",
-          borderTopLeftRadius: 28,
-          borderTopRightRadius: 28,
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
           position: "relative",
-          overflow: "hidden",
-          background: "linear-gradient(165deg, rgba(30,14,36,.92), rgba(10,7,16,.96))",
-          backdropFilter: "blur(28px) saturate(160%)",
-          WebkitBackdropFilter: "blur(28px) saturate(160%)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          boxShadow: "0 -10px 50px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.14)"
+          overflow: "hidden"
         }
       },
-      /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }),
       /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 20px 12px", flexShrink: 0, position: "relative", zIndex: 1 } }, /* @__PURE__ */ React.createElement("h3", { className: "text-white font-bold text-lg", style: { margin: 0 } }, title), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: onClose, className: "text-slate-400 hover:text-white w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.06] border border-white/10" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 18 }))),
       /* @__PURE__ */ React.createElement("div", { style: { padding: "0 20px", overflowY: "auto", flex: "1 1 auto", minHeight: 0, position: "relative", zIndex: 1 } }, children),
-      footer && /* @__PURE__ */ React.createElement("div", { style: { padding: "12px 20px 20px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.1)", position: "relative", zIndex: 1 } }, footer)
+      footer && /* @__PURE__ */ React.createElement("div", { style: { padding: "12px 20px 20px", flexShrink: 0, borderTop: "1px solid var(--background-modifier-border)", position: "relative", zIndex: 1 } }, footer)
     )
   );
   return ReactDOM.createPortal(content, document.body);
@@ -1189,7 +1123,7 @@ function LearningGoalEditor({ topic, onChange }) {
       type: "button",
       onClick: () => onChange(hasTarget ? { ...g, targetJy: null } : { ...g, targetJy: jy, targetJm: jm, targetJd: jd }),
       className: "text-[11px] px-2.5 py-1.5 rounded-lg border",
-      style: { borderColor: hasTarget ? "#C026D3" : "rgba(255,255,255,.1)", background: hasTarget ? "rgba(192,38,211,.15)" : "transparent", color: hasTarget ? "#EAB4F2" : "#94a3b8" }
+      style: { borderColor: hasTarget ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: hasTarget ? "var(--background-modifier-hover)" : "transparent", color: hasTarget ? "var(--text-accent)" : "var(--text-muted)" }
     },
     hasTarget ? "\u062A\u0627\u0631\u06CC\u062E \u0647\u062F\u0641 \u062F\u0627\u0631\u062F" : "+ \u0627\u0641\u0632\u0648\u062F\u0646 \u062A\u0627\u0631\u06CC\u062E \u0647\u062F\u0641 (\u0634\u0645\u0633\u06CC)"
   ), daysLeft !== null && /* @__PURE__ */ React.createElement("span", { className: "text-[11px]", style: { color: daysLeft < 0 ? "#DB2777" : "#22D3EE" } }, daysLeft >= 0 ? `${daysLeft} \u0631\u0648\u0632 \u0645\u0648\u0646\u062F\u0647` : `${-daysLeft} \u0631\u0648\u0632 \u06AF\u0630\u0634\u062A\u0647`)), hasTarget && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-2.5" }, /* @__PURE__ */ React.createElement("input", { type: "number", value: jy, onChange: (e) => onChange({ ...g, targetJy: Number(e.target.value) }), className: "w-20 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" }), /* @__PURE__ */ React.createElement("select", { value: jm, onChange: (e) => onChange({ ...g, targetJm: Number(e.target.value) }), className: "bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" }, JALALI_MONTHS_FA.map((m, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i + 1, className: "bg-[#120814]" }, m))), /* @__PURE__ */ React.createElement("input", { type: "number", min: "1", max: "31", value: jd, onChange: (e) => onChange({ ...g, targetJd: Number(e.target.value) }), className: "w-16 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })));
@@ -1317,7 +1251,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       key: p.id,
       onClick: () => setActiveId(p.id),
       className: "shrink-0 rounded-xl px-3 py-2 text-xs font-medium border",
-      style: { borderColor: p.id === activeId ? "#C026D3" : "rgba(255,255,255,.1)", background: p.id === activeId ? "rgba(192,38,211,.15)" : "rgba(255,255,255,.03)", color: p.id === activeId ? "#EAB4F2" : "#94a3b8" }
+      style: { borderColor: p.id === activeId ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: p.id === activeId ? "var(--background-modifier-hover)" : "var(--background-primary)", color: p.id === activeId ? "var(--text-accent)" : "var(--text-muted)" }
     },
     p.title
   )), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "shrink-0 w-9 h-9 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15, className: "text-slate-400" }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-white" }, topic.title), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-fuchsia-300 font-bold" }, topicProgress(topic), "%"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
@@ -1745,7 +1679,7 @@ function BackupModal({ onClose, currentData, onRestore, onDownload }) {
       onDrop,
       onClick: () => fileInputRef.current && fileInputRef.current.click(),
       className: "w-full border border-dashed rounded-xl py-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition mb-2",
-      style: { borderColor: dragActive ? "#C026D3" : "rgba(255,255,255,.15)", background: dragActive ? "rgba(192,38,211,.08)" : "transparent" }
+      style: { borderColor: dragActive ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: dragActive ? "var(--background-modifier-hover)" : "transparent" }
     },
     /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 22, className: "text-slate-400" }),
     /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-300" }, "\u0641\u0627\u06CC\u0644 \u0628\u06A9\u0627\u067E (.json) \u0631\u0648 \u0628\u06A9\u0634 \u0627\u06CC\u0646\u062C\u0627\u060C \u06CC\u0627 \u06A9\u0644\u06CC\u06A9 \u06A9\u0646"),
@@ -1800,7 +1734,7 @@ function SettingsModal({ onClose, settings, onChangeSettings }) {
       type: "button",
       onClick: () => onChangeSettings({ ...settings, theme: id }),
       className: "flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-medium border transition-colors",
-      style: { borderColor: settings.theme === id ? "#C026D3" : "rgba(255,255,255,.1)", background: settings.theme === id ? "rgba(192,38,211,.15)" : "rgba(255,255,255,.03)", color: settings.theme === id ? "#EAB4F2" : "#94a3b8" }
+      style: { borderColor: settings.theme === id ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: settings.theme === id ? "var(--background-modifier-hover)" : "var(--background-primary)", color: settings.theme === id ? "var(--text-accent)" : "var(--text-muted)" }
     },
     /* @__PURE__ */ React.createElement(Ic, { name: icon, size: 15 }),
     " ",
@@ -1920,7 +1854,7 @@ function NoteListsBoard({ noteLists, setNoteLists }) {
   };
   const updateList = (updated) => setNoteLists((p) => p.map((l) => l.id === updated.id ? updated : l));
   const deleteList = (id) => setNoteLists((p) => p.filter((l) => l.id !== id));
-  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNew(true), className: "w-full flex items-center justify-center gap-2 rounded-xl py-3 mb-4 text-sm font-bold text-white", style: { background: "linear-gradient(135deg,#C026D3,#DB2777)", boxShadow: "0 6px 20px rgba(192,38,211,.3)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 }), " \u0644\u06CC\u0633\u062A \u062C\u062F\u06CC\u062F"), noteLists.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-8" }, "\u0647\u0646\u0648\u0632 \u0644\u06CC\u0633\u062A\u06CC \u0646\u0633\u0627\u062E\u062A\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u06A9\u062A\u0627\u0628\u200C\u0647\u0627\u06CC \u0645\u06CC\u200C\u062E\u0648\u0627\u0645 \u0628\u062E\u0648\u0646\u0645\xBB \u06CC\u0627 \xAB\u062E\u0631\u06CC\u062F\xBB \u0628\u0633\u0627\u0632"), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" }, noteLists.map((list) => /* @__PURE__ */ React.createElement(NoteListCard, { key: list.id, list, onUpdate: updateList, onDelete: deleteList }))), showNew && /* @__PURE__ */ React.createElement(NewListModal, { onClose: () => setShowNew(false), onCreate: createList }));
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNew(true), className: "w-full flex items-center justify-center gap-2 rounded-xl py-3 mb-4 text-sm font-bold text-white", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 }), " \u0644\u06CC\u0633\u062A \u062C\u062F\u06CC\u062F"), noteLists.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-8" }, "\u0647\u0646\u0648\u0632 \u0644\u06CC\u0633\u062A\u06CC \u0646\u0633\u0627\u062E\u062A\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u06A9\u062A\u0627\u0628\u200C\u0647\u0627\u06CC \u0645\u06CC\u200C\u062E\u0648\u0627\u0645 \u0628\u062E\u0648\u0646\u0645\xBB \u06CC\u0627 \xAB\u062E\u0631\u06CC\u062F\xBB \u0628\u0633\u0627\u0632"), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" }, noteLists.map((list) => /* @__PURE__ */ React.createElement(NoteListCard, { key: list.id, list, onUpdate: updateList, onDelete: deleteList }))), showNew && /* @__PURE__ */ React.createElement(NewListModal, { onClose: () => setShowNew(false), onCreate: createList }));
 }
 function JournalFullView({ journal, setJournal }) {
   var _a;
@@ -2318,7 +2252,7 @@ function MonthView({ cursor, tasks, onJumpDay }) {
         key: d.toISOString(),
         onClick: () => onJumpDay(d),
         className: "aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 border",
-        style: { opacity: inMonth ? 1 : 0.3, borderColor: isToday ? "#C026D3" : "rgba(255,255,255,.06)", background: isToday ? "rgba(192,38,211,.12)" : "rgba(255,255,255,.02)" }
+        style: { opacity: inMonth ? 1 : 0.3, borderColor: isToday ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: isToday ? "var(--background-modifier-hover)" : "var(--background-primary)" }
       },
       /* @__PURE__ */ React.createElement("span", { className: "text-[11px]", style: { color: isToday ? "#EAB4F2" : "#cbd5e1" } }, jd),
       due.length > 0 && /* @__PURE__ */ React.createElement("span", { className: "w-1 h-1 rounded-full bg-fuchsia-400" })
@@ -2594,95 +2528,34 @@ function LifeFlowApp() {
     "div",
     {
       dir: langDir,
-      "data-theme": settings.theme,
-      className: "lifeflow-app-root min-h-screen w-full text-white relative overflow-hidden lg:flex",
+      className: "lifeflow-app-root w-full text-white relative lg:flex",
       style: { fontFamily: "'Vazirmatn', Tahoma, sans-serif" }
     },
     /* @__PURE__ */ React.createElement("style", null, `
-        .lifeflow-app-root *{-webkit-tap-highlight-color:transparent}
-        .lifeflow-app-root ::-webkit-scrollbar{display:none}
+        /* Panels/cards/inputs are styled from styles.css using Obsidian's own CSS
+           variables (--background-*, --text-*, --interactive-*), so they automatically
+           match whatever theme (light/dark/community) the user has set in Obsidian.
+           Only pure motion (no color) lives here. */
 
-        /* ---------- Liquid glass core ---------- */
-        .glass-panel{
-          position:relative;
-          background: linear-gradient(160deg, rgba(255,255,255,.075), rgba(255,255,255,.02) 60%, rgba(255,255,255,.04));
-          backdrop-filter: blur(12px) saturate(140%);
-          -webkit-backdrop-filter: blur(12px) saturate(140%);
-          border:1px solid rgba(255,255,255,.10);
-          box-shadow: 0 8px 24px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.14), inset 0 -1px 0 rgba(0,0,0,.2);
-        }
-        .glass-sheen{
-          position:absolute; inset:0; pointer-events:none; z-index:0;
-          background: linear-gradient(120deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 32%, rgba(255,255,255,0) 68%, rgba(255,255,255,.04) 100%);
-        }
-        .glass-strong{
-          background: linear-gradient(165deg, rgba(255,255,255,.1), rgba(255,255,255,.03));
-          backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
-          border:1px solid rgba(255,255,255,.14);
-          box-shadow: 0 6px 20px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.16);
-        }
+        .glass-pane-enter{ animation: glassPaneIn .22s ease-out both; }
+        @keyframes glassPaneIn{ from{ opacity:0; transform: translateY(4px); } to{ opacity:1; transform: translateY(0); } }
 
-        /* ---------- Galaxy nebula ---------- */
-        .nebula{ position:absolute; border-radius:9999px; filter:blur(50px); opacity:.4; will-change:transform; }
-        .nebula-1{ width:480px; height:480px; top:-160px; left:-120px; background:radial-gradient(circle,#C026D3,transparent 70%); animation:nebulaDrift 34s ease-in-out infinite alternate; }
-        .nebula-2{ width:520px; height:520px; bottom:-220px; right:-180px; background:radial-gradient(circle,#22D3EE,transparent 70%); animation:nebulaDrift 40s ease-in-out infinite alternate; animation-delay:-9s; }
-        @keyframes nebulaDrift{ from{ transform:translate3d(0,0,0) scale(1); } to{ transform:translate3d(28px,-20px,0) scale(1.08); } }
+        .modal-glass-pop{ animation: modalPop .18s ease-out both; transform-origin: 50% 100%; }
+        @keyframes modalPop{ from{ opacity:0; transform: translateY(12px) scale(.98); } to{ opacity:1; transform: translateY(0) scale(1); } }
 
-        /* ---------- 3D page transition (liquid glass pane swap) \u2014 light version ---------- */
-        .glass-pane-enter{
-          transform-style: preserve-3d;
-          animation: glassPaneIn .38s cubic-bezier(.22,1,.36,1) both;
-        }
-        @keyframes glassPaneIn{
-          0%{ opacity:0; transform: rotateY(-3deg) translateZ(-24px) translateY(6px) scale(.98); }
-          100%{ opacity:1; transform: rotateY(0) translateZ(0) translateY(0) scale(1); }
-        }
+        .nav-pill{ transition: transform .25s ease; will-change:transform; }
 
-        /* ---------- Modal 3D pop \u2014 light version ---------- */
-        .modal-glass-pop{ animation: modalPop .26s cubic-bezier(.22,1,.36,1) both; transform-origin: 50% 100%; }
-        @keyframes modalPop{
-          0%{ opacity:0; transform: translateY(24px) scale(.97); }
-          100%{ opacity:1; transform: translateY(0) scale(1); }
-        }
-
-        /* ---------- Nav sliding glass pill ---------- */
-        .nav-pill{ transition: transform .38s cubic-bezier(.22,1,.36,1); will-change:transform; }
-
-        /* ---------- Chart animations ---------- */
-        .chart-bar-grow{ transform-origin:bottom; animation: barGrow .5s cubic-bezier(.22,1,.36,1) both; }
+        .chart-bar-grow{ transform-origin:bottom; animation: barGrow .4s ease-out both; }
         @keyframes barGrow{ from{ transform:scaleY(0); opacity:.5; } to{ transform:scaleY(1); opacity:1; } }
-        .chart-bar-grow-h{ animation: barGrowH .55s cubic-bezier(.22,1,.36,1) both; }
+        .chart-bar-grow-h{ animation: barGrowH .4s ease-out both; }
         @keyframes barGrowH{ from{ width:0 !important; } }
-        .chart-line-draw{ stroke-dasharray:100; animation: lineDraw .8s cubic-bezier(.22,1,.36,1) both; }
+        .chart-line-draw{ stroke-dasharray:100; animation: lineDraw .6s ease-out both; }
         @keyframes lineDraw{ from{ stroke-dashoffset:100; } to{ stroke-dashoffset:0; } }
 
         @media (prefers-reduced-motion: reduce){
-          .glass-pane-enter, .modal-glass-pop, .chart-bar-grow, .chart-bar-grow-h, .chart-line-draw, .nebula{ animation:none !important; }
+          .glass-pane-enter, .modal-glass-pop, .chart-bar-grow, .chart-bar-grow-h, .chart-line-draw{ animation:none !important; }
         }
-
-        /* ---------- Light theme ---------- */
-        /* Broad, attribute-based overrides so the whole app (including deeper tab content
-           we haven't individually re-themed yet) gets a legible light appearance, without
-           having to rewrite every component's Tailwind classes by hand.
-           Scoped with the .lifeflow-app-root prefix (rather than a bare [data-theme="light"]
-           attribute selector) since data-theme sits on THIS div \u2014 inside Obsidian, a bare
-           selector would also match Obsidian's own <body data-theme="light">. */
-        .lifeflow-app-root[data-theme="light"]{ color:#2b2440; }
-        .lifeflow-app-root[data-theme="light"] .glass-panel{ background:linear-gradient(160deg, rgba(255,255,255,.75), rgba(255,255,255,.45) 60%, rgba(255,255,255,.6)); border-color:rgba(43,36,64,.10); box-shadow:0 8px 24px rgba(120,90,160,.12), inset 0 1px 0 rgba(255,255,255,.7); }
-        .lifeflow-app-root[data-theme="light"] .glass-strong{ background:linear-gradient(165deg, rgba(255,255,255,.85), rgba(255,255,255,.55)); border-color:rgba(43,36,64,.10); box-shadow:0 6px 18px rgba(120,90,160,.14), inset 0 1px 0 rgba(255,255,255,.8); }
-        .lifeflow-app-root[data-theme="light"] [class*="text-white"]{ color:#241f38 !important; }
-        .lifeflow-app-root[data-theme="light"] [class*="text-slate-2"]{ color:#453d5c !important; }
-        .lifeflow-app-root[data-theme="light"] [class*="text-slate-3"]{ color:#544a6e !important; }
-        .lifeflow-app-root[data-theme="light"] [class*="text-slate-4"]{ color:#6b6084 !important; }
-        .lifeflow-app-root[data-theme="light"] [class*="text-slate-5"]{ color:#847998 !important; }
-        .lifeflow-app-root[data-theme="light"] [class*="text-slate-6"]{ color:#948aa8 !important; }
-        .lifeflow-app-root[data-theme="light"] [class*="bg-white/"]{ background-color:rgba(43,36,64,.045) !important; }
-        .lifeflow-app-root[data-theme="light"] [class*="border-white/"]{ border-color:rgba(43,36,64,.12) !important; }
-        .lifeflow-app-root[data-theme="light"] [class*="bg-black"]{ background-color:rgba(255,255,255,.55) !important; }
-        .lifeflow-app-root[data-theme="light"] input, .lifeflow-app-root[data-theme="light"] textarea, .lifeflow-app-root[data-theme="light"] select{ color:#241f38; }
-        .lifeflow-app-root[data-theme="light"] ::placeholder{ color:#a89dbe !important; opacity:1; }
       `),
-    settings.theme === "dark" ? /* @__PURE__ */ React.createElement(GalaxyBackground, null) : /* @__PURE__ */ React.createElement(LightBackground, null),
     /* @__PURE__ */ React.createElement("div", { className: "hidden lg:flex flex-col w-56 shrink-0 h-screen sticky top-0 px-4 py-6 z-10 glass-strong lg:rounded-none lg:border-l lg:border-t-0 lg:border-b-0 lg:border-r-0" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 px-2 mb-8" }, /* @__PURE__ */ React.createElement("img", { src: "./logo.png", alt: "", className: "w-8 h-8 rounded-lg" }), /* @__PURE__ */ React.createElement("span", { className: "font-extrabold text-lg" }, lang === "fa" ? "\u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645" : "LifeFlow")), /* @__PURE__ */ React.createElement("nav", { className: "flex flex-col gap-1 relative" }, NAV.map((n) => {
       const active = tab === n.id;
       return /* @__PURE__ */ React.createElement(
@@ -2691,26 +2564,26 @@ function LifeFlowApp() {
           key: n.id,
           onClick: () => setTab(n.id),
           className: "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors relative z-[1]",
-          style: { background: active ? "rgba(192,38,211,.16)" : "transparent", color: active ? "#EAB4F2" : "#94a3b8", boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,.12), 0 0 16px rgba(192,38,211,.25)" : "none", border: active ? "1px solid rgba(192,38,211,.25)" : "1px solid transparent" }
+          style: { background: active ? "var(--background-modifier-hover)" : "transparent", color: active ? "var(--text-accent)" : "var(--text-muted)", boxShadow: "none", border: active ? "1px solid var(--interactive-accent)" : "1px solid transparent" }
         },
         /* @__PURE__ */ React.createElement(Ic, { name: n.icon, size: 18 }),
         " ",
         t(n.labelKey, lang)
       );
-    })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "mt-6 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white", style: { background: "linear-gradient(135deg,#C026D3,#DB2777)", boxShadow: "0 6px 20px rgba(192,38,211,.35), inset 0 1px 0 rgba(255,255,255,.3)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 }), " ", t("add_task", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 15 }), " ", t("backup_manager", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 15 }), " ", t("settings", lang)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex items-center gap-1.5 px-2 text-pink-400 text-sm font-bold" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "#DB2777" }), " ", streak, " \u0631\u0648\u0632 \u0627\u0633\u062A\u0631\u06CC\u06A9")),
-    /* @__PURE__ */ React.createElement("div", { className: "max-w-md lg:max-w-none w-full lg:flex-1 mx-auto px-4 lg:px-10 pt-8 lg:pt-8 pb-28 lg:pb-14 relative z-10" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-6" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-xl font-extrabold tracking-tight lg:hidden" }, lang === "fa" ? "\u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645" : "LifeFlow"), /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mt-0.5" }, getPersianDateLabel(now))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setSearchOpen(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: t("backup_manager", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: t("settings", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 bg-white/[0.05] border border-white/10 rounded-full px-3 py-1.5 lg:hidden" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "#DB2777" }), /* @__PURE__ */ React.createElement("span", { className: "text-sm font-bold text-pink-400" }, streak)))), /* @__PURE__ */ React.createElement(PageTransition, { pageKey: tab }, tab === "dashboard" && /* @__PURE__ */ React.createElement("div", { className: "lg:grid lg:grid-cols-3 lg:gap-6 lg:items-start space-y-5 lg:space-y-0" }, /* @__PURE__ */ React.createElement("div", { className: "lg:col-span-2 space-y-5" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-5 flex flex-col items-center" }, /* @__PURE__ */ React.createElement(DayArc, { tasks: todaysPlan, lang })), /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clipboard", label: "\u062A\u0633\u06A9 \u0627\u0645\u0631\u0648\u0632", value: `${todayDone}/${tasks.length}`, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "book-open", label: "\u0645\u0637\u0627\u0644\u0639\u0647", value: "\u06F4\u06F5 \u062F", color: "#22D3EE" })), /* @__PURE__ */ React.createElement("div", { className: "hidden lg:block" }, /* @__PURE__ */ React.createElement(WeeklyOverviewChart, { goals, tasks })), urgentImportant.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full bg-[#C026D3]" }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-rose-300" }, t("urgent_important", lang))), urgentImportant.map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-200" }, t("todays_plan", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setTab("tasks"), className: "text-[11px] text-fuchsia-300 flex items-center gap-0.5" }, t("see_all", lang), " ", /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 13 }))), tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_yet", lang)), tasks.length > 0 && todaysPlan.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_today", lang)), todaysPlan.slice(0, 4).map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress })))), /* @__PURE__ */ React.createElement("div", { className: "space-y-5" }, /* @__PURE__ */ React.createElement(JournalCard, { journal, setJournal }), /* @__PURE__ */ React.createElement(GamificationCard, { stats, streak }), /* @__PURE__ */ React.createElement(AiSummaryCard, { stats, streak, lang, onOpenSettings: () => setShowSettings(true) }))), tab === "tasks" && /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1" }, [["list", "\u0644\u06CC\u0633\u062A", "clipboard"], ["matrix", "\u0645\u0627\u062A\u0631\u06CC\u0633", "grid"], ["kanban", "\u06A9\u0627\u0646\u0628\u0627\u0646", "columns"], ["timeline", "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC", "clock"]].map(([id, label, Icon]) => /* @__PURE__ */ React.createElement(
+    })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "mt-6 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 }), " ", t("add_task", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 15 }), " ", t("backup_manager", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 15 }), " ", t("settings", lang)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex items-center gap-1.5 px-2 text-pink-400 text-sm font-bold" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), " ", streak, " \u0631\u0648\u0632 \u0627\u0633\u062A\u0631\u06CC\u06A9")),
+    /* @__PURE__ */ React.createElement("div", { className: "max-w-md lg:max-w-none w-full lg:flex-1 mx-auto px-4 lg:px-10 pt-8 lg:pt-8 pb-28 lg:pb-14 relative z-10" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-6" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-xl font-extrabold tracking-tight lg:hidden" }, lang === "fa" ? "\u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645" : "LifeFlow"), /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mt-0.5" }, getPersianDateLabel(now))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setSearchOpen(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: t("backup_manager", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: t("settings", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 bg-white/[0.05] border border-white/10 rounded-full px-3 py-1.5 lg:hidden" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), /* @__PURE__ */ React.createElement("span", { className: "text-sm font-bold text-pink-400" }, streak)))), /* @__PURE__ */ React.createElement(PageTransition, { pageKey: tab }, tab === "dashboard" && /* @__PURE__ */ React.createElement("div", { className: "lg:grid lg:grid-cols-3 lg:gap-6 lg:items-start space-y-5 lg:space-y-0" }, /* @__PURE__ */ React.createElement("div", { className: "lg:col-span-2 space-y-5" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-5 flex flex-col items-center" }, /* @__PURE__ */ React.createElement(DayArc, { tasks: todaysPlan, lang })), /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clipboard", label: "\u062A\u0633\u06A9 \u0627\u0645\u0631\u0648\u0632", value: `${todayDone}/${tasks.length}`, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "book-open", label: "\u0645\u0637\u0627\u0644\u0639\u0647", value: "\u06F4\u06F5 \u062F", color: "#22D3EE" })), /* @__PURE__ */ React.createElement("div", { className: "hidden lg:block" }, /* @__PURE__ */ React.createElement(WeeklyOverviewChart, { goals, tasks })), urgentImportant.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full bg-[#C026D3]" }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-rose-300" }, t("urgent_important", lang))), urgentImportant.map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-200" }, t("todays_plan", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setTab("tasks"), className: "text-[11px] text-fuchsia-300 flex items-center gap-0.5" }, t("see_all", lang), " ", /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 13 }))), tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_yet", lang)), tasks.length > 0 && todaysPlan.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_today", lang)), todaysPlan.slice(0, 4).map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress })))), /* @__PURE__ */ React.createElement("div", { className: "space-y-5" }, /* @__PURE__ */ React.createElement(JournalCard, { journal, setJournal }), /* @__PURE__ */ React.createElement(GamificationCard, { stats, streak }), /* @__PURE__ */ React.createElement(AiSummaryCard, { stats, streak, lang, onOpenSettings: () => setShowSettings(true) }))), tab === "tasks" && /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1" }, [["list", "\u0644\u06CC\u0633\u062A", "clipboard"], ["matrix", "\u0645\u0627\u062A\u0631\u06CC\u0633", "grid"], ["kanban", "\u06A9\u0627\u0646\u0628\u0627\u0646", "columns"], ["timeline", "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC", "clock"]].map(([id, label, Icon]) => /* @__PURE__ */ React.createElement(
       "button",
       {
         key: id,
         onClick: () => setView(id),
         className: "shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border",
-        style: { borderColor: view === id ? "#C026D3" : "rgba(255,255,255,.1)", background: view === id ? "rgba(192,38,211,.15)" : "rgba(255,255,255,.03)", color: view === id ? "#EAB4F2" : "#94a3b8" }
+        style: { borderColor: view === id ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: view === id ? "var(--background-modifier-hover)" : "var(--background-primary)", color: view === id ? "var(--text-accent)" : "var(--text-muted)" }
       },
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
     ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
-    showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(192,38,211,.5)] z-30", style: { background: "linear-gradient(135deg,#C026D3,#DB2777)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "white" })),
+    showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
       {
@@ -2763,12 +2636,5 @@ function LifeFlowApp() {
     )
   );
 }
-if (typeof window !== "undefined") {
-  window.LifeFlowApp = LifeFlowApp;
-  const __rootEl = document.getElementById("root");
-  if (__rootEl) {
-    const root = ReactDOM.createRoot(__rootEl);
-    root.render(/* @__PURE__ */ React.createElement(LifeFlowApp, null));
-  }
-}
+export default LifeFlowApp;
 
