@@ -145,4 +145,28 @@ export default class LifeFlowPlugin extends Plugin {
 		}
 		workspace.revealLeaf(leaf);
 	}
+
+	/** Writes a Markdown report into a "LifeFlow Reports/" folder at the
+	 * vault root (creating the folder if needed), overwriting a file with
+	 * the same name if the user exports the same day twice. Returns the
+	 * vault-relative path so the caller can show it to the user. Exposed to
+	 * app.jsx via window.__lifeflowPlugin, same bridge as getDataValue/
+	 * setDataValue (see Task 2 notes in PROGRESS.md). */
+	async exportDailyReport(filename: string, content: string): Promise<string> {
+		const folder = "LifeFlow Reports";
+		if (!(await this.app.vault.adapter.exists(folder))) {
+			try {
+				await this.app.vault.createFolder(folder);
+			} catch (e) {
+				// Another call racing to create the same folder — fine, ignore.
+			}
+		}
+		const path = `${folder}/${filename}`;
+		if (await this.app.vault.adapter.exists(path)) {
+			await this.app.vault.adapter.write(path, content);
+		} else {
+			await this.app.vault.create(path, content);
+		}
+		return path;
+	}
 }
