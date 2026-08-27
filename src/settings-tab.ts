@@ -29,6 +29,12 @@ interface LifeFlowSettings {
 			notes: boolean;
 		};
 	};
+	taskDefaults: {
+		quad: string;
+		priority: number;
+		daypart: string;
+		duration: number;
+	};
 	[key: string]: unknown;
 }
 
@@ -45,6 +51,7 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 		showMatrix: true,
 		tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true },
 	},
+	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45 },
 };
 
 const LANGUAGE_OPTIONS: Record<string, string> = {
@@ -62,6 +69,27 @@ const TAB_LABELS: Record<string, string> = {
 	learning: "یادگیری",
 	pomodoro: "پومودورو",
 	notes: "یادداشت‌ها",
+};
+
+// Mirrors QUADRANTS / PRIORITIES / DAYPARTS in app.jsx (kept separate since
+// settings-tab.ts is plain TS, not part of the React tree).
+const QUADRANT_OPTIONS: Record<string, string> = {
+	q1: "فوری و مهم",
+	q2: "مهم، غیرفوری",
+	q3: "فوری، غیرمهم",
+	q4: "غیرفوری و غیرمهم",
+};
+const PRIORITY_OPTIONS: Record<string, string> = {
+	"1": "پایین",
+	"2": "متوسط",
+	"3": "بالا",
+	"4": "بحرانی",
+};
+const DAYPART_OPTIONS: Record<string, string> = {
+	morning: "صبح",
+	noon: "ظهر",
+	evening: "عصر",
+	night: "شب",
 };
 
 export class LifeFlowSettingTab extends PluginSettingTab {
@@ -86,6 +114,7 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					...(parsed.features || {}),
 					tabs: { ...DEFAULT_SETTINGS.features.tabs, ...((parsed.features || {}).tabs || {}) },
 				},
+				taskDefaults: { ...DEFAULT_SETTINGS.taskDefaults, ...(parsed.taskDefaults || {}) },
 			};
 		} catch (e) {
 			return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
@@ -203,6 +232,57 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					});
 				});
 		});
+
+		// ---------------------------------------------------------------
+		containerEl.createEl("h3", { text: "پیش‌فرض‌های پنجره‌ی «تسک جدید»" });
+		containerEl.createEl("p", {
+			text: "این مقادیر فقط هنگام ساخت یک تسک تازه از قبل انتخاب می‌شوند؛ همیشه قابل تغییر دستی هستند.",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl).setName("ربع پیش‌فرض (ماتریس آیزنهاور)").addDropdown((drop) => {
+			Object.entries(QUADRANT_OPTIONS).forEach(([id, label]) => drop.addOption(id, label));
+			drop.setValue(settings.taskDefaults.quad);
+			drop.onChange((value) => {
+				const next = this.readSettings();
+				next.taskDefaults.quad = value;
+				this.writeSettings(next);
+			});
+		});
+
+		new Setting(containerEl).setName("اولویت پیش‌فرض").addDropdown((drop) => {
+			Object.entries(PRIORITY_OPTIONS).forEach(([id, label]) => drop.addOption(id, label));
+			drop.setValue(String(settings.taskDefaults.priority));
+			drop.onChange((value) => {
+				const next = this.readSettings();
+				next.taskDefaults.priority = Number(value);
+				this.writeSettings(next);
+			});
+		});
+
+		new Setting(containerEl).setName("زمان روز پیش‌فرض").addDropdown((drop) => {
+			Object.entries(DAYPART_OPTIONS).forEach(([id, label]) => drop.addOption(id, label));
+			drop.setValue(settings.taskDefaults.daypart);
+			drop.onChange((value) => {
+				const next = this.readSettings();
+				next.taskDefaults.daypart = value;
+				this.writeSettings(next);
+			});
+		});
+
+		new Setting(containerEl)
+			.setName("مدت پیش‌فرض (دقیقه)")
+			.addText((text) => {
+				text.inputEl.type = "number";
+				text.inputEl.min = "5";
+				text.setValue(String(settings.taskDefaults.duration));
+				text.onChange((value) => {
+					const n = Math.max(5, Number(value) || 45);
+					const next = this.readSettings();
+					next.taskDefaults.duration = n;
+					this.writeSettings(next);
+				});
+			});
 
 		// ---------------------------------------------------------------
 		containerEl.createEl("h3", { text: "خلاصه‌سازی با هوش مصنوعی" });

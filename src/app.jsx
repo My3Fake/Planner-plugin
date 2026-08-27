@@ -154,6 +154,7 @@ var LANGUAGES = [
   { id: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", dir: "rtl" }
 ];
 var DEFAULT_NOTIFICATIONS = { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false };
+var DEFAULT_TASK_DEFAULTS = { quad: "q2", priority: 2, daypart: "morning", duration: 45 };
 var DEFAULT_FEATURES = {
   showMatrix: true,
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
@@ -164,11 +165,11 @@ function mergeFeatures(f) {
 function loadSettings() {
   try {
     const raw = storage.get(SETTINGS_KEY);
-    if (!raw) return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES };
+    if (!raw) return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS };
     const parsed = JSON.parse(raw);
-    return { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features) };
+    return { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} } };
   } catch (e) {
-    return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES };
+    return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS };
   }
 }
 function saveSettings(s) {
@@ -613,12 +614,13 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress }
     }
   ))));
 }
-function AddTaskModal({ onClose, onAdd, initialTask }) {
+function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults }) {
   const isEdit = !!initialTask;
+  const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
   const [title, setTitle] = useState(initialTask ? initialTask.title : ""), [desc, setDesc] = useState(initialTask ? initialTask.desc || "" : "");
-  const [quad, setQuad] = useState(initialTask ? initialTask.quad : "q2"), [priority, setPriority] = useState(initialTask ? initialTask.priority : 2);
-  const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : "morning"), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
-  const [time, setTime] = useState(initialTask ? initialTask.time || "" : ""), [duration, setDuration] = useState(initialTask ? initialTask.duration : 45);
+  const [quad, setQuad] = useState(initialTask ? initialTask.quad : defaults.quad), [priority, setPriority] = useState(initialTask ? initialTask.priority : defaults.priority);
+  const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
+  const [time, setTime] = useState(initialTask ? initialTask.time || "" : ""), [duration, setDuration] = useState(initialTask ? initialTask.duration : defaults.duration);
   const [recurrence, setRecurrence] = useState(initialTask ? initialTask.recurrence : "none"), [reminder, setReminder] = useState(initialTask ? initialTask.reminder : false);
   const [progressType, setProgressType] = useState(initialTask ? initialTask.progressType || "binary" : "binary");
   const [progressUnit, setProgressUnit] = useState(initialTask && initialTask.progressUnit || "");
@@ -2616,7 +2618,7 @@ function LifeFlowApp() {
     (showAdd || editingTask) && (showGlobalFab || tab === "calendar" || tab === "pomodoro") && /* @__PURE__ */ React.createElement(AddTaskModal, { onClose: () => {
       setShowAdd(false);
       setEditingTask(null);
-    }, onAdd: saveTask, initialTask: editingTask }),
+    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults }),
     searchOpen && /* @__PURE__ */ React.createElement(
       GlobalSearchModal,
       {
