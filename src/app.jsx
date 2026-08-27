@@ -547,14 +547,22 @@ function DayArc({ tasks, lang }) {
     return /* @__PURE__ */ React.createElement("path", { key: s.id + "f", d: arcPath(s.a0 + 3, sweep, r), stroke: dayColor(s.id), strokeWidth: stroke, fill: "none", strokeLinecap: "round", pathLength: "100", className: "chart-line-draw", style: { filter: `drop-shadow(0 0 6px ${dayGlow(s.id)})` } });
   })), /* @__PURE__ */ React.createElement("div", { className: "absolute top-[62%] flex flex-col items-center" }, /* @__PURE__ */ React.createElement("span", { className: "text-4xl font-extrabold leading-none", style: { background: "linear-gradient(135deg,#fff,#EAB4F2)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" } }, pct, "%"), /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-400 mt-1.5" }, t("today_progress", lang))), /* @__PURE__ */ React.createElement("div", { className: "flex gap-4 mt-2" }, segments.map((s) => /* @__PURE__ */ React.createElement("div", { key: s.id, className: "flex flex-col items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full", style: { background: dayColor(s.id) } }), /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400" }, s.label)))));
 }
+function ProgressLogList({ log }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!log || log.length === 0) return null;
+  const shown = expanded ? log : log.slice(0, 2);
+  return /* @__PURE__ */ React.createElement("div", { className: "mt-1.5 space-y-1" }, shown.map((entry) => /* @__PURE__ */ React.createElement("div", { key: entry.id, className: "text-[10px] text-slate-500 flex items-start gap-1.5" }, /* @__PURE__ */ React.createElement("span", { className: "shrink-0 font-mono", style: { color: "var(--text-faint)" } }, "+", entry.amount), /* @__PURE__ */ React.createElement("span", { className: "shrink-0" }, entry.date), entry.note && /* @__PURE__ */ React.createElement("span", { className: "truncate" }, "\u2014 ", entry.note))), log.length > 2 && /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setExpanded((v) => !v), className: "text-[10px]", style: { color: "var(--text-accent)" } }, expanded ? "\u0646\u0645\u0627\u06CC\u0634 \u06A9\u0645\u062A\u0631" : `${log.length - 2} \u062B\u0628\u062A \u0642\u062F\u06CC\u0645\u06CC\u200C\u062A\u0631 \u2026`));
+}
 function ProgressiveTaskBar({ task, onAddProgress }) {
   const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
   const pct = Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100));
   const submit = () => {
     const n = Number(amount);
     if (!n || n <= 0) return;
-    onAddProgress(task.id, n);
+    onAddProgress(task.id, n, note);
     setAmount("");
+    setNote("");
   };
   return /* @__PURE__ */ React.createElement("div", { className: "mt-1.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between text-[10px] text-slate-400 mb-1" }, /* @__PURE__ */ React.createElement("span", null, task.progressCurrent, " / ", task.progressTarget, " ", task.progressUnit), /* @__PURE__ */ React.createElement("span", { className: "font-bold", style: { color: pct >= 100 ? "#22D3EE" : "#C026D3" } }, pct, "%")), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1.5" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: pct >= 100 ? "#22D3EE" : "linear-gradient(90deg,#C026D3,#22D3EE)" } })), pct < 100 && /* @__PURE__ */ React.createElement("form", { className: "flex items-center gap-1.5", onSubmit: (e) => {
     e.preventDefault();
@@ -567,9 +575,18 @@ function ProgressiveTaskBar({ task, onAddProgress }) {
       value: amount,
       onChange: (e) => setAmount(e.target.value),
       placeholder: `+ \u0686\u0646\u062F ${task.progressUnit}`,
+      className: "w-20 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white placeholder:text-slate-500 outline-none"
+    }
+  ), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      type: "text",
+      value: note,
+      onChange: (e) => setNote(e.target.value),
+      placeholder: "\u062A\u0648\u0636\u06CC\u062D (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC) \u2014 \u0645\u062B\u0644 \u06A9\u0627\u0645\u06CC\u062A",
       className: "flex-1 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white placeholder:text-slate-500 outline-none"
     }
-  ), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 text-[11px] font-medium" }, "\u062B\u0628\u062A")));
+  ), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 text-[11px] font-medium shrink-0" }, "\u062B\u0628\u062A")), /* @__PURE__ */ React.createElement(ProgressLogList, { log: task.progressLog }));
 }
 function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress }) {
   const q = QUADRANTS.find((x) => x.id === task.quad) || QUADRANTS[1];
@@ -654,7 +671,8 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults }) {
       progressType,
       progressUnit: progressType === "progressive" ? progressUnit.trim() || "\u0648\u0627\u062D\u062F" : void 0,
       progressTarget: progressType === "progressive" ? Math.max(1, Number(progressTarget) || 1) : void 0,
-      progressCurrent: progressType === "progressive" ? progressCurrent : void 0
+      progressCurrent: progressType === "progressive" ? progressCurrent : void 0,
+      progressLog: isEdit ? initialTask.progressLog || [] : []
     });
     onClose();
   };
@@ -1149,16 +1167,113 @@ function LearningRoutineEditor({ topic, onChange }) {
     w.label
   ))), (topic.recurrence === "monthly" || topic.recurrence === "yearly") && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500" }, "\u0631\u0648\u0632 \u062F\u0642\u06CC\u0642 \u062A\u06A9\u0631\u0627\u0631 \u0645\u0627\u0647\u0627\u0646\u0647/\u0633\u0627\u0644\u0627\u0646\u0647 \u0631\u0648 \u0645\u06CC\u200C\u062A\u0648\u0646\u06CC \u0627\u0632 \u062A\u0628 \xAB\u062A\u0633\u06A9\u200C\u0647\u0627\xBB\u060C \u0631\u0648\u06CC \u062A\u0633\u06A9\u0650 \u0647\u0645\u0648\u0646 \u0632\u06CC\u0631\u0628\u062E\u0634\u060C \u062F\u0642\u06CC\u0642\u200C\u062A\u0631 \u062A\u0646\u0638\u06CC\u0645 \u06A9\u0646\u06CC."));
 }
-function SubsectionCard({ subsection, task, onUpdateSubsection, onDeleteSubsection, onAddProgress }) {
+function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteSubsection, onAddProgress }) {
   const [editing, setEditing] = useState(false);
   const [unit, setUnit] = useState(subsection.unit);
   const [target, setTarget] = useState(subsection.target);
+  const [quota, setQuota] = useState(subsection.quotaPerPeriod ?? 1);
+  const [rangeLabel, setRangeLabel] = useState(subsection.rangeLabel || "");
+  const ov = subsection.recurrenceOverride;
+  const [cadenceMode, setCadenceMode] = useState(ov ? ov.recurrence : "inherit");
+  const [cadenceWeekdays, setCadenceWeekdays] = useState((ov && ov.recurrenceWeekdays) || []);
+
   const saveEdit = () => {
-    onUpdateSubsection(subsection.id, { unit: unit.trim() || "\u0648\u0627\u062D\u062F", target: Math.max(1, Number(target) || 1) });
+    const recurrenceOverride = cadenceMode === "inherit" ? null : { recurrence: cadenceMode, recurrenceWeekdays: cadenceMode === "weekly" ? cadenceWeekdays : void 0 };
+    onUpdateSubsection(subsection.id, {
+      unit: unit.trim() || "\u0648\u0627\u062D\u062F",
+      target: Math.max(1, Number(target) || 1),
+      quotaPerPeriod: Math.max(0, Number(quota) || 0),
+      rangeLabel: rangeLabel.trim(),
+      recurrenceOverride
+    });
     setEditing(false);
   };
-  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, subsection.title), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setEditing((v) => !v), className: "text-slate-400 hover:text-fuchsia-300" }, /* @__PURE__ */ React.createElement(Ic, { name: "edit", size: 13 })), /* @__PURE__ */ React.createElement("button", { onClick: () => onDeleteSubsection(subsection.id), className: "text-rose-400/70 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 13 })))), editing ? /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 items-end" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0648\u0627\u062D\u062F \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647"), /* @__PURE__ */ React.createElement("input", { value: unit, onChange: (e) => setUnit(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })), /* @__PURE__ */ React.createElement("div", { className: "w-24" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0647\u062F\u0641 \u06A9\u0644"), /* @__PURE__ */ React.createElement("input", { type: "number", value: target, onChange: (e) => setTarget(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })), /* @__PURE__ */ React.createElement("button", { onClick: saveEdit, className: "px-3 py-1.5 rounded-lg bg-fuchsia-500/20 text-fuchsia-300 text-xs font-medium shrink-0" }, "\u0630\u062E\u06CC\u0631\u0647")) : task ? /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }) : /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F"));
+
+  const cadenceLabel = !ov
+    ? "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"
+    : ov.recurrence === "daily"
+    ? "\u0647\u0631\u0631\u0648\u0632"
+    : ((ov.recurrenceWeekdays || []).map((id) => WEEKDAYS.find((w) => w.id === id)).filter(Boolean).map((w) => w.label).join("\u060C ") || "\u0631\u0648\u0632\u0647\u0627\u06CC \u062E\u0627\u0635");
+
+  const subtitleParts = [];
+  if (subsection.quotaPerPeriod) subtitleParts.push(`\u0633\u0647\u0645\u06CC\u0647: ${subsection.quotaPerPeriod} ${subsection.unit} / \u062F\u0648\u0631\u0647`);
+  subtitleParts.push(cadenceLabel);
+  if (subsection.rangeLabel) subtitleParts.push(subsection.rangeLabel);
+
+  const header = React.createElement(
+    "div",
+    { className: "flex items-center justify-between mb-1" },
+    React.createElement("p", { className: "text-sm font-bold text-slate-100" }, subsection.title),
+    React.createElement(
+      "div",
+      { className: "flex items-center gap-2" },
+      React.createElement("button", { onClick: () => setEditing((v) => !v), className: "text-slate-400 hover:text-fuchsia-300" }, React.createElement(Ic, { name: "edit", size: 13 })),
+      React.createElement("button", { onClick: () => onDeleteSubsection(subsection.id), className: "text-rose-400/70 hover:text-rose-400" }, React.createElement(Ic, { name: "trash", size: 13 }))
+    )
+  );
+
+  const subtitle = !editing ? React.createElement("p", { className: "text-[10px] mb-2", style: { color: "var(--text-faint)" } }, subtitleParts.join(" \u00B7 ")) : null;
+
+  const cadenceModes = [
+    ["inherit", "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"],
+    ["daily", "\u0647\u0631\u0631\u0648\u0632"],
+    ["weekly", "\u0631\u0648\u0632\u0647\u0627\u06CC \u062E\u0627\u0635"]
+  ];
+
+  const editForm = React.createElement(
+    "div",
+    { className: "space-y-2.5" },
+    React.createElement(
+      "div",
+      { className: "flex gap-2 items-end" },
+      React.createElement(
+        "div",
+        { className: "flex-1" },
+        React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0648\u0627\u062D\u062F \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647"),
+        React.createElement("input", { value: unit, onChange: (e) => setUnit(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })
+      ),
+      React.createElement(
+        "div",
+        { className: "w-20" },
+        React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0647\u062F\u0641 \u06A9\u0644"),
+        React.createElement("input", { type: "number", value: target, onChange: (e) => setTarget(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })
+      ),
+      React.createElement(
+        "div",
+        { className: "w-24" },
+        React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0633\u0647\u0645\u06CC\u0647 \u0647\u0631 \u062F\u0648\u0631\u0647"),
+        React.createElement("input", { type: "number", value: quota, onChange: (e) => setQuota(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })
+      )
+    ),
+    React.createElement(
+      "div",
+      null,
+      React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0628\u0627\u0632\u0647 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u0635\u0641\u062D\u0647 \u06F1 \u062A\u0627 \u06F2\u06F0\xBB)"),
+      React.createElement("input", { value: rangeLabel, onChange: (e) => setRangeLabel(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none mt-1" })
+    ),
+    React.createElement(
+      "div",
+      null,
+      React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u062F\u0648\u0631\u0647\u200C\u06CC \u062A\u06A9\u0631\u0627\u0631 \u0627\u06CC\u0646 \u0632\u06CC\u0631\u0628\u062E\u0634"),
+      React.createElement(
+        "div",
+        { className: "flex gap-1.5 flex-wrap" },
+        cadenceModes.map(([id, label]) => React.createElement(Chip, { key: id, active: cadenceMode === id, color: "#22D3EE", onClick: () => setCadenceMode(id) }, label))
+      ),
+      cadenceMode === "weekly" && React.createElement(
+        "div",
+        { className: "flex gap-1.5 flex-wrap mt-1.5" },
+        WEEKDAYS.map((w) => React.createElement(Chip, { key: w.id, active: cadenceWeekdays.includes(w.id), color: "#22D3EE", onClick: () => setCadenceWeekdays((p) => p.includes(w.id) ? p.filter((x) => x !== w.id) : [...p, w.id]) }, w.label))
+      )
+    ),
+    React.createElement("button", { onClick: saveEdit, className: "w-full py-1.5 rounded-lg bg-fuchsia-500/20 text-fuchsia-300 text-xs font-medium" }, "\u0630\u062E\u06CC\u0631\u0647")
+  );
+
+  const body = editing ? editForm : task ? React.createElement(ProgressiveTaskBar, { task, onAddProgress }) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
+
+  return React.createElement(GlassCard, { className: "p-3.5" }, header, subtitle, body);
 }
+
 function AddSubsectionForm({ onAdd }) {
   const [val, setVal] = useState("");
   return /* @__PURE__ */ React.createElement("form", { className: "flex gap-2 mt-2.5", onSubmit: (e) => {
@@ -1230,7 +1345,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       progressTarget: 10,
       progressCurrent: 0
     });
-    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, linkedTaskId: newTaskId }] }));
+    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, linkedTaskId: newTaskId }] }));
   };
   const updateSubsection = (id, patch) => {
     if (!topic) return;
@@ -1238,7 +1353,14 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     if (!sec) return;
     updateTopic((p) => ({ ...p, subsections: p.subsections.map((s) => s.id === id ? { ...s, ...patch } : s) }));
     const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
-    if (linkedTask) saveTask({ ...linkedTask, progressUnit: patch.unit ?? linkedTask.progressUnit, progressTarget: patch.target ?? linkedTask.progressTarget });
+    if (!linkedTask) return;
+    const taskPatch = { ...linkedTask, progressUnit: patch.unit ?? linkedTask.progressUnit, progressTarget: patch.target ?? linkedTask.progressTarget };
+    if (patch.recurrenceOverride !== void 0) {
+      const ov = patch.recurrenceOverride;
+      taskPatch.recurrence = ov ? ov.recurrence : topic.recurrence || "daily";
+      taskPatch.recurrenceWeekdays = ov && ov.recurrence === "weekly" ? ov.recurrenceWeekdays || [] : topic.recurrence === "weekly" ? topic.recurrenceWeekdays : void 0;
+    }
+    saveTask(taskPatch);
   };
   const deleteSubsection = (id) => {
     if (!topic) return;
@@ -1272,6 +1394,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     {
       key: sec.id,
       subsection: sec,
+      topic,
       task: tasks.find((tk) => tk.id === sec.linkedTaskId),
       onUpdateSubsection: updateSubsection,
       onDeleteSubsection: deleteSubsection,
@@ -2401,11 +2524,12 @@ function LifeFlowApp() {
     const willBeDone = t2.status !== "done";
     return { ...t2, status: willBeDone ? "done" : "todo", completedDate: willBeDone ? todayKey() : t2.completedDate };
   }));
-  const addTaskProgress = (id, amount) => setTasks((p) => p.map((t2) => {
+  const addTaskProgress = (id, amount, note) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id || t2.progressType !== "progressive") return t2;
     const next = Math.min(t2.progressTarget, (t2.progressCurrent || 0) + amount);
     const done = next >= t2.progressTarget;
-    return { ...t2, progressCurrent: next, status: done ? "done" : "todo", completedDate: done ? todayKey() : null };
+    const entry = { id: uid(), date: todayKey(), amount, note: (note || "").trim() };
+    return { ...t2, progressCurrent: next, progressLog: [entry, ...t2.progressLog || []], status: done ? "done" : "todo", completedDate: done ? todayKey() : null };
   }));
   useEffect(() => {
     const todayDate = /* @__PURE__ */ new Date();
