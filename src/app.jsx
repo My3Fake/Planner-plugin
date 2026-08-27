@@ -1667,9 +1667,81 @@ function buildDailyMarkdownReport({ tasks, projects, pomodoro }) {
   lines.push("", `_\u0635\u0627\u062F\u0631\u0634\u062F\u0647 \u062A\u0648\u0633\u0637 \u067E\u0644\u0627\u06AF\u06CC\u0646 \u0632\u0646\u062F\u06AF\u06CC\u0622\u0631\u0627\u0645 \u062F\u0631 ${(/* @__PURE__ */ new Date()).toLocaleTimeString("fa-IR")}_`);
   return lines.join("\n");
 }
+function buildWeeklyMarkdownReport({ tasks, projects, pomodoro }) {
+  const end = /* @__PURE__ */ new Date();
+  end.setHours(0, 0, 0, 0);
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - i);
+    days.push(d);
+  }
+  const startKey = dateKeyOf(days[0]);
+  const endKey = dateKeyOf(days[days.length - 1]);
+  let totalDue = 0;
+  let totalDone = 0;
+  const doneEntries = [];
+  days.forEach((d) => {
+    const key = dateKeyOf(d);
+    const dueThatDay = (tasks || []).filter((tk) => isTaskDueOn(tk, d));
+    const doneThatDay = dueThatDay.filter((tk) => tk.status === "done" && tk.completedDate === key);
+    totalDue += dueThatDay.length;
+    totalDone += doneThatDay.length;
+    doneThatDay.forEach((tk) => doneEntries.push({ date: key, title: tk.title }));
+  });
+  const sessions = (pomodoro && pomodoro.sessions || []).filter((s) => {
+    if (!s.startedAt) return false;
+    const k = dateKeyOf(new Date(s.startedAt));
+    return k >= startKey && k <= endKey;
+  });
+  const completedWork = sessions.filter((s) => s.type === "work" && s.completedAt);
+  const focusedMinutes = completedWork.reduce((sum, s) => sum + (s.durationMin || 0), 0);
+  const learningRows = [];
+  (projects || []).forEach((topic) => {
+    (topic.subsections || []).forEach((sec) => {
+      if (!sec.quotaPerPeriod) return;
+      const task = (tasks || []).find((tk) => tk.id === sec.linkedTaskId);
+      if (!task) return;
+      let dueDays = 0;
+      days.forEach((d) => {
+        if (isTrackDueOn(sec, topic, d)) dueDays += 1;
+      });
+      const weekQuota = dueDays * sec.quotaPerPeriod;
+      const weekSum = (task.progressLog || []).filter((e) => e.date >= startKey && e.date <= endKey).reduce((s, e) => s + e.amount, 0);
+      if (weekQuota === 0 && weekSum === 0) return;
+      learningRows.push({ topicTitle: topic.title, trackTitle: sec.title, unit: sec.unit, weekSum, weekQuota });
+    });
+  });
+  const lines = [];
+  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0647\u0641\u062A\u06AF\u06CC \u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645 \u2014 ${startKey} \u062A\u0627 ${endKey}`, "");
+  lines.push("## \u062A\u0633\u06A9\u200C\u0647\u0627", `${totalDone} \u0627\u0632 ${totalDue} \u062A\u0633\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0634\u062F\u0647 \u062F\u0631 \u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 \u0627\u0646\u062C\u0627\u0645 \u0634\u062F.`, "");
+  if (doneEntries.length === 0) {
+    lines.push("_\u0647\u06CC\u0686 \u062A\u0633\u06A9\u06CC \u062F\u0631 \u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647 \u062B\u0628\u062A \u0646\u0634\u062F\u0647._");
+  } else {
+    doneEntries.forEach((e) => lines.push(`- [x] ${e.date} \u2014 ${e.title}`));
+  }
+  lines.push("", "## \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648", `- \u062F\u0648\u0631\u0647\u0627\u06CC \u06A9\u0627\u0631\u06CC \u06A9\u0627\u0645\u0644\u200C\u0634\u062F\u0647: ${completedWork.length}`, `- \u0645\u062C\u0645\u0648\u0639 \u0632\u0645\u0627\u0646 \u062A\u0645\u0631\u06A9\u0632: ${focusedMinutes} \u062F\u0642\u06CC\u0642\u0647`, "");
+  lines.push("## \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC");
+  if (learningRows.length === 0) {
+    lines.push("_\u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 \u067E\u06CC\u0634\u0631\u0641\u062A\u06CC \u0628\u0631\u0627\u06CC \u0645\u0633\u06CC\u0631\u0647\u0627\u06CC \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u062B\u0628\u062A \u0646\u0634\u062F\u0647._");
+  } else {
+    learningRows.forEach((r) => {
+      const diff = r.weekQuota - r.weekSum;
+      let diffText = "";
+      if (diff > 0) diffText = ` \u2014 \u0639\u0642\u0628: ${diff} ${r.unit}`;
+      else if (diff < 0) diffText = ` \u2014 \u062C\u0644\u0648: ${-diff} ${r.unit}`;
+      else diffText = " \u2014 \u0645\u0637\u0627\u0628\u0642 \u0628\u0631\u0646\u0627\u0645\u0647";
+      lines.push(`- ${r.topicTitle} \u2014 ${r.trackTitle}: ${r.weekSum} \u0627\u0632 ${r.weekQuota} ${r.unit}${diffText}`);
+    });
+  }
+  lines.push("", `_\u0635\u0627\u062F\u0631\u0634\u062F\u0647 \u062A\u0648\u0633\u0637 \u067E\u0644\u0627\u06AF\u06CC\u0646 \u0632\u0646\u062F\u06AF\u06CC\u0622\u0631\u0627\u0645 \u062F\u0631 ${(/* @__PURE__ */ new Date()).toLocaleTimeString("fa-IR")}_`);
+  return lines.join("\n");
+}
 function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
   const [exportMsg, setExportMsg] = useState("");
   const [exportErr, setExportErr] = useState("");
+  const [weeklyMsg, setWeeklyMsg] = useState("");
+  const [weeklyErr, setWeeklyErr] = useState("");
   const exportReport = async () => {
     setExportErr("");
     setExportMsg("");
@@ -1687,7 +1759,24 @@ function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
       setExportErr("\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u06AF\u0632\u0627\u0631\u0634.");
     }
   };
-  const exportButton = /* @__PURE__ */ React.createElement("div", { className: "mb-1" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: exportReport, className: "w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-normal)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "download", size: 14 }), "\u062E\u0631\u0648\u062C\u06CC \u06AF\u0632\u0627\u0631\u0634 \u0627\u0645\u0631\u0648\u0632 (Markdown \u062F\u0627\u062E\u0644 \u0648\u0644\u062A)"), exportMsg && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5", style: { color: "var(--text-success, #7fbb6e)" } }, exportMsg), exportErr && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5 text-rose-400" }, exportErr));
+  const exportWeeklyReport = async () => {
+    setWeeklyErr("");
+    setWeeklyMsg("");
+    try {
+      const plugin = typeof window !== "undefined" && window.__lifeflowPlugin;
+      if (!plugin || typeof plugin.exportDailyReport !== "function") {
+        setWeeklyErr("\u0627\u06CC\u0646 \u0642\u0627\u0628\u0644\u06CC\u062A \u0641\u0642\u0637 \u062F\u0627\u062E\u0644 \u062E\u0648\u062F \u067E\u0644\u0627\u06AF\u06CC\u0646 Obsidian \u06A9\u0627\u0631 \u0645\u06CC\u200C\u06A9\u0646\u062F.");
+        return;
+      }
+      const content = buildWeeklyMarkdownReport({ tasks, projects, pomodoro });
+      const path = await plugin.exportDailyReport(`weekly-${todayKey()}.md`, content);
+      setWeeklyMsg(`\u0630\u062E\u06CC\u0631\u0647 \u0634\u062F \u062F\u0631: ${path}`);
+      setTimeout(() => setWeeklyMsg(""), 4e3);
+    } catch (e) {
+      setWeeklyErr("\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u06AF\u0632\u0627\u0631\u0634.");
+    }
+  };
+  const exportButton = /* @__PURE__ */ React.createElement("div", { className: "mb-1 space-y-2" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: exportReport, className: "w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-normal)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "download", size: 14 }), "\u062E\u0631\u0648\u062C\u06CC \u06AF\u0632\u0627\u0631\u0634 \u0627\u0645\u0631\u0648\u0632 (Markdown \u062F\u0627\u062E\u0644 \u0648\u0644\u062A)"), exportMsg && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5", style: { color: "var(--text-success, #7fbb6e)" } }, exportMsg), exportErr && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5 text-rose-400" }, exportErr), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: exportWeeklyReport, className: "w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-normal)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "download", size: 14 }), "\u062E\u0631\u0648\u062C\u06CC \u06AF\u0632\u0627\u0631\u0634 \u0647\u0641\u062A\u06AF\u06CC (\u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631)"), weeklyMsg && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5", style: { color: "var(--text-success, #7fbb6e)" } }, weeklyMsg), weeklyErr && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5 text-rose-400" }, weeklyErr));
   const rows = [];
   projects.forEach((topic) => {
     (topic.subsections || []).forEach((sec) => {
