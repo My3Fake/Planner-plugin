@@ -74,6 +74,31 @@ var BOOK_STATUSES = [
 var dayColor = (id) => ({ morning: "#67E8F9", noon: "#22D3EE", evening: "#C026D3", night: "#DB2777" })[id];
 var dayGlow = (id) => ({ morning: "rgba(103,232,249,.6)", noon: "rgba(34,211,238,.6)", evening: "rgba(192,38,211,.6)", night: "rgba(219,39,119,.6)" })[id];
 var uid = () => Date.now() + Math.random();
+function playPomodoroChime(kind) {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const notes = kind === "work" ? [880, 1108.73] : [659.25, 987.77];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const start = ctx.currentTime + i * 0.14;
+      gain.gain.setValueAtTime(1e-4, start);
+      gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(1e-4, start + 0.32);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.34);
+    });
+    setTimeout(() => ctx.close().catch(() => {
+    }), 900);
+  } catch (e) {
+  }
+}
 function parseYouTubeId(url) {
   const patterns = [
     /(?:youtube\.com\/watch\?v=)([\w-]{11})/,
@@ -2193,6 +2218,7 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const finishSession = (completed) => {
     setRunning(false);
     const entry = logSession(completed);
+    if (completed && settings.sound !== false) playPomodoroChime(mode);
     if (completed && typeof Notification !== "undefined" && Notification.permission === "granted" && notifSettings && notifSettings.pomodoroEnd !== false) {
       try {
         new Notification(mode === "work" ? "\u23F0 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648 \u062A\u0645\u0627\u0645 \u0634\u062F" : "\u23F0 \u0627\u0633\u062A\u0631\u0627\u062D\u062A \u062A\u0645\u0627\u0645 \u0634\u062F", { body: mode === "work" ? "\u0648\u0642\u062A \u0627\u0633\u062A\u0631\u0627\u062D\u062A\u0647" : "\u0628\u0631\u06AF\u0631\u062F \u0633\u0631 \u06A9\u0627\u0631" });
@@ -2202,10 +2228,11 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     if (completed && mode === "work" && activeTask && activeTask.progressType === "progressive") {
       setAskProgress(entry);
     }
+    let nextMode = "work";
     if (completed && mode === "work") {
       const nextCycle = cycle + 1;
       setCycle(nextCycle);
-      const nextMode = nextCycle % settings.cyclesUntilLong === 0 ? "long" : "short";
+      nextMode = nextCycle % settings.cyclesUntilLong === 0 ? "long" : "short";
       setMode(nextMode);
       setSecondsLeft(durations[nextMode] * 60);
     } else if (completed) {
@@ -2213,6 +2240,10 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       setSecondsLeft(durations.work * 60);
     } else {
       setSecondsLeft(durations[mode] * 60);
+    }
+    if (completed && settings.autoStartNext) {
+      startedAtRef.current = (/* @__PURE__ */ new Date()).toISOString();
+      setRunning(true);
     }
   };
   const start = () => {
@@ -2297,7 +2328,12 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       onChange: (e) => setPomodoro((p) => ({ ...p, settings: { ...p.settings, [key]: Math.max(1, Number(e.target.value) || 1) } })),
       className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none disabled:opacity-50"
     }
-  ))))));
+  )))), /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "flex items-center gap-2 mt-3 flex-wrap" },
+    /* @__PURE__ */ React.createElement(Chip, { active: !!settings.autoStartNext, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, autoStartNext: !p.settings.autoStartNext } })) }, "\u0634\u0631\u0648\u0639 \u062E\u0648\u062F\u06A9\u0627\u0631 \u062F\u0648\u0631 \u0628\u0639\u062F"),
+    /* @__PURE__ */ React.createElement(Chip, { active: settings.sound !== false, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, sound: p.settings.sound === false } })) }, "\u0635\u062F\u0627\u06CC \u067E\u0627\u06CC\u0627\u0646 \u062A\u0627\u06CC\u0645\u0631")
+  )));
 }
 function PomodoroReportView({ pomodoro, tasks }) {
   const stats = pomodoroStatsFor(pomodoro.sessions, 7);
