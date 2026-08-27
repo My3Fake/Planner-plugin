@@ -21,6 +21,14 @@ const LEGACY_LOCAL_STORAGE_KEYS = [
 	"lifeflow_backups_v1",
 ];
 
+// Mirrors settings-tab.ts's SETTINGS_KEY / DEFAULT_SETTINGS.reports.folderName.
+// Duplicated here (rather than imported) since settings-tab.ts's full
+// LifeFlowSettings shape isn't needed — just this one small, stable field —
+// same low-divergence-risk reasoning settings-tab.ts already uses for copying
+// QUADRANTS/PRIORITIES/DAYPARTS labels from app.jsx.
+const SETTINGS_KEY = "lifeflow_settings_v1";
+const DEFAULT_REPORTS_FOLDER = "LifeFlow Reports";
+
 /** Plain string->string map, JSON-serialised into data.json as-is (each
  * value is itself already a JSON string produced by the React app, so this
  * plugin doesn't need to know its shape). */
@@ -146,14 +154,35 @@ export default class LifeFlowPlugin extends Plugin {
 		workspace.revealLeaf(leaf);
 	}
 
-	/** Writes a Markdown report into a "LifeFlow Reports/" folder at the
-	 * vault root (creating the folder if needed), overwriting a file with
-	 * the same name if the user exports the same day twice. Returns the
-	 * vault-relative path so the caller can show it to the user. Exposed to
-	 * app.jsx via window.__lifeflowPlugin, same bridge as getDataValue/
-	 * setDataValue (see Task 2 notes in PROGRESS.md). */
+	/** Reads the user-configurable reports folder name (settings-tab.ts "گزارش‌گیری"
+	 * section) directly from the same in-memory settings cache getDataValue
+	 * uses — no need for the CustomEvent live-sync settings-tab.ts/app.jsx use
+	 * for their own React state, since this is read fresh on every export
+	 * call, not held in a component's state. Falls back to the historical
+	 * default folder name if settings are missing/malformed or the field is
+	 * blank, so old vaults / a corrupt value never break exporting. */
+	private getReportsFolderName(): string {
+		const raw = this.getDataValue(SETTINGS_KEY);
+		if (!raw) return DEFAULT_REPORTS_FOLDER;
+		try {
+			const parsed = JSON.parse(raw);
+			const name = parsed?.reports?.folderName;
+			if (typeof name === "string" && name.trim()) return name.trim();
+		} catch (e) {
+			// Malformed settings JSON — fall back rather than throw mid-export.
+		}
+		return DEFAULT_REPORTS_FOLDER;
+	}
+
+	/** Writes a Markdown report into the user-configured reports folder (see
+	 * getReportsFolderName, default "LifeFlow Reports") at the vault root
+	 * (creating the folder if needed), overwriting a file with the same name
+	 * if the user exports the same day twice. Returns the vault-relative path
+	 * so the caller can show it to the user. Exposed to app.jsx via
+	 * window.__lifeflowPlugin, same bridge as getDataValue/setDataValue (see
+	 * Task 2 notes in PROGRESS.md). */
 	async exportDailyReport(filename: string, content: string): Promise<string> {
-		const folder = "LifeFlow Reports";
+		const folder = this.getReportsFolderName();
 		if (!(await this.app.vault.adapter.exists(folder))) {
 			try {
 				await this.app.vault.createFolder(folder);

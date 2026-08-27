@@ -36,6 +36,9 @@ interface LifeFlowSettings {
 		daypart: string;
 		duration: number;
 	};
+	reports: {
+		folderName: string;
+	};
 	[key: string]: unknown;
 }
 
@@ -53,6 +56,7 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 		tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true },
 	},
 	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45 },
+	reports: { folderName: "LifeFlow Reports" },
 };
 
 const LANGUAGE_OPTIONS: Record<string, string> = {
@@ -116,6 +120,7 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					tabs: { ...DEFAULT_SETTINGS.features.tabs, ...((parsed.features || {}).tabs || {}) },
 				},
 				taskDefaults: { ...DEFAULT_SETTINGS.taskDefaults, ...(parsed.taskDefaults || {}) },
+				reports: { ...DEFAULT_SETTINGS.reports, ...(parsed.reports || {}) },
 			};
 		} catch (e) {
 			return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
@@ -282,6 +287,27 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					const n = Math.max(5, Number(value) || 45);
 					const next = this.readSettings();
 					next.taskDefaults.duration = n;
+					this.writeSettings(next);
+				});
+			});
+
+		// ---------------------------------------------------------------
+		containerEl.createEl("h3", { text: "گزارش‌گیری" });
+		containerEl.createEl("p", {
+			text: "خروجی‌های Markdown (گزارش روزانه/هفتگی/ماهانه، از تب «گزارش روزانه» در برنامه‌ریزی) داخل این پوشه در ریشه‌ی ولت ذخیره می‌شوند.",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("نام پوشه‌ی گزارش‌ها")
+			.setDesc("اگر خالی بگذارید، از مقدار پیش‌فرض («LifeFlow Reports») استفاده می‌شود. تغییر این مقدار فقط روی خروجی‌های بعدی اثر می‌گذارد؛ فایل‌های قبلاً ذخیره‌شده جابه‌جا نمی‌شوند.")
+			.addText((text) => {
+				text.setPlaceholder(DEFAULT_SETTINGS.reports.folderName);
+				text.setValue(settings.reports.folderName);
+				text.onChange((value) => {
+					const next = this.readSettings();
+					const trimmed = value.trim();
+					next.reports.folderName = trimmed || DEFAULT_SETTINGS.reports.folderName;
 					this.writeSettings(next);
 				});
 			});
