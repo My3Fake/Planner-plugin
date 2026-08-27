@@ -1808,9 +1808,83 @@ function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
     rows.map(({ topic, sec, task }) => React.createElement(DailyReportTrackRow, { key: sec.id, subsection: sec, topic, task, onAddProgress }))
   );
 }
+var QUAD_SHORT_LABEL = { q1: "\u0631\u0628\u0639 \u06F1", q2: "\u0631\u0628\u0639 \u06F2", q3: "\u0631\u0628\u0639 \u06F3", q4: "\u0631\u0628\u0639 \u06F4" };
+function ReportChartsSection({ tasks, projects, pomodoro }) {
+  const days = lastNDays(7);
+  const dayKeySet = {};
+  days.forEach((d) => {
+    dayKeySet[d.key] = true;
+  });
+  const quadCounts = {};
+  const quadMinutes = {};
+  QUADRANTS.forEach((q) => {
+    quadCounts[q.id] = 0;
+    quadMinutes[q.id] = 0;
+  });
+  (tasks || []).forEach((tk) => {
+    if (tk.status === "done" && tk.completedDate && dayKeySet[tk.completedDate] && tk.quad in quadCounts) {
+      quadCounts[tk.quad] += 1;
+    }
+  });
+  const taskById = {};
+  (tasks || []).forEach((tk) => {
+    taskById[tk.id] = tk;
+  });
+  (pomodoro && pomodoro.sessions || []).forEach((s) => {
+    if (s.type !== "work" || !s.completedAt) return;
+    const key = dateKeyOf(new Date(s.completedAt));
+    if (!dayKeySet[key]) return;
+    const linkedTask = s.taskId && taskById[s.taskId];
+    if (linkedTask && linkedTask.quad in quadMinutes) quadMinutes[linkedTask.quad] += s.durationMin || 0;
+  });
+  const quadData = QUADRANTS.map((q) => ({ quad: QUAD_SHORT_LABEL[q.id], count: quadCounts[q.id] }));
+  const minutesData = QUADRANTS.map((q) => ({ quad: QUAD_SHORT_LABEL[q.id], minutes: quadMinutes[q.id] }));
+  const quadLegend = QUADRANTS.map((q) => `${QUAD_SHORT_LABEL[q.id]}: ${q.label}`).join(" \u2014 ");
+  const learningByDay = {};
+  days.forEach((d) => {
+    learningByDay[d.key] = 0;
+  });
+  let hasAnyLearningLog = false;
+  (projects || []).forEach((topic) => {
+    (topic.subsections || []).forEach((sec) => {
+      const task = (tasks || []).find((tk) => tk.id === sec.linkedTaskId);
+      if (!task) return;
+      (task.progressLog || []).forEach((e) => {
+        if (e.date in learningByDay) {
+          learningByDay[e.date] += e.amount;
+          hasAnyLearningLog = true;
+        }
+      });
+    });
+  });
+  const learningData = days.map((d) => ({ day: d.label, amount: learningByDay[d.key] }));
+  const quadCard = /* @__PURE__ */ React.createElement(
+    GlassCard,
+    { className: "p-4" },
+    /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u062A\u06A9\u0645\u06CC\u0644 \u062A\u0633\u06A9 \u0628\u0647 \u062A\u0641\u06A9\u06CC\u06A9 \u0631\u0628\u0639 \u0622\u06CC\u0632\u0646\u0647\u0627\u0648\u0631 \u2014 \u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631"),
+    /* @__PURE__ */ React.createElement(SimpleBarChart, { data: quadData, xKey: "quad", yKey: "count", color: "#C026D3", height: 140 }),
+    /* @__PURE__ */ React.createElement("p", { className: "text-[10px] mt-2", style: { color: "var(--text-faint)" } }, quadLegend)
+  );
+  const minutesCard = /* @__PURE__ */ React.createElement(
+    GlassCard,
+    { className: "p-4" },
+    /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u0632\u0645\u0627\u0646 \u062A\u0645\u0631\u06A9\u0632 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648 \u0628\u0647 \u062A\u0641\u06A9\u06CC\u06A9 \u0631\u0628\u0639 \u0622\u06CC\u0632\u0646\u0647\u0627\u0648\u0631 \u2014 \u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631"),
+    /* @__PURE__ */ React.createElement(SimpleBarChart, { data: minutesData, xKey: "quad", yKey: "minutes", color: "#DB2777", height: 140 }),
+    /* @__PURE__ */ React.createElement("p", { className: "text-[10px] mt-2", style: { color: "var(--text-faint)" } }, quadLegend)
+  );
+  const learningBody = hasAnyLearningLog ? /* @__PURE__ */ React.createElement(SimpleLineChart, { data: learningData, xKey: "day", yKey: "amount", color: "#22D3EE", height: 140 }) : /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u067E\u06CC\u0634\u0631\u0641\u062A\u06CC \u0628\u0631\u0627\u06CC \u0645\u0633\u06CC\u0631\u0647\u0627\u06CC \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u062F\u0631 \u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631 \u062B\u0628\u062A \u0646\u0634\u062F\u0647.");
+  const learningCard = /* @__PURE__ */ React.createElement(
+    GlassCard,
+    { className: "p-4" },
+    /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u0631\u0648\u0646\u062F \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u2014 \u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631"),
+    learningBody,
+    hasAnyLearningLog ? /* @__PURE__ */ React.createElement("p", { className: "text-[10px] mt-2", style: { color: "var(--text-faint)" } }, "\u062C\u0645\u0639 \u0645\u0642\u062F\u0627\u0631 \u062B\u0628\u062A\u200C\u0634\u062F\u0647 \u062F\u0631 \u0647\u0645\u0647\u200C\u06CC \u0645\u0633\u06CC\u0631\u0647\u0627\u060C \u0628\u062F\u0648\u0646 \u062A\u0648\u062C\u0647 \u0628\u0647 \u062A\u0641\u0627\u0648\u062A \u0648\u0627\u062D\u062F \u0628\u06CC\u0646 \u0622\u0646\u200C\u0647\u0627 \u2014 \u0641\u0642\u0637 \u06CC\u06A9 \u0631\u0648\u0646\u062F \u06A9\u0644\u06CC \u0627\u0633\u062A، \u0646\u0647 \u0645\u0642\u062F\u0627\u0631 \u062F\u0642\u06CC\u0642 \u0642\u0627\u0628\u0644 \u0645\u0642\u0627\u06CC\u0633\u0647.") : null
+  );
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, quadCard, minutesCard, learningCard);
+}
 function PlanningHub({ planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress }) {
   const [sub, setSub] = useState("plan");
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["plan", "\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0648\u0632\u0627\u0646\u0647"], ["goals", "\u0627\u0647\u062F\u0627\u0641", "trending-up"], ["report", "\u06AF\u0632\u0627\u0631\u0634 \u0631\u0648\u0632\u0627\u0646\u0647", "check"]] }), sub === "plan" && /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, DAYPARTS.map((dp) => /* @__PURE__ */ React.createElement(
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["plan", "\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0648\u0632\u0627\u0646\u0647"], ["goals", "\u0627\u0647\u062F\u0627\u0641", "trending-up"], ["report", "\u06AF\u0632\u0627\u0631\u0634 \u0631\u0648\u0632\u0627\u0646\u0647", "check"], ["charts", "\u0646\u0645\u0648\u062F\u0627\u0631\u0647\u0627", "trending-up"]] }), sub === "plan" && /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, DAYPARTS.map((dp) => /* @__PURE__ */ React.createElement(
     DaypartSection,
     {
       key: dp.id,
@@ -1819,7 +1893,7 @@ function PlanningHub({ planning, setPlanning, goals, setGoals, projects, tasks, 
       groups: planning[dp.id] || [],
       onChange: (groups) => setPlanning((p) => ({ ...p, [dp.id]: groups }))
     }
-  ))), sub === "goals" && /* @__PURE__ */ React.createElement(GoalsView, { goals, setGoals }), sub === "report" && /* @__PURE__ */ React.createElement(DailyReportView, { projects: projects || [], tasks: tasks || [], pomodoro, onAddProgress }));
+  ))), sub === "goals" && /* @__PURE__ */ React.createElement(GoalsView, { goals, setGoals }), sub === "report" && /* @__PURE__ */ React.createElement(DailyReportView, { projects: projects || [], tasks: tasks || [], pomodoro, onAddProgress }), sub === "charts" && /* @__PURE__ */ React.createElement(ReportChartsSection, { tasks: tasks || [], projects: projects || [], pomodoro }));
 }
 function WeeklyOverviewChart({ goals, tasks }) {
   const days = lastNDays(7);
