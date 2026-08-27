@@ -2,6 +2,7 @@ import { ItemView, Plugin, WorkspaceLeaf } from "obsidian";
 import * as React from "react";
 import * as ReactDOMClient from "react-dom/client";
 import LifeFlowApp from "./app.jsx";
+import { LifeFlowSettingTab } from "./settings-tab";
 
 export const VIEW_TYPE = "lifeflow-view";
 
@@ -77,6 +78,7 @@ export default class LifeFlowPlugin extends Plugin {
 			name: "باز کردن زندگی‌آرام",
 			callback: () => this.activateView(),
 		});
+		this.addSettingTab(new LifeFlowSettingTab(this.app, this));
 	}
 
 	onunload() {
