@@ -1345,7 +1345,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       progressTarget: 10,
       progressCurrent: 0
     });
-    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, linkedTaskId: newTaskId }] }));
+    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId }] }));
   };
   const updateSubsection = (id, patch) => {
     if (!topic) return;
@@ -1421,6 +1421,36 @@ function lastNDays(n) {
     out.push({ key, label });
   }
   return out;
+}
+function dateKeyOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function isTrackDueOn(subsection, topic, d) {
+  const ov = subsection.recurrenceOverride;
+  const recurrence = ov ? ov.recurrence : topic.recurrence || "daily";
+  if (recurrence === "weekly") {
+    const weekdays = ov ? ov.recurrenceWeekdays || [] : topic.recurrenceWeekdays || [];
+    return weekdays.includes(d.getDay());
+  }
+  return true;
+}
+function computeTrackBalance(subsection, topic, task) {
+  const quota = subsection.quotaPerPeriod || 0;
+  if (!quota || !task) return null;
+  const startKey = subsection.createdDate || todayKey();
+  const [sy, sm, sd] = startKey.split("-").map(Number);
+  const cursor = new Date(sy, sm - 1, sd);
+  const today = /* @__PURE__ */ new Date();
+  today.setHours(0, 0, 0, 0);
+  let dueTotal = 0;
+  let guard = 0;
+  while (cursor <= today && guard < 3660) {
+    if (isTrackDueOn(subsection, topic, cursor)) dueTotal += quota;
+    cursor.setDate(cursor.getDate() + 1);
+    guard++;
+  }
+  const doneTotal = (task.progressLog || []).reduce((s, e) => s + e.amount, 0);
+  return { dueTotal, doneTotal, balance: dueTotal - doneTotal };
 }
 function getPersianDateLabel(now) {
   try {
@@ -1526,9 +1556,75 @@ function GoalsView({ goals, setGoals }) {
     return /* @__PURE__ */ React.createElement("div", { key: d.key, className: "flex-1 flex flex-col items-center justify-end gap-1.5 h-full" }, /* @__PURE__ */ React.createElement("span", { className: "text-[9px] text-slate-500" }, val || ""), /* @__PURE__ */ React.createElement("div", { className: "w-full rounded-t-md", style: { height: `${Math.max(val / max * 100, val > 0 ? 6 : 2)}%`, background: val === 0 ? "rgba(255,255,255,.08)" : hit ? "#22D3EE" : "#DB2777" } }), /* @__PURE__ */ React.createElement("span", { className: "text-[9px] text-slate-500" }, d.label));
   }))));
 }
-function PlanningHub({ planning, setPlanning, goals, setGoals }) {
+function DailyReportTrackRow({ subsection, topic, task, onAddProgress }) {
+  const [amount, setAmount] = useState(String(subsection.quotaPerPeriod || ""));
+  const [note, setNote] = useState("");
+  if (!task) return null;
+  const balance = computeTrackBalance(subsection, topic, task);
+  const loggedToday = (task.progressLog || []).filter((e) => e.date === todayKey());
+  const todaySum = loggedToday.reduce((s, e) => s + e.amount, 0);
+  const submit = () => {
+    const n = Number(amount);
+    if (!n || n <= 0) return;
+    onAddProgress(task.id, n, note);
+    setAmount("");
+    setNote("");
+  };
+  const balanceNode = balance && React.createElement(
+    "span",
+    { className: "text-[10px] font-bold", style: { color: balance.balance > 0 ? "#DB2777" : "#22D3EE" } },
+    balance.balance > 0 ? `${balance.balance} ${subsection.unit} \u0639\u0642\u0628` : balance.balance < 0 ? `${-balance.balance} ${subsection.unit} \u062C\u0644\u0648` : "\u0645\u0637\u0627\u0628\u0642 \u0628\u0631\u0646\u0627\u0645\u0647"
+  );
+  const header = React.createElement(
+    "div",
+    { className: "flex items-center justify-between mb-1.5" },
+    React.createElement(
+      "div",
+      null,
+      React.createElement("p", { className: "text-sm font-bold text-slate-100" }, topic.title, " \u2014 ", subsection.title),
+      subsection.quotaPerPeriod ? React.createElement("p", { className: "text-[10px] text-slate-500 mt-0.5" }, "\u0633\u0647\u0645\u06CC\u0647\u200C\u06CC \u0627\u0645\u0631\u0648\u0632: ", subsection.quotaPerPeriod, " ", subsection.unit) : null
+    ),
+    balanceNode
+  );
+  const todayNote = todaySum > 0 ? React.createElement("p", { className: "text-[10px] mb-1.5", style: { color: "var(--text-faint)" } }, "\u0627\u0645\u0631\u0648\u0632 \u062B\u0628\u062A \u0634\u062F\u0647: +", todaySum, " ", subsection.unit) : null;
+  const form = React.createElement(
+    "form",
+    { className: "flex items-center gap-1.5", onSubmit: (e) => { e.preventDefault(); submit(); } },
+    React.createElement("input", { type: "number", min: "0", value: amount, onChange: (e) => setAmount(e.target.value), placeholder: `\u0645\u0642\u062F\u0627\u0631 ${subsection.unit}`, className: "w-24 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-[12px] text-white placeholder:text-slate-500 outline-none" }),
+    React.createElement("input", { type: "text", value: note, onChange: (e) => setNote(e.target.value), placeholder: "\u062A\u0648\u0636\u06CC\u062D (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)", className: "flex-1 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-[12px] text-white placeholder:text-slate-500 outline-none" }),
+    React.createElement("button", { type: "submit", className: "px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 text-[12px] font-medium shrink-0" }, "\u062B\u0628\u062A")
+  );
+  return React.createElement(GlassCard, { className: "p-3.5" }, header, todayNote, form);
+}
+function DailyReportView({ projects, tasks, onAddProgress }) {
+  const rows = [];
+  projects.forEach((topic) => {
+    (topic.subsections || []).forEach((sec) => {
+      if (!sec.quotaPerPeriod) return;
+      const task = tasks.find((tk) => tk.id === sec.linkedTaskId);
+      if (!task) return;
+      rows.push({ topic, sec, task });
+    });
+  });
+  if (rows.length === 0) {
+    return React.createElement(
+      GlassCard,
+      { className: "p-8 flex flex-col items-center text-center" },
+      React.createElement(Ic, { name: "trending-up", size: 26, className: "text-fuchsia-300 mb-2" }),
+      React.createElement("p", { className: "text-slate-300 text-sm" }, "\u0647\u0646\u0648\u0632 \u0647\u06CC\u0686 \u0645\u0633\u06CC\u0631 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u0628\u0627 \xAB\u0633\u0647\u0645\u06CC\u0647\u200C\u06CC \u0647\u0631 \u062F\u0648\u0631\u0647\xBB \u062A\u0639\u0631\u06CC\u0641 \u0646\u0634\u062F\u0647"),
+      React.createElement("p", { className: "text-slate-500 text-[11px] mt-1" }, "\u0627\u0632 \u062A\u0628 \xAB\u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC\xBB\u060C \u0631\u0648\u06CC \u0647\u0631 \u0632\u06CC\u0631\u0628\u062E\u0634 \xAB\u0648\u06CC\u0631\u0627\u06CC\u0634\xBB \u0631\u0627 \u0628\u0632\u0646 \u0648 \u0633\u0647\u0645\u06CC\u0647 \u0631\u0648 \u062A\u0646\u0638\u06CC\u0645 \u06A9\u0646")
+    );
+  }
+  return React.createElement(
+    "div",
+    { className: "space-y-3" },
+    React.createElement("p", { className: "text-[11px]", style: { color: "var(--text-faint)" } }, "\u0628\u0631\u0627\u06CC \u0647\u0631 \u0645\u0633\u06CC\u0631\u060C \u0645\u0642\u062F\u0627\u0631\u06CC \u06A9\u0647 \u0627\u0645\u0631\u0648\u0632 \u0627\u0646\u062C\u0627\u0645 \u062F\u0627\u062F\u06CC\u062F \u0631\u0627 \u062B\u0628\u062A \u06A9\u0646\u06CC\u062F \u2014 \u06A9\u0645\u062A\u0631/\u0628\u06CC\u0634\u062A\u0631 \u0627\u0632 \u0633\u0647\u0645\u06CC\u0647 \u0647\u0645 \u0627\u06CC\u0631\u0627\u062F \u0646\u06CC\u0633\u062A، \u0641\u0642\u0637 \u062F\u0631 \u0628\u0627\u0644\u0627\u0646\u0633 \u0631\u0648\u0632 \u0628\u0639\u062F \u0644\u062D\u0627\u0638 \u0645\u06CC\u200C\u0634\u0648\u062F."),
+    rows.map(({ topic, sec, task }) => React.createElement(DailyReportTrackRow, { key: sec.id, subsection: sec, topic, task, onAddProgress }))
+  );
+}
+function PlanningHub({ planning, setPlanning, goals, setGoals, projects, tasks, onAddProgress }) {
   const [sub, setSub] = useState("plan");
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["plan", "\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0648\u0632\u0627\u0646\u0647"], ["goals", "\u0627\u0647\u062F\u0627\u0641", "trending-up"]] }), sub === "plan" && /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, DAYPARTS.map((dp) => /* @__PURE__ */ React.createElement(
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["plan", "\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0648\u0632\u0627\u0646\u0647"], ["goals", "\u0627\u0647\u062F\u0627\u0641", "trending-up"], ["report", "\u06AF\u0632\u0627\u0631\u0634 \u0631\u0648\u0632\u0627\u0646\u0647", "check"]] }), sub === "plan" && /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, DAYPARTS.map((dp) => /* @__PURE__ */ React.createElement(
     DaypartSection,
     {
       key: dp.id,
@@ -1537,7 +1633,7 @@ function PlanningHub({ planning, setPlanning, goals, setGoals }) {
       groups: planning[dp.id] || [],
       onChange: (groups) => setPlanning((p) => ({ ...p, [dp.id]: groups }))
     }
-  ))), sub === "goals" && /* @__PURE__ */ React.createElement(GoalsView, { goals, setGoals }));
+  ))), sub === "goals" && /* @__PURE__ */ React.createElement(GoalsView, { goals, setGoals }), sub === "report" && /* @__PURE__ */ React.createElement(DailyReportView, { projects: projects || [], tasks: tasks || [], onAddProgress }));
 }
 function WeeklyOverviewChart({ goals, tasks }) {
   const days = lastNDays(7);
@@ -2721,7 +2817,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
