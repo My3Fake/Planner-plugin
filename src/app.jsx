@@ -94,14 +94,14 @@ function formatWhen(v) {
 }
 var storage = {
   get(key) {
-    const obsApp = typeof window !== "undefined" && window.__lifeflowObsidianApp;
-    if (obsApp) return obsApp.loadLocalStorage(key);
+    const plugin = typeof window !== "undefined" && window.__lifeflowPlugin;
+    if (plugin) return plugin.getDataValue(key);
     return window.localStorage.getItem(key);
   },
   set(key, value) {
-    const obsApp = typeof window !== "undefined" && window.__lifeflowObsidianApp;
+    const plugin = typeof window !== "undefined" && window.__lifeflowPlugin;
     try {
-      if (obsApp) obsApp.saveLocalStorage(key, value);
+      if (plugin) plugin.setDataValue(key, value);
       else window.localStorage.setItem(key, value);
       return true;
     } catch (e) {
