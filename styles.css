@@ -122,3 +122,19 @@
 .lifeflow-app-root [class*="border-rose-"]{ border-color: var(--text-error, #e06c75) !important; }
 .lifeflow-app-root [class*="bg-rose-5"],
 .lifeflow-app-root [class*="bg-red-5"]{ background-color: var(--text-error, #e06c75) !important; color: var(--text-on-accent) !important; }
+
+/* Success state (e.g. "sync succeeded" messages) — was left as a raw
+   Tailwind emerald color; map to Obsidian's success text variable. */
+.lifeflow-app-root [class*="text-emerald-"],
+.lifeflow-app-root [class*="text-green-"]{ color: var(--text-success, #7fbb6e) !important; }
+
+/* The AI-summary loading spinner used a hardcoded violet top-border for its
+   two-tone spin effect; tie it to the accent color instead so it matches
+   the rest of the fuchsia/cyan chrome above. */
+.lifeflow-app-root [class*="border-t-violet-"]{ border-top-color: var(--interactive-accent) !important; }
+
+/* Native Obsidian call-to-action buttons (see main "add" buttons below):
+   .mod-cta already sets background/color from Obsidian's own accent
+   variables — this just guards against our own [class*="text-white"]
+   rule (above) fighting with it on the same element. */
+.lifeflow-app-root button.mod-cta[class*="text-white"]{ color: var(--text-on-accent) !important; }
