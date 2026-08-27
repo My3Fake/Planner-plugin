@@ -178,7 +178,7 @@ var LANGUAGES = [
   { id: "fr", label: "Fran\xE7ais", dir: "ltr" },
   { id: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", dir: "rtl" }
 ];
-var DEFAULT_NOTIFICATIONS = { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false };
+var DEFAULT_NOTIFICATIONS = { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false, dndDuringFocus: true };
 var DEFAULT_TASK_DEFAULTS = { quad: "q2", priority: 2, daypart: "morning", duration: 45 };
 var DEFAULT_FEATURES = {
   showMatrix: true,
@@ -2006,7 +2006,8 @@ function SettingsModal({ onClose, settings, onChangeSettings }) {
     ["taskReminders", "\u06CC\u0627\u062F\u0622\u0648\u0631\u06CC \u062A\u0633\u06A9\u200C\u0647\u0627 (\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC\u200C\u0634\u062F\u0647 \u0628\u0627 \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC \u0631\u0648\u0634\u0646)"],
     ["pomodoroEnd", "\u067E\u0627\u06CC\u0627\u0646 \u062C\u0644\u0633\u0647\u200C\u06CC \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648"],
     ["learningDeadlines", "\u0646\u0632\u062F\u06CC\u06A9\u200C\u0634\u062F\u0646 \u0628\u0647 \u062A\u0627\u0631\u06CC\u062E \u0647\u062F\u0641\u0650 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC (\u06F3 \u0631\u0648\u0632 \u0645\u0648\u0646\u062F\u0647)"],
-    ["dailyDigest", "\u062E\u0644\u0627\u0635\u0647\u200C\u06CC \u0635\u0628\u062D\u06AF\u0627\u0647\u06CC \u062A\u0639\u062F\u0627\u062F \u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0627\u0645\u0631\u0648\u0632"]
+    ["dailyDigest", "\u062E\u0644\u0627\u0635\u0647\u200C\u06CC \u0635\u0628\u062D\u06AF\u0627\u0647\u06CC \u062A\u0639\u062F\u0627\u062F \u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0627\u0645\u0631\u0648\u0632"],
+    ["dndDuringFocus", "\u0639\u062F\u0645\u200C\u0645\u0632\u0627\u062D\u0645\u062A \u062D\u06CC\u0646 \u062C\u0644\u0633\u0647\u200C\u06CC \u06A9\u0627\u0631\u06CC \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648 (\u0628\u0642\u06CC\u0647\u200C\u06CC \u0627\u0639\u0644\u0627\u0646\u200C\u0647\u0627 \u0645\u0648\u0642\u062A\u0627\u064B \u0633\u0627\u06A9\u062A \u0645\u06CC\u200C\u0634\u0648\u0646\u062F)"]
   ].map(([key, label]) => {
     const on = settings.notifications ? settings.notifications[key] : true;
     return /* @__PURE__ */ React.createElement("div", { key, className: "flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300" }, label), /* @__PURE__ */ React.createElement(
@@ -2180,7 +2181,7 @@ function JournalCard({ journal, setJournal }) {
 function pad2(n) {
   return String(n).padStart(2, "0");
 }
-function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings }) {
+function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings, onFocusChange }) {
   const { settings } = pomodoro;
   const [mode, setMode] = useState("work");
   const [secondsLeft, setSecondsLeft] = useState(settings.work * 60);
@@ -2193,6 +2194,21 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const durations = { work: settings.work, short: settings.shortBreak, long: settings.longBreak };
   const activeTasks = tasks.filter((t2) => t2.status !== "done");
   const activeTask = tasks.find((t2) => t2.id === taskId);
+  // Report "actively running a work session" up to LifeFlowApp so it can
+  // suppress other notifications (DND) while the user is trying to focus.
+  // This is a small, targeted callback — it does NOT lift the timer's own
+  // running/secondsLeft state itself, so it's safe even though the timer is
+  // still local to this component (see PROGRESS.md Task 6 notes: fully
+  // lifting the timer for a persistent status-bar view is a bigger, riskier
+  // change deliberately deferred to its own session).
+  useEffect(() => {
+    if (onFocusChange) onFocusChange(running && mode === "work");
+  }, [running, mode]);
+  useEffect(() => {
+    return () => {
+      if (onFocusChange) onFocusChange(false);
+    };
+  }, []);
   useEffect(() => {
     if (!running) return;
     if (secondsLeft <= 0) {
@@ -2344,9 +2360,9 @@ function PomodoroReportView({ pomodoro, tasks }) {
   })).sort((a, b) => b.minutes - a.minutes).slice(0, 8);
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clock", label: "\u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648\u06CC \u0627\u0645\u0631\u0648\u0632", value: stats.todayCount, color: "#DB2777" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "flame", label: "\u062F\u0642\u06CC\u0642\u0647\u200C\u06CC \u0627\u0645\u0631\u0648\u0632", value: stats.todayMinutes, color: "#22D3EE" })), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648\u06CC \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647 \u2014 \u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631"), /* @__PURE__ */ React.createElement(SimpleBarChart, { data: chartData, xKey: "day", yKey: "count", color: "#DB2777", height: 140 })), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, "\u0632\u0645\u0627\u0646 \u0635\u0631\u0641\u200C\u0634\u062F\u0647 \u0628\u0647 \u062A\u0641\u06A9\u06CC\u06A9 \u062A\u0633\u06A9"), perTaskRows.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648\u06CC\u06CC \u0628\u0627 \u062A\u0633\u06A9 \u062B\u0628\u062A \u0646\u0634\u062F\u0647"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, perTaskRows.map((r, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "flex justify-between text-xs text-slate-300" }, /* @__PURE__ */ React.createElement("span", { className: "truncate flex-1" }, r.name), /* @__PURE__ */ React.createElement("span", { className: "text-fuchsia-300 font-bold shrink-0 mr-2" }, r.minutes, " \u062F"))))), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 text-center" }, "\u0645\u062C\u0645\u0648\u0639 \u06A9\u0644: ", stats.totalMinutes, " \u062F\u0642\u06CC\u0642\u0647 \u062F\u0631 ", pomodoro.sessions.filter((s) => s.type === "work" && s.completedAt).length, " \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648\u06CC \u06A9\u0627\u0645\u0644\u200C\u0634\u062F\u0647"));
 }
-function PomodoroHub({ pomodoro, setPomodoro, tasks, onAddProgress, onToggle, lang, notifSettings }) {
+function PomodoroHub({ pomodoro, setPomodoro, tasks, onAddProgress, onToggle, lang, notifSettings, onFocusChange }) {
   const [sub, setSub] = useState("timer");
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["timer", t("pomodoro_timer", lang), "clock"], ["report", t("pomodoro_report", lang), "trending-up"]] }), sub === "timer" && /* @__PURE__ */ React.createElement(PomodoroTimerView, { pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings }), sub === "report" && /* @__PURE__ */ React.createElement(PomodoroReportView, { pomodoro, tasks }));
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["timer", t("pomodoro_timer", lang), "clock"], ["report", t("pomodoro_report", lang), "trending-up"]] }), sub === "timer" && /* @__PURE__ */ React.createElement(PomodoroTimerView, { pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings, onFocusChange }), sub === "report" && /* @__PURE__ */ React.createElement(PomodoroReportView, { pomodoro, tasks }));
 }
 var CAL_HOURS = Array.from({ length: 36 }, (_, i) => 6 * 60 + i * 30);
 function minutesToHHMM(mins) {
@@ -2638,6 +2654,12 @@ function LifeFlowApp() {
   const [journal, setJournal] = useState(savedData.journal || []);
   const [noteLists, setNoteLists] = useState(savedData.noteLists || []);
   const [pomodoro, setPomodoro] = useState(savedData.pomodoro || DEFAULT_POMODORO);
+  // Tracks whether an active pomodoro *work* session is currently running, so
+  // the notification effects below can suppress other notices (DND) while
+  // the user is trying to focus. Reported up from PomodoroTimerView via
+  // onFocusChange — see PROGRESS.md Task 6 notes for why this is a small
+  // targeted callback rather than fully lifting the timer's state.
+  const [focusMode, setFocusMode] = useState(false);
   useEffect(() => {
     const fullState = { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, pomodoro };
     try {
@@ -2687,6 +2709,7 @@ function LifeFlowApp() {
   useEffect(() => {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     if (settings.notifications && settings.notifications.taskReminders === false) return;
+    if (focusMode && settings.notifications && settings.notifications.dndDuringFocus !== false) return;
     const nowHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const today = todayKey();
     tasks.forEach((tk) => {
@@ -2700,10 +2723,11 @@ function LifeFlowApp() {
       } catch (e) {
       }
     });
-  }, [now, tasks, settings.notifications]);
+  }, [now, tasks, settings.notifications, focusMode]);
   useEffect(() => {
     if (typeof Notification === "undefined" || Notification.permission !== "granted" || !Jalali) return;
     if (settings.notifications && settings.notifications.learningDeadlines === false) return;
+    if (focusMode && settings.notifications && settings.notifications.dndDuringFocus !== false) return;
     const today = todayKey();
     projects.forEach((topic) => {
       const g = topic.goal;
@@ -2721,10 +2745,11 @@ function LifeFlowApp() {
       } catch (e) {
       }
     });
-  }, [now, projects, tasks, settings.notifications]);
+  }, [now, projects, tasks, settings.notifications, focusMode]);
   useEffect(() => {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     if (!settings.notifications || !settings.notifications.dailyDigest) return;
+    if (focusMode && settings.notifications && settings.notifications.dndDuringFocus !== false) return;
     const today = todayKey();
     const fireKey = `lifeflow_notif_digest_${today}`;
     if (storage.get(fireKey)) return;
@@ -2734,7 +2759,7 @@ function LifeFlowApp() {
       storage.set(fireKey, "1");
     } catch (e) {
     }
-  }, [now, tasks, settings.notifications]);
+  }, [now, tasks, settings.notifications, focusMode]);
   const deleteTask = (id) => setTasks((p) => p.filter((t2) => t2.id !== id));
   const saveTask = (t2) => setTasks((prev) => prev.some((x) => x.id === t2.id) ? prev.map((x) => x.id === t2.id ? t2 : x) : [t2, ...prev]);
   const moveTask = (id, status) => setTasks((p) => p.map((t2) => t2.id === id ? { ...t2, status } : t2));
@@ -2853,7 +2878,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",

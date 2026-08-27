@@ -16,6 +16,7 @@ interface LifeFlowSettings {
 		pomodoroEnd: boolean;
 		learningDeadlines: boolean;
 		dailyDigest: boolean;
+		dndDuringFocus: boolean;
 	};
 	features: {
 		showMatrix: boolean;
@@ -46,7 +47,7 @@ interface AiConfig {
 const DEFAULT_SETTINGS: LifeFlowSettings = {
 	theme: "dark",
 	language: "fa",
-	notifications: { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false },
+	notifications: { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false, dndDuringFocus: true },
 	features: {
 		showMatrix: true,
 		tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true },
@@ -217,6 +218,7 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 			["pomodoroEnd", "پایان پومودورو", "اعلان وقتی یک دور پومودورو تمام می‌شود"],
 			["learningDeadlines", "مهلت‌های یادگیری", "اعلان نزدیک‌شدن مهلت اهداف یادگیری"],
 			["dailyDigest", "خلاصه‌ی روزانه", "یک اعلان جمع‌بندی در پایان روز"],
+			["dndDuringFocus", "عدم‌مزاحمت حین جلسه‌ی کاری پومودورو", "وقتی یک دور «کار» پومودورو در حال اجراست، بقیه‌ی اعلان‌های بالا موقتاً ساکت می‌شوند (خودِ اعلان پایان پومودورو ساکت نمی‌شود)"],
 		];
 
 		notifItems.forEach(([key, name, desc]) => {
