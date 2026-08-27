@@ -184,17 +184,36 @@ var DEFAULT_FEATURES = {
   showMatrix: true,
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
+var DEFAULT_APPEARANCE = { fontFamily: "default" };
+// Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
+// settings-tab.ts is plain TS, not part of this React tree) — same
+// low-divergence-risk duplication already used for QUADRANTS/PRIORITIES/
+// DAYPARTS labels. "default" reproduces the plugin's original hardcoded
+// font stack unchanged, so existing users see no visual change until they
+// pick something else.
+function resolveFontFamily(id) {
+  switch (id) {
+    case "obsidian":
+      return "inherit";
+    case "vazirmatn":
+      return "'Vazirmatn', Tahoma, sans-serif";
+    case "system":
+      return "-apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, sans-serif";
+    default:
+      return "var(--font-text, 'Vazirmatn'), 'Vazirmatn', Tahoma, sans-serif";
+  }
+}
 function mergeFeatures(f) {
   return { ...DEFAULT_FEATURES, ...(f || {}), tabs: { ...DEFAULT_FEATURES.tabs, ...((f || {}).tabs || {}) } };
 }
 function loadSettings() {
   try {
     const raw = storage.get(SETTINGS_KEY);
-    if (!raw) return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS };
+    if (!raw) return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
     const parsed = JSON.parse(raw);
-    return { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} } };
+    return { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: { ...DEFAULT_APPEARANCE, ...parsed.appearance || {} } };
   } catch (e) {
-    return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS };
+    return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
   }
 }
 function saveSettings(s) {
@@ -3154,7 +3173,7 @@ function LifeFlowApp() {
     {
       dir: langDir,
       className: "lifeflow-app-root w-full text-white relative lg:flex",
-      style: { fontFamily: "var(--font-text, 'Vazirmatn'), 'Vazirmatn', Tahoma, sans-serif" }
+      style: { fontFamily: resolveFontFamily(settings.appearance?.fontFamily) }
     },
     /* @__PURE__ */ React.createElement("style", null, `
         /* Panels/cards/inputs are styled from styles.css using Obsidian's own CSS

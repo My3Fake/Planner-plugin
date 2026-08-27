@@ -39,6 +39,9 @@ interface LifeFlowSettings {
 	reports: {
 		folderName: string;
 	};
+	appearance: {
+		fontFamily: string;
+	};
 	[key: string]: unknown;
 }
 
@@ -57,6 +60,7 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 	},
 	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45 },
 	reports: { folderName: "LifeFlow Reports" },
+	appearance: { fontFamily: "default" },
 };
 
 const LANGUAGE_OPTIONS: Record<string, string> = {
@@ -97,6 +101,15 @@ const DAYPART_OPTIONS: Record<string, string> = {
 	night: "شب",
 };
 
+// Mirrors resolveFontFamily()'s id/order in app.jsx (kept separate since
+// settings-tab.ts is plain TS, not part of the React tree).
+const FONT_OPTIONS: Record<string, string> = {
+	default: "پیش‌فرض پلاگین (Vazirmatn، با بازگشت به فونت تم Obsidian در صورت تعریف)",
+	obsidian: "دقیقاً فونت تم فعلی Obsidian",
+	vazirmatn: "همیشه Vazirmatn",
+	system: "فونت سیستم‌عامل",
+};
+
 export class LifeFlowSettingTab extends PluginSettingTab {
 	plugin: LifeFlowPlugin;
 
@@ -121,6 +134,7 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 				},
 				taskDefaults: { ...DEFAULT_SETTINGS.taskDefaults, ...(parsed.taskDefaults || {}) },
 				reports: { ...DEFAULT_SETTINGS.reports, ...(parsed.reports || {}) },
+				appearance: { ...DEFAULT_SETTINGS.appearance, ...(parsed.appearance || {}) },
 			};
 		} catch (e) {
 			return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
@@ -183,6 +197,19 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 			text: "ظاهر روشن/تاریک پلاگین به‌طور خودکار از تم فعلی Obsidian پیروی می‌کند (بخش Appearance در تنظیمات خود Obsidian) — نیازی به تنظیم جداگانه در اینجا نیست.",
 			cls: "setting-item-description",
 		});
+
+		new Setting(containerEl)
+			.setName("فونت متن پلاگین")
+			.setDesc("فونت استفاده‌شده داخل رابط کاربری زندگی‌آرام. گزینه‌ی «پیش‌فرض پلاگین» همان چیزی است که همیشه بوده؛ بقیه‌ی گزینه‌ها اختیاری‌اند.")
+			.addDropdown((drop) => {
+				Object.entries(FONT_OPTIONS).forEach(([id, label]) => drop.addOption(id, label));
+				drop.setValue(settings.appearance.fontFamily);
+				drop.onChange((value) => {
+					const next = this.readSettings();
+					next.appearance.fontFamily = value;
+					this.writeSettings(next);
+				});
+			});
 
 		// ---------------------------------------------------------------
 		containerEl.createEl("h3", { text: "قابلیت‌ها" });
