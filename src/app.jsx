@@ -1336,6 +1336,55 @@ function LearningRoutineEditor({ topic, onChange }) {
     w.label
   ))), (topic.recurrence === "monthly" || topic.recurrence === "yearly") && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500" }, "\u0631\u0648\u0632 \u062F\u0642\u06CC\u0642 \u062A\u06A9\u0631\u0627\u0631 \u0645\u0627\u0647\u0627\u0646\u0647/\u0633\u0627\u0644\u0627\u0646\u0647 \u0631\u0648 \u0645\u06CC\u200C\u062A\u0648\u0646\u06CC \u0627\u0632 \u062A\u0628 \xAB\u062A\u0633\u06A9\u200C\u0647\u0627\xBB\u060C \u0631\u0648\u06CC \u062A\u0633\u06A9\u0650 \u0647\u0645\u0648\u0646 \u0632\u06CC\u0631\u0628\u062E\u0634\u060C \u062F\u0642\u06CC\u0642\u200C\u062A\u0631 \u062A\u0646\u0638\u06CC\u0645 \u06A9\u0646\u06CC."));
 }
+// A GitHub-contribution-style activity grid for one learning track's
+// progressLog. `weeks` columns (oldest -> newest, left to right, matching
+// the universal reading direction of this kind of chart even though the
+// rest of the UI is RTL) x 7 day rows. Cell intensity is the logged
+// amount that day relative to the track's daily quota (or just
+// presence/absence when there's no quota to scale against).
+function TrackHeatmap({ task, subsection, weeks = 12 }) {
+  const quota = subsection.quotaPerPeriod || 0;
+  const perDay = {};
+  (task.progressLog || []).forEach((e) => {
+    perDay[e.date] = (perDay[e.date] || 0) + e.amount;
+  });
+  const totalDays = weeks * 7;
+  const today = /* @__PURE__ */ new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = [];
+  for (let i = totalDays - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = dateKeyOf(d);
+    const amount = perDay[key] || 0;
+    const ratio = quota > 0 ? amount / quota : amount > 0 ? 1 : 0;
+    days.push({ key, amount, ratio });
+  }
+  const cellSize = 10;
+  const gap = 3;
+  const step = cellSize + gap;
+  const colorFor = (ratio, amount) => {
+    if (amount <= 0) return "rgba(148,163,184,0.14)";
+    if (ratio >= 1) return "#F97316";
+    if (ratio >= 0.5) return "rgba(249,115,22,0.6)";
+    return "rgba(249,115,22,0.32)";
+  };
+  const rects = [];
+  for (let c = 0; c < weeks; c++) {
+    for (let r = 0; r < 7; r++) {
+      const day = days[c * 7 + r];
+      if (!day) continue;
+      rects.push(
+        React.createElement(
+          "rect",
+          { key: day.key, x: c * step, y: r * step, width: cellSize, height: cellSize, rx: 2, fill: colorFor(day.ratio, day.amount) },
+          React.createElement("title", null, `${day.key} \u2014 ${day.amount}${quota ? ` / ${quota}` : ""} ${subsection.unit}`)
+        )
+      );
+    }
+  }
+  return React.createElement("svg", { viewBox: `0 0 ${weeks * step} ${7 * step}`, width: "100%", height: 62, preserveAspectRatio: "xMidYMid meet" }, rects);
+}
 function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteSubsection, onAddProgress, onTogglePause, onToggleArchive, onDuplicate }) {
   const [editing, setEditing] = useState(false);
   const [unit, setUnit] = useState(subsection.unit);
@@ -1343,6 +1392,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   const [quota, setQuota] = useState(subsection.quotaPerPeriod ?? 1);
   const [rangeLabel, setRangeLabel] = useState(subsection.rangeLabel || "");
   const [notes, setNotes] = useState(subsection.notes || "");
+  const [showHeatmap, setShowHeatmap] = useState(false);
   const ov = subsection.recurrenceOverride;
   const [cadenceMode, setCadenceMode] = useState(ov ? ov.recurrence : "inherit");
   const [cadenceWeekdays, setCadenceWeekdays] = useState((ov && ov.recurrenceWeekdays) || []);
@@ -1387,7 +1437,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
     React.createElement("p", { className: "text-sm font-bold truncate", style: { color: subsection.archived || subsection.paused ? "var(--text-muted)" : "var(--text-normal)" } }, subsection.title),
     streak > 0 && React.createElement(
       "span",
-      { title: `${streak} \u0631\u0648\u0632 \u0645\u062A\u0648\u0627\u0644\u06CC \u0628\u062F\u0648\u0646 \u0627\u0641\u062A\u0627\u062F\u06AF\u06CC`, className: "shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full", style: { color: "#F97316", background: "rgba(249,115,22,0.12)" } },
+      { title: `${streak} \u0631\u0648\u0632 \u0645\u062A\u0648\u0627\u0644\u06CC \u0628\u062F\u0648\u0646 \u0627\u0641\u062A\u0627\u062F\u06AF\u06CC`, className: "shrink-0 items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full", style: { color: "#F97316", background: "rgba(249,115,22,0.12)", display: "inline-flex" } },
       React.createElement(Ic, { name: "flame", size: 10, color: "#F97316" }),
       streak
     )
@@ -1409,7 +1459,14 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   );
 
   const subtitle = !editing ? React.createElement("p", { className: "text-[10px] mb-2", style: { color: "var(--text-faint)" } }, subtitleParts.join(" \u00B7 ")) : null;
-  const notesDisplay = !editing && subsection.notes ? React.createElement("p", { className: "text-[11px] mb-2 italic", style: { color: "var(--text-muted)" } }, subsection.notes) : null;
+  const notesDisplay = !editing && subsection.notes ? React.createElement("p", { className: "text-[11px] mb-2", style: { color: "var(--text-muted)", fontStyle: "italic" } }, subsection.notes) : null;
+  const heatmapToggle = !editing && task ? React.createElement(
+    "button",
+    { type: "button", onClick: () => setShowHeatmap((v) => !v), className: "text-[10px] mb-2 items-center gap-1", style: { color: "var(--text-muted)", display: "inline-flex" } },
+    React.createElement(Ic, { name: "grid", size: 10 }),
+    showHeatmap ? "\u0646\u0645\u0627\u06CC\u0634 \u0641\u0639\u0627\u0644\u06CC\u062A: \u0628\u0633\u062A\u0646" : "\u0646\u0645\u0627\u06CC\u0634 \u0641\u0639\u0627\u0644\u06CC\u062A (۱۲ \u0647\u0641\u062A\u0647 \u0627\u062E\u06CC\u0631)"
+  ) : null;
+  const heatmap = !editing && task && showHeatmap ? React.createElement("div", { className: "mb-2" }, React.createElement(TrackHeatmap, { task, subsection })) : null;
 
   const cadenceModes = [
     ["inherit", "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"],
@@ -1474,7 +1531,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
 
   const body = editing ? editForm : task ? React.createElement(ProgressiveTaskBar, { task, onAddProgress }) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
 
-  return React.createElement(GlassCard, { className: "p-3.5" }, header, subtitle, notesDisplay, body);
+  return React.createElement(GlassCard, { className: "p-3.5" }, header, subtitle, notesDisplay, heatmapToggle, heatmap, body);
 }
 
 function AddSubsectionForm({ onAdd }) {
