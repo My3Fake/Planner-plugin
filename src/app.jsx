@@ -37,7 +37,17 @@ function isTaskDueOn(task, dateObj) {
   if (!task.recurrence || task.recurrence === "none") return true;
   if (task.recurrence === "daily") return true;
   if (task.recurrence === "weekly") {
-    const days = task.recurrenceWeekdays && task.recurrenceWeekdays.length ? task.recurrenceWeekdays : [dateObj.getDay()];
+    const days = task.recurrenceWeekdays;
+    // AddTaskModal never lets a weekly task end up with zero selected
+    // weekdays (its "weekdays" state always keeps at least one day, see
+    // toggleWeekday there), so this only matters for malformed/legacy
+    // data. Previously this fell back to `[dateObj.getDay()]` and then
+    // checked `.includes(dateObj.getDay())` — comparing the value against
+    // itself, which is always true no matter which date is passed in, for
+    // any caller. That accidentally behaved like "due every day" but for
+    // the wrong reason (a tautology, not a real check) and was a landmine
+    // for future edits. Made explicit here with the same net effect.
+    if (!days || !days.length) return true;
     return days.includes(dateObj.getDay());
   }
   if (task.recurrence === "monthly") {
@@ -1217,7 +1227,7 @@ function LearningGoalEditor({ topic, onChange }) {
   ), daysLeft !== null && /* @__PURE__ */ React.createElement("span", { className: "text-[11px]", style: { color: daysLeft < 0 ? "#DB2777" : "#22D3EE" } }, daysLeft >= 0 ? `${daysLeft} \u0631\u0648\u0632 \u0645\u0648\u0646\u062F\u0647` : `${-daysLeft} \u0631\u0648\u0632 \u06AF\u0630\u0634\u062A\u0647`)), hasTarget && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-2.5" }, /* @__PURE__ */ React.createElement("input", { type: "number", value: jy, onChange: (e) => onChange({ ...g, targetJy: Number(e.target.value) }), className: "w-20 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" }), /* @__PURE__ */ React.createElement("select", { value: jm, onChange: (e) => onChange({ ...g, targetJm: Number(e.target.value) }), className: "bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" }, JALALI_MONTHS_FA.map((m, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i + 1, className: "bg-[#120814]" }, m))), /* @__PURE__ */ React.createElement("input", { type: "number", min: "1", max: "31", value: jd, onChange: (e) => onChange({ ...g, targetJd: Number(e.target.value) }), className: "w-16 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })));
 }
 function LearningRoutineEditor({ topic, onChange }) {
-  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u0631\u0648\u062A\u06CC\u0646 \u062A\u06A9\u0631\u0627\u0631 \u2014 \u0628\u0631\u0627\u06CC \u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627\u06CC \u0627\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 flex-wrap mb-2" }, RECURRENCE_TYPES.filter(([v]) => v !== "none").map(([v, l]) => /* @__PURE__ */ React.createElement(Chip, { key: v, active: topic.recurrence === v, color: "#22D3EE", onClick: () => onChange({ ...topic, recurrence: v }) }, l))), topic.recurrence === "weekly" && /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap" }, WEEKDAYS.map((w) => /* @__PURE__ */ React.createElement(
+  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u0631\u0648\u062A\u06CC\u0646 \u062A\u06A9\u0631\u0627\u0631 \u2014 \u0628\u0631\u0627\u06CC \u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627\u06CC \u0627\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 flex-wrap mb-2" }, RECURRENCE_TYPES.filter(([v]) => v !== "none").map(([v, l]) => /* @__PURE__ */ React.createElement(Chip, { key: v, active: topic.recurrence === v, color: "#22D3EE", onClick: () => onChange({ ...topic, recurrence: v, recurrenceWeekdays: v === "weekly" && !(topic.recurrenceWeekdays && topic.recurrenceWeekdays.length) ? [(/* @__PURE__ */ new Date()).getDay()] : topic.recurrenceWeekdays }) }, l))), topic.recurrence === "weekly" && /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap" }, WEEKDAYS.map((w) => /* @__PURE__ */ React.createElement(
     Chip,
     {
       key: w.id,
@@ -1239,7 +1249,8 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   const [cadenceWeekdays, setCadenceWeekdays] = useState((ov && ov.recurrenceWeekdays) || []);
 
   const saveEdit = () => {
-    const recurrenceOverride = cadenceMode === "inherit" ? null : { recurrence: cadenceMode, recurrenceWeekdays: cadenceMode === "weekly" ? cadenceWeekdays : void 0 };
+    const effectiveWeekdays = cadenceWeekdays.length ? cadenceWeekdays : [(/* @__PURE__ */ new Date()).getDay()];
+    const recurrenceOverride = cadenceMode === "inherit" ? null : { recurrence: cadenceMode, recurrenceWeekdays: cadenceMode === "weekly" ? effectiveWeekdays : void 0 };
     onUpdateSubsection(subsection.id, {
       unit: unit.trim() || "\u0648\u0627\u062D\u062F",
       target: Math.max(1, Number(target) || 1),
@@ -1491,6 +1502,11 @@ function isTrackDueOn(subsection, topic, d) {
   const recurrence = ov ? ov.recurrence : topic.recurrence || "daily";
   if (recurrence === "weekly") {
     const weekdays = ov ? ov.recurrenceWeekdays || [] : topic.recurrenceWeekdays || [];
+    // Unlike isTaskDueOn, an empty list here means "never due" (not "every
+    // day") — [].includes(...) is always false. LearningRoutineEditor and
+    // SubsectionCard.saveEdit both now default to today's weekday the
+    // moment "weekly" is chosen with nothing selected yet, so this empty
+    // case should only be reachable from old/malformed data, not new saves.
     return weekdays.includes(d.getDay());
   }
   return true;
