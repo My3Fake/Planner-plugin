@@ -453,6 +453,7 @@ var ICON_PATHS = {
   bell: "M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6ZM10 20a2 2 0 0 0 4 0",
   repeat: "M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3",
   play: "M7 5v14l12-7Z",
+  pause: "M8 5v14M16 5v14",
   headphones: "M4 13v-1a8 8 0 0 1 16 0v1",
   book: "M6 3h11a2 2 0 0 1 2 2v15l-6-2-6 2V5a2 2 0 0 1 2-2Z",
   "external-link": "M9 15 20 4M14 4h6v6M20 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6",
@@ -1335,12 +1336,13 @@ function LearningRoutineEditor({ topic, onChange }) {
     w.label
   ))), (topic.recurrence === "monthly" || topic.recurrence === "yearly") && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500" }, "\u0631\u0648\u0632 \u062F\u0642\u06CC\u0642 \u062A\u06A9\u0631\u0627\u0631 \u0645\u0627\u0647\u0627\u0646\u0647/\u0633\u0627\u0644\u0627\u0646\u0647 \u0631\u0648 \u0645\u06CC\u200C\u062A\u0648\u0646\u06CC \u0627\u0632 \u062A\u0628 \xAB\u062A\u0633\u06A9\u200C\u0647\u0627\xBB\u060C \u0631\u0648\u06CC \u062A\u0633\u06A9\u0650 \u0647\u0645\u0648\u0646 \u0632\u06CC\u0631\u0628\u062E\u0634\u060C \u062F\u0642\u06CC\u0642\u200C\u062A\u0631 \u062A\u0646\u0638\u06CC\u0645 \u06A9\u0646\u06CC."));
 }
-function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteSubsection, onAddProgress }) {
+function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteSubsection, onAddProgress, onTogglePause, onToggleArchive, onDuplicate }) {
   const [editing, setEditing] = useState(false);
   const [unit, setUnit] = useState(subsection.unit);
   const [target, setTarget] = useState(subsection.target);
   const [quota, setQuota] = useState(subsection.quotaPerPeriod ?? 1);
   const [rangeLabel, setRangeLabel] = useState(subsection.rangeLabel || "");
+  const [notes, setNotes] = useState(subsection.notes || "");
   const ov = subsection.recurrenceOverride;
   const [cadenceMode, setCadenceMode] = useState(ov ? ov.recurrence : "inherit");
   const [cadenceWeekdays, setCadenceWeekdays] = useState((ov && ov.recurrenceWeekdays) || []);
@@ -1353,7 +1355,8 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
       target: Math.max(1, Number(target) || 1),
       quotaPerPeriod: Math.max(0, Number(quota) || 0),
       rangeLabel: rangeLabel.trim(),
-      recurrenceOverride
+      recurrenceOverride,
+      notes: notes.trim()
     });
     setEditing(false);
   };
@@ -1365,23 +1368,35 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
     : ((ov.recurrenceWeekdays || []).map((id) => WEEKDAYS.find((w) => w.id === id)).filter(Boolean).map((w) => w.label).join("\u060C ") || "\u0631\u0648\u0632\u0647\u0627\u06CC \u062E\u0627\u0635");
 
   const subtitleParts = [];
-  if (subsection.quotaPerPeriod) subtitleParts.push(`\u0633\u0647\u0645\u06CC\u0647: ${subsection.quotaPerPeriod} ${subsection.unit} / \u062F\u0648\u0631\u0647`);
-  subtitleParts.push(cadenceLabel);
+  if (subsection.archived) {
+    subtitleParts.push("\u{1F5C4}\uFE0F \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647");
+  } else if (subsection.paused) {
+    subtitleParts.push("\u23F8\uFE0F \u0645\u062A\u0648\u0642\u0641 \u0634\u062F\u0647 \u2014 \u0633\u0647\u0645\u06CC\u0647/\u0628\u062F\u0647\u06CC \u0645\u0648\u0642\u062A\u0627\u064B \u062D\u0633\u0627\u0628 \u0646\u0645\u06CC\u200C\u0634\u0648\u062F");
+  } else {
+    if (subsection.quotaPerPeriod) subtitleParts.push(`\u0633\u0647\u0645\u06CC\u0647: ${subsection.quotaPerPeriod} ${subsection.unit} / \u062F\u0648\u0631\u0647`);
+    subtitleParts.push(cadenceLabel);
+  }
   if (subsection.rangeLabel) subtitleParts.push(subsection.rangeLabel);
+
+  const iconBtn = (icon, onClick, extraClass, title) => React.createElement("button", { type: "button", onClick, title, className: `text-slate-400 ${extraClass || "hover:text-fuchsia-300"}` }, React.createElement(Ic, { name: icon, size: 13 }));
 
   const header = React.createElement(
     "div",
-    { className: "flex items-center justify-between mb-1" },
-    React.createElement("p", { className: "text-sm font-bold text-slate-100" }, subsection.title),
+    { className: "flex items-center justify-between mb-1 gap-2" },
+    React.createElement("p", { className: "text-sm font-bold truncate", style: { color: subsection.archived || subsection.paused ? "var(--text-muted)" : "var(--text-normal)" } }, subsection.title),
     React.createElement(
       "div",
-      { className: "flex items-center gap-2" },
-      React.createElement("button", { onClick: () => setEditing((v) => !v), className: "text-slate-400 hover:text-fuchsia-300" }, React.createElement(Ic, { name: "edit", size: 13 })),
-      React.createElement("button", { onClick: () => onDeleteSubsection(subsection.id), className: "text-rose-400/70 hover:text-rose-400" }, React.createElement(Ic, { name: "trash", size: 13 }))
+      { className: "flex items-center gap-2 shrink-0" },
+      onDuplicate && iconBtn("copy", onDuplicate, "hover:text-cyan-300", "\u06A9\u067E\u06CC \u0645\u0633\u06CC\u0631"),
+      onTogglePause && !subsection.archived && iconBtn(subsection.paused ? "play" : "pause", onTogglePause, subsection.paused ? "hover:text-cyan-300" : "hover:text-amber-300", subsection.paused ? "\u0627\u0632\u0633\u0631\u06AF\u06CC\u0631\u06CC" : "\u062A\u0648\u0642\u0641 \u0645\u0648\u0642\u062A"),
+      onToggleArchive && iconBtn("folder", onToggleArchive, subsection.archived ? "text-cyan-400" : "hover:text-cyan-300", subsection.archived ? "\u062E\u0627\u0631\u062C \u06A9\u0631\u062F\u0646 \u0627\u0632 \u0622\u0631\u0634\u06CC\u0648" : "\u0622\u0631\u0634\u06CC\u0648 \u06A9\u0631\u062F\u0646"),
+      iconBtn("edit", () => setEditing((v) => !v), "hover:text-fuchsia-300", "\u0648\u06CC\u0631\u0627\u06CC\u0634"),
+      iconBtn("trash", () => onDeleteSubsection(subsection.id), "text-rose-400/70 hover:text-rose-400", "\u062D\u0630\u0641")
     )
   );
 
   const subtitle = !editing ? React.createElement("p", { className: "text-[10px] mb-2", style: { color: "var(--text-faint)" } }, subtitleParts.join(" \u00B7 ")) : null;
+  const notesDisplay = !editing && subsection.notes ? React.createElement("p", { className: "text-[11px] mb-2 italic", style: { color: "var(--text-muted)" } }, subsection.notes) : null;
 
   const cadenceModes = [
     ["inherit", "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"],
@@ -1435,12 +1450,18 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
         WEEKDAYS.map((w) => React.createElement(Chip, { key: w.id, active: cadenceWeekdays.includes(w.id), color: "#22D3EE", onClick: () => setCadenceWeekdays((p) => p.includes(w.id) ? p.filter((x) => x !== w.id) : [...p, w.id]) }, w.label))
       )
     ),
+    React.createElement(
+      "div",
+      null,
+      React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u06CC\u0627\u062F\u062F\u0627\u0634\u062A (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"),
+      React.createElement("textarea", { value: notes, onChange: (e) => setNotes(e.target.value), rows: 2, placeholder: "\u0645\u062B\u0644\u0627\u064B: \u0645\u0646\u0628\u0639 \u06CC\u0627 \u0631\u0648\u0634 \u062A\u0645\u0631\u06CC\u0646 \u0627\u06CC\u0646 \u0645\u0633\u06CC\u0631", className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none resize-none" })
+    ),
     React.createElement("button", { onClick: saveEdit, className: "w-full py-1.5 rounded-lg bg-fuchsia-500/20 text-fuchsia-300 text-xs font-medium" }, "\u0630\u062E\u06CC\u0631\u0647")
   );
 
   const body = editing ? editForm : task ? React.createElement(ProgressiveTaskBar, { task, onAddProgress }) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
 
-  return React.createElement(GlassCard, { className: "p-3.5" }, header, subtitle, body);
+  return React.createElement(GlassCard, { className: "p-3.5" }, header, subtitle, notesDisplay, body);
 }
 
 function AddSubsectionForm({ onAdd }) {
@@ -1481,6 +1502,8 @@ function NewLearningTopicModal({ onClose, onAdd }) {
 function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, deleteTask }) {
   const [activeId, setActiveId] = useState(projects[0]?.id ?? null);
   const [showNewTopic, setShowNewTopic] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [sortMode, setSortMode] = useState("default");
   const topic = projects.find((p) => p.id === activeId);
   const updateTopic = (fn) => setProjects((prev) => prev.map((p) => p.id === activeId ? fn(p) : p));
   const subsectionTasks = (t2) => (t2?.subsections || []).map((sec) => tasks.find((tk) => tk.id === sec.linkedTaskId)).filter(Boolean);
@@ -1515,7 +1538,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       progressTarget: 10,
       progressCurrent: 0
     });
-    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId }] }));
+    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "" }] }));
   };
   const updateSubsection = (id, patch) => {
     if (!topic) return;
@@ -1538,6 +1561,62 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     updateTopic((p) => ({ ...p, subsections: p.subsections.filter((s) => s.id !== id) }));
     if (sec && sec.linkedTaskId) deleteTask(sec.linkedTaskId);
   };
+  // Pausing hides a track from due/balance calculations (isTrackDueOn
+  // returns false while `paused`); resuming shifts `createdDate` forward by
+  // the number of paused days, so the days the track was on hold don't
+  // retroactively count as missed quota once it's active again (see
+  // computeTrackBalance, which walks createdDate -> today day by day).
+  const togglePause = (sec) => {
+    if (sec.paused) {
+      const pausedDays = sec.pausedSince ? daysBetweenKeys(sec.pausedSince, todayKey()) : 0;
+      const newCreatedDate = pausedDays > 0 ? addDaysToKey(sec.createdDate || todayKey(), pausedDays) : sec.createdDate;
+      updateSubsection(sec.id, { paused: false, pausedSince: null, createdDate: newCreatedDate });
+    } else {
+      updateSubsection(sec.id, { paused: true, pausedSince: todayKey() });
+    }
+  };
+  // Archiving is meant for tracks that are done/retired for good (not a
+  // temporary hold) — it also clears any pause state so a track can't be
+  // both paused and archived at once.
+  const toggleArchive = (sec) => {
+    updateSubsection(sec.id, { archived: !sec.archived, paused: false, pausedSince: null });
+  };
+  const duplicateSubsection = (sec) => {
+    if (!topic) return;
+    const newTaskId = uid();
+    const sourceTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
+    saveTask({
+      id: newTaskId,
+      title: `${topic.title} \u2014 ${sec.title} (\u06A9\u067E\u06CC)`,
+      desc: "",
+      quad: "q2",
+      priority: 2,
+      status: "todo",
+      completedDate: null,
+      daypart: "morning",
+      tag: "\u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC",
+      time: null,
+      duration: 45,
+      recurrence: sourceTask ? sourceTask.recurrence : topic.recurrence || "daily",
+      reminder: false,
+      recurrenceWeekdays: sourceTask ? sourceTask.recurrenceWeekdays : void 0,
+      recurrenceDay: sourceTask ? sourceTask.recurrenceDay : void 0,
+      recurrenceMonth: sourceTask ? sourceTask.recurrenceMonth : void 0,
+      subtasks: [],
+      progressType: "progressive",
+      progressUnit: sec.unit,
+      progressTarget: sec.target,
+      progressCurrent: 0,
+      progressLog: []
+    });
+    updateTopic((p) => ({
+      ...p,
+      subsections: [
+        ...p.subsections,
+        { ...sec, id: uid(), title: `${sec.title} (\u06A9\u067E\u06CC)`, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null }
+      ]
+    }));
+  };
   if (!topic) {
     return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-8 flex flex-col items-center text-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "graduation-cap", size: 26, className: "text-fuchsia-300 mb-2" }), /* @__PURE__ */ React.createElement("p", { className: "text-slate-300 text-sm" }, "\u0647\u0646\u0648\u0632 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u0646\u0633\u0627\u062E\u062A\u06CC")), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0645\u0648\u0636\u0648\u0639 \u062C\u062F\u06CC\u062F"), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
       const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [] };
@@ -1546,6 +1625,34 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       setShowNewTopic(false);
     } }));
   }
+  const archivedCount = topic.subsections.filter((s) => s.archived).length;
+  const sortModes = [["default", "\u067E\u06CC\u0634\u200C\u0641\u0631\u0636"], ["urgency", "\u0641\u0648\u0631\u06CC\u062A"], ["alpha", "\u0627\u0644\u0641\u0628\u0627"]];
+  const visibleSubsections = topic.subsections.filter((s) => showArchived || !s.archived).slice().sort((a, b) => {
+    if (sortMode === "alpha") return a.title.localeCompare(b.title, "fa");
+    if (sortMode === "urgency") {
+      const taskA = tasks.find((tk) => tk.id === a.linkedTaskId);
+      const taskB = tasks.find((tk) => tk.id === b.linkedTaskId);
+      const balA = computeTrackBalance(a, topic, taskA)?.balance ?? -Infinity;
+      const balB = computeTrackBalance(b, topic, taskB)?.balance ?? -Infinity;
+      return balB - balA;
+    }
+    return 0;
+  });
+  const subsectionsHeader = React.createElement(
+    "div",
+    { className: "flex items-center justify-between mb-2 flex-wrap gap-1.5" },
+    React.createElement("p", { className: "text-xs font-bold text-slate-300" }, "\u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627"),
+    React.createElement(
+      "div",
+      { className: "flex items-center gap-1.5 flex-wrap" },
+      sortModes.map(([id, label]) => React.createElement(Chip, { key: id, active: sortMode === id, color: "#22D3EE", onClick: () => setSortMode(id) }, label)),
+      archivedCount > 0 && React.createElement(
+        "button",
+        { type: "button", onClick: () => setShowArchived((v) => !v), className: "text-[10px] px-2 py-1 rounded-lg border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-muted)" } },
+        showArchived ? "\u0639\u062F\u0645 \u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627" : `\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627 (${archivedCount})`
+      )
+    )
+  );
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-1" }, projects.map((p) => /* @__PURE__ */ React.createElement(
     "button",
     {
@@ -1559,7 +1666,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     topic.subsections.forEach((s) => s.linkedTaskId && deleteTask(s.linkedTaskId));
     setProjects((prev) => prev.filter((p) => p.id !== topic.id));
     setActiveId(null);
-  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), /* @__PURE__ */ React.createElement(LearningRoutineEditor, { topic, onChange: (next) => updateTopic(() => next) }), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.map((sec) => /* @__PURE__ */ React.createElement(
+  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), /* @__PURE__ */ React.createElement(LearningRoutineEditor, { topic, onChange: (next) => updateTopic(() => next) }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => /* @__PURE__ */ React.createElement(
     SubsectionCard,
     {
       key: sec.id,
@@ -1568,7 +1675,10 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       task: tasks.find((tk) => tk.id === sec.linkedTaskId),
       onUpdateSubsection: updateSubsection,
       onDeleteSubsection: deleteSubsection,
-      onAddProgress
+      onAddProgress,
+      onTogglePause: () => togglePause(sec),
+      onToggleArchive: () => toggleArchive(sec),
+      onDuplicate: () => duplicateSubsection(sec)
     }
   ))), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
     const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [] };
@@ -1595,7 +1705,23 @@ function lastNDays(n) {
 function dateKeyOf(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+function keyToDate(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function addDaysToKey(key, days) {
+  const dt = keyToDate(key);
+  dt.setDate(dt.getDate() + days);
+  return dateKeyOf(dt);
+}
+function daysBetweenKeys(key1, key2) {
+  return Math.round((keyToDate(key2) - keyToDate(key1)) / 864e5);
+}
 function isTrackDueOn(subsection, topic, d) {
+  // Paused/archived tracks are never "due" — callers that need to know
+  // *why* (to show a distinct label instead of a numeric balance) check
+  // subsection.paused/archived directly rather than inferring it from here.
+  if (subsection.archived || subsection.paused) return false;
   const ov = subsection.recurrenceOverride;
   const recurrence = ov ? ov.recurrence : topic.recurrence || "daily";
   if (recurrence === "weekly") {
@@ -1611,7 +1737,7 @@ function isTrackDueOn(subsection, topic, d) {
 }
 function computeTrackBalance(subsection, topic, task) {
   const quota = subsection.quotaPerPeriod || 0;
-  if (!quota || !task) return null;
+  if (!quota || !task || subsection.archived || subsection.paused) return null;
   const startKey = subsection.createdDate || todayKey();
   const [sy, sm, sd] = startKey.split("-").map(Number);
   const cursor = new Date(sy, sm - 1, sd);
@@ -2061,7 +2187,7 @@ function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
   const rows = [];
   projects.forEach((topic) => {
     (topic.subsections || []).forEach((sec) => {
-      if (!sec.quotaPerPeriod) return;
+      if (!sec.quotaPerPeriod || sec.paused || sec.archived) return;
       const task = tasks.find((tk) => tk.id === sec.linkedTaskId);
       if (!task) return;
       rows.push({ topic, sec, task });
