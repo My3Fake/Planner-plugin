@@ -184,7 +184,7 @@ var DEFAULT_FEATURES = {
   showMatrix: true,
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
-var DEFAULT_APPEARANCE = { fontFamily: "default" };
+var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable" };
 // Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
 // settings-tab.ts is plain TS, not part of this React tree) — same
 // low-divergence-risk duplication already used for QUADRANTS/PRIORITIES/
@@ -3189,7 +3189,7 @@ function LifeFlowApp() {
     "div",
     {
       dir: langDir,
-      className: "lifeflow-app-root w-full text-white relative lg:flex",
+      className: `lifeflow-app-root w-full text-white relative lg:flex${settings.appearance?.density === "compact" ? " lifeflow-density-compact" : ""}`,
       style: { fontFamily: resolveFontFamily(settings.appearance?.fontFamily) }
     },
     /* @__PURE__ */ React.createElement("style", null, `

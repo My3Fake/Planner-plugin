@@ -41,6 +41,7 @@ interface LifeFlowSettings {
 	};
 	appearance: {
 		fontFamily: string;
+		density: string;
 	};
 	[key: string]: unknown;
 }
@@ -60,7 +61,7 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 	},
 	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45 },
 	reports: { folderName: "LifeFlow Reports" },
-	appearance: { fontFamily: "default" },
+	appearance: { fontFamily: "default", density: "comfortable" },
 };
 
 const LANGUAGE_OPTIONS: Record<string, string> = {
@@ -108,6 +109,11 @@ const FONT_OPTIONS: Record<string, string> = {
 	obsidian: "دقیقاً فونت تم فعلی Obsidian",
 	vazirmatn: "همیشه Vazirmatn",
 	system: "فونت سیستم‌عامل",
+};
+
+const DENSITY_OPTIONS: Record<string, string> = {
+	comfortable: "راحت (پیش‌فرض)",
+	compact: "فشرده (فاصله‌گذاری کمتر بین عناصر)",
 };
 
 export class LifeFlowSettingTab extends PluginSettingTab {
@@ -207,6 +213,19 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 				drop.onChange((value) => {
 					const next = this.readSettings();
 					next.appearance.fontFamily = value;
+					this.writeSettings(next);
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("تراکم چیدمان")
+			.setDesc("حالت «فشرده» فاصله‌گذاری داخلی/بین عناصر رابط کاربری را کم می‌کند تا محتوای بیشتری در یک صفحه جا شود؛ روی اندازه‌ی متن یا دکمه‌ها اثر نمی‌گذارد.")
+			.addDropdown((drop) => {
+				Object.entries(DENSITY_OPTIONS).forEach(([id, label]) => drop.addOption(id, label));
+				drop.setValue(settings.appearance.density);
+				drop.onChange((value) => {
+					const next = this.readSettings();
+					next.appearance.density = value;
 					this.writeSettings(next);
 				});
 			});
