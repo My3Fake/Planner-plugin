@@ -189,7 +189,7 @@ var LANGUAGES = [
   { id: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", dir: "rtl" }
 ];
 var DEFAULT_NOTIFICATIONS = { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false, dndDuringFocus: true };
-var DEFAULT_TASK_DEFAULTS = { quad: "q2", priority: 2, daypart: "morning", duration: 45 };
+var DEFAULT_TASK_DEFAULTS = { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false };
 var DEFAULT_FEATURES = {
   showMatrix: true,
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
@@ -535,7 +535,41 @@ function Chip({ active, onClick, children, color }) {
     children
   );
 }
-function ModalShell({ title, onClose, onSubmit, footer, children }) {
+function ModalShell({ title, onClose, onSubmit, footer, submitLabel, submitDisabled, cancelLabel, children }) {
+  // Every Add*/New*Modal used to build its own single-button footer with a
+  // hand-picked (and inconsistent — different gradients/directions in each
+  // file) gradient. Centralizing it here means: (1) every modal gets the
+  // exact same, native-looking two-button row — a clearly secondary
+  // "cancel" action and a clearly primary .mod-cta "confirm" action, so the
+  // footer is predictable no matter which modal is open, and (2) the
+  // primary action finally uses Obsidian's own accent styling instead of a
+  // hardcoded pink/fuchsia gradient. Passing `footer` explicitly still
+  // fully overrides this (used by BackupModal's drag-and-drop area and
+  // SettingsModal, which don't have a single "confirm" action).
+  const defaultFooter = submitLabel ? /* @__PURE__ */ React.createElement(
+    "div",
+    { style: { display: "flex", gap: 8 } },
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: onClose,
+        className: "rounded-xl py-3 font-bold text-sm border",
+        style: { flex: "1 1 0%", borderColor: "var(--background-modifier-border)", color: "var(--text-muted)", background: "transparent" }
+      },
+      cancelLabel || "\u0627\u0646\u0635\u0631\u0627\u0641"
+    ),
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "submit",
+        disabled: submitDisabled,
+        className: "mod-cta rounded-xl py-3 font-bold text-sm disabled:opacity-40",
+        style: { flex: "2 1 0%" }
+      },
+      submitLabel
+    )
+  ) : null;
   const content = /* @__PURE__ */ React.createElement(
     "div",
     {
@@ -566,10 +600,13 @@ function ModalShell({ title, onClose, onSubmit, footer, children }) {
       },
       /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 20px 12px", flexShrink: 0, position: "relative", zIndex: 1 } }, /* @__PURE__ */ React.createElement("h3", { className: "text-white font-bold text-lg", style: { margin: 0 } }, title), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: onClose, className: "text-slate-400 hover:text-white w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.06] border border-white/10" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 18 }))),
       /* @__PURE__ */ React.createElement("div", { style: { padding: "0 20px", overflowY: "auto", flex: "1 1 auto", minHeight: 0, position: "relative", zIndex: 1 } }, children),
-      footer && /* @__PURE__ */ React.createElement("div", { style: { padding: "12px 20px 20px", flexShrink: 0, borderTop: "1px solid var(--background-modifier-border)", position: "relative", zIndex: 1 } }, footer)
+      (footer || defaultFooter) && /* @__PURE__ */ React.createElement("div", { style: { padding: "12px 20px 20px", flexShrink: 0, borderTop: "1px solid var(--background-modifier-border)", position: "relative", zIndex: 1 } }, footer || defaultFooter)
     )
   );
   return ReactDOM.createPortal(content, document.body);
+}
+function FieldLabel({ children, icon }) {
+  return /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold mb-2 flex items-center gap-1.5", style: { color: "var(--text-muted)", marginTop: 18 } }, icon && /* @__PURE__ */ React.createElement(Ic, { name: icon, size: 12 }), children);
 }
 function TextInput(props) {
   return /* @__PURE__ */ React.createElement("input", { ...props, className: `w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 text-sm mb-3 outline-none focus:border-fuchsia-400/60 ${props.className || ""}` });
@@ -703,7 +740,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
   const toggleWeekday = (id) => setWeekdays((p) => p.includes(id) ? p.length > 1 ? p.filter((x) => x !== id) : p : [...p, id]);
   const [subInput, setSubInput] = useState(initialTask && initialTask.subtasks ? initialTask.subtasks.map((s) => s.title).join(", ") : "");
   const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive");
-  const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime);
+  const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime || !isEdit && !!defaults.advancedOpenByDefault);
   const submit = () => {
     if (!title.trim()) return;
     onAdd({
@@ -738,7 +775,8 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       title: isEdit ? "\u0648\u06CC\u0631\u0627\u06CC\u0634 \u062A\u0633\u06A9" : "\u062A\u0633\u06A9 \u062C\u062F\u06CC\u062F",
       onClose,
       onSubmit: submit,
-      footer: /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: !title.trim(), className: "w-full rounded-xl py-3 font-bold text-sm bg-gradient-to-l from-[#C026D3] to-[#DB2777] text-white disabled:opacity-30" }, isEdit ? "\u0630\u062E\u06CC\u0631\u0647 \u062A\u063A\u06CC\u06CC\u0631\u0627\u062A" : "\u0627\u0641\u0632\u0648\u062F\u0646 \u062A\u0633\u06A9")
+      submitLabel: isEdit ? "\u0630\u062E\u06CC\u0631\u0647\u200C\u06CC \u062A\u063A\u06CC\u06CC\u0631\u0627\u062A" : "\u0627\u0641\u0632\u0648\u062F\u0646 \u062A\u0633\u06A9",
+      submitDisabled: !title.trim()
     },
     /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0639\u0646\u0648\u0627\u0646 \u062A\u0633\u06A9 \u2014 \u0645\u062B\u0644\u0627\u064B \u062D\u0644 \u0646\u0645\u0648\u0646\u0647\u200C\u0633\u0648\u0627\u0644 \u0641\u06CC\u0632\u06CC\u06A9" }),
     /* @__PURE__ */ React.createElement(
@@ -751,11 +789,11 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
         className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-xs mb-4 outline-none resize-none focus:border-fuchsia-400/60"
       }
     ),
-    /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0631\u0628\u0639 \u0622\u06CC\u0632\u0646\u0647\u0627\u0648\u0631"),
+    /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0631\u0628\u0639 \u0622\u06CC\u0632\u0646\u0647\u0627\u0648\u0631"),
     /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-4" }, QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: quad === q.id, color: q.color, onClick: () => setQuad(q.id) }, q.label))),
-    /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0627\u0648\u0644\u0648\u06CC\u062A"),
+    /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0627\u0648\u0644\u0648\u06CC\u062A"),
     /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4" }, PRIORITIES.map((p) => /* @__PURE__ */ React.createElement(Chip, { key: p.level, active: priority === p.level, color: "#DB2777", onClick: () => setPriority(p.level) }, p.label))),
-    /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0632\u0645\u0627\u0646 \u0631\u0648\u0632"),
+    /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0632\u0645\u0627\u0646 \u0631\u0648\u0632"),
     /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4" }, DAYPARTS.map((d) => /* @__PURE__ */ React.createElement(Chip, { key: d.id, active: daypart === d.id, onClick: () => setDaypart(d.id) }, d.label))),
     /* @__PURE__ */ React.createElement(
       "button",
@@ -768,9 +806,9 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       /* @__PURE__ */ React.createElement(Ic, { name: "chevron-right", size: 13, className: "text-slate-500 shrink-0", style: { transform: showMore ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .2s ease" } })
     ),
     showMore && /* @__PURE__ */ React.createElement(
-      React.Fragment,
-      null,
-      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062F\u0642\u06CC\u0642 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u2014 \u0628\u0631\u0627\u06CC Time Blocking)"),
+      "div",
+      { className: "mb-4 border rounded-xl p-3.5", style: { borderColor: "var(--background-modifier-border)", background: "var(--background-secondary)" } },
+      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062F\u0642\u06CC\u0642 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"),
       /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4" }, /* @__PURE__ */ React.createElement(
         "input",
         {
@@ -941,7 +979,8 @@ function AddBookModal({ onClose, onAdd }) {
       title: "\u0627\u0641\u0632\u0648\u062F\u0646 \u06A9\u062A\u0627\u0628",
       onClose,
       onSubmit: submit,
-      footer: /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: !title.trim(), className: "w-full rounded-xl py-3 font-bold text-sm bg-gradient-to-l from-[#C026D3] to-[#DB2777] text-white disabled:opacity-30" }, "\u0627\u0641\u0632\u0648\u062F\u0646")
+      submitLabel: "\u0627\u0641\u0632\u0648\u062F\u0646",
+      submitDisabled: !title.trim()
     },
     /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0639\u0646\u0648\u0627\u0646 \u06A9\u062A\u0627\u0628" }),
     /* @__PURE__ */ React.createElement(TextInput, { value: author, onChange: (e) => setAuthor(e.target.value), placeholder: "\u0646\u0648\u06CC\u0633\u0646\u062F\u0647" }),
@@ -1002,7 +1041,8 @@ function AddVideoModal({ onClose, onAdd }) {
       title: "\u0627\u0641\u0632\u0648\u062F\u0646 \u0648\u06CC\u062F\u06CC\u0648",
       onClose,
       onSubmit: submit,
-      footer: /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: source === "link" ? !url.trim() : !fileData, className: "w-full rounded-xl py-3 font-bold text-sm bg-gradient-to-l from-[#DB2777] to-[#C026D3] text-white disabled:opacity-30" }, "\u0627\u0641\u0632\u0648\u062F\u0646")
+      submitLabel: "\u0627\u0641\u0632\u0648\u062F\u0646",
+      submitDisabled: source === "link" ? !url.trim() : !fileData
     },
     /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4" }, /* @__PURE__ */ React.createElement(Chip, { active: source === "link", onClick: () => {
       setSource("link");
@@ -1067,7 +1107,8 @@ function AddPodcastModal({ onClose, onAdd }) {
       title: "\u0627\u0641\u0632\u0648\u062F\u0646 \u067E\u0627\u062F\u06A9\u0633\u062A",
       onClose,
       onSubmit: submit,
-      footer: /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: source === "file" ? !fileData : !title.trim(), className: "w-full rounded-xl py-3 font-bold text-sm bg-gradient-to-l from-[#22D3EE] to-[#C026D3] text-white disabled:opacity-30" }, "\u0627\u0641\u0632\u0648\u062F\u0646")
+      submitLabel: "\u0627\u0641\u0632\u0648\u062F\u0646",
+      submitDisabled: source === "file" ? !fileData : !title.trim()
     },
     /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4" }, /* @__PURE__ */ React.createElement(Chip, { active: source === "link", onClick: () => {
       setSource("link");
@@ -1193,7 +1234,8 @@ function AddExerciseModal({ onClose, onAdd }) {
       title: "\u062A\u0645\u0631\u06CC\u0646 \u062C\u062F\u06CC\u062F",
       onClose,
       onSubmit: submit,
-      footer: /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: !name.trim(), className: "w-full rounded-xl py-3 font-bold text-sm bg-gradient-to-l from-[#67E8F9] to-[#22D3EE] text-white disabled:opacity-30" }, "\u0627\u0641\u0632\u0648\u062F\u0646")
+      submitLabel: "\u0627\u0641\u0632\u0648\u062F\u0646",
+      submitDisabled: !name.trim()
     },
     /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: name, onChange: (e) => setName(e.target.value), placeholder: "\u0646\u0627\u0645 \u062A\u0645\u0631\u06CC\u0646 \u2014 \u0645\u062B\u0644\u0627\u064B \u0628\u0627\u0631\u0641\u06CC\u06A9\u0633" }),
     /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, EXERCISE_TYPES.map((t2) => /* @__PURE__ */ React.createElement(Chip, { key: t2.id, active: type === t2.id, onClick: () => setType(t2.id) }, t2.id))),
@@ -1375,7 +1417,8 @@ function NewLearningTopicModal({ onClose, onAdd }) {
       title: "\u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u062C\u062F\u06CC\u062F",
       onClose,
       onSubmit: submit,
-      footer: /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: !title.trim(), className: "w-full rounded-xl py-3 font-bold text-sm bg-gradient-to-l from-[#C026D3] to-[#DB2777] text-white disabled:opacity-30" }, "\u0627\u06CC\u062C\u0627\u062F \u0645\u0648\u0636\u0648\u0639")
+      submitLabel: "\u0627\u06CC\u062C\u0627\u062F \u0645\u0648\u0636\u0648\u0639",
+      submitDisabled: !title.trim()
     },
     /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0645\u062B\u0644\u0627\u064B \u062D\u0641\u0638 \u0642\u0631\u0622\u0646" })
   );
@@ -2467,7 +2510,8 @@ function NewListModal({ onClose, onCreate }) {
           onClose();
         }
       },
-      footer: /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: !title.trim(), className: "w-full rounded-xl py-3 font-bold text-sm text-white disabled:opacity-30", style: { background: "linear-gradient(135deg,#C026D3,#DB2777)" } }, "\u0633\u0627\u062E\u062A \u0644\u06CC\u0633\u062A")
+      submitLabel: "\u0633\u0627\u062E\u062A \u0644\u06CC\u0633\u062A",
+      submitDisabled: !title.trim()
     },
     /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0645\u062B\u0644\u0627\u064B \u06A9\u062A\u0627\u0628\u200C\u0647\u0627\u06CC\u06CC \u06A9\u0647 \u0645\u06CC\u200C\u062E\u0648\u0627\u0645 \u0628\u062E\u0648\u0646\u0645" })
   );

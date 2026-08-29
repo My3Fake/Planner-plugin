@@ -35,6 +35,7 @@ interface LifeFlowSettings {
 		priority: number;
 		daypart: string;
 		duration: number;
+		advancedOpenByDefault: boolean;
 	};
 	reports: {
 		folderName: string;
@@ -59,7 +60,7 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 		showMatrix: true,
 		tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true },
 	},
-	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45 },
+	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false },
 	reports: { folderName: "LifeFlow Reports" },
 	appearance: { fontFamily: "default", density: "comfortable" },
 };
@@ -333,6 +334,18 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					const n = Math.max(5, Number(value) || 45);
 					const next = this.readSettings();
 					next.taskDefaults.duration = n;
+					this.writeSettings(next);
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("گزینه‌های بیشتر به‌طور پیش‌فرض باز باشند")
+			.setDesc("پنجره‌ی «تسک جدید» معمولاً بخش «زمان‌بندی/تکرار/یادآوری/...» را بسته نگه می‌دارد تا شلوغ نباشد؛ اگر معمولاً از این گزینه‌ها استفاده می‌کنید، همیشه باز نگه دارید.")
+			.addToggle((toggle) => {
+				toggle.setValue(!!settings.taskDefaults.advancedOpenByDefault);
+				toggle.onChange((value) => {
+					const next = this.readSettings();
+					next.taskDefaults.advancedOpenByDefault = value;
 					this.writeSettings(next);
 				});
 			});
