@@ -3250,7 +3250,7 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
     React.createElement("button", { onClick: onToday, className: "px-3 h-8 rounded-lg bg-white/[0.06] text-xs text-slate-300 font-medium" }, "\u0627\u0645\u0631\u0648\u0632"),
     React.createElement("button", { onClick: onNext, className: "w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center" }, React.createElement(Ic, { name: "chevron-left", size: 15 }))
   );
-  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-0.5" }, [["day", "\u0631\u0648\u0632"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
+  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
 function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
@@ -3385,6 +3385,64 @@ function WeekView({ cursor, tasks, onJumpDay }) {
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
+function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt }) {
+  if (!Jalali) return null;
+  const rowH = 22;
+  const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
+  const start = Jalali.jalaliStartOfWeek(cursor);
+  const days = Array.from({ length: 7 }, (_, i) => Jalali.addDays(start, i));
+  const today = /* @__PURE__ */ new Date();
+  const gridHeight = CAL_HOURS.length * rowH;
+  const headerHeight = 34;
+
+  const hourLabels = React.createElement(
+    "div",
+    { className: "relative w-8 shrink-0", style: { height: gridHeight, marginTop: headerHeight } },
+    CAL_HOURS.filter((mins) => mins % 60 === 0).map((mins) => React.createElement(
+      "span",
+      { key: mins, className: "absolute text-[9px] text-slate-500", style: { top: topFor(minutesToHHMM(mins)) - 5 } },
+      pad2(mins / 60), ":\u06F0\u06F0"
+    ))
+  );
+
+  const dayColumns = days.map((d, i) => {
+    const isToday = Jalali.isSameJalaliDay(d, today);
+    const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, d) && tsk.time);
+    const header = React.createElement(
+      "div",
+      { className: "text-center mb-1", style: { height: headerHeight } },
+      React.createElement("p", { className: "text-[9px] text-slate-500" }, WEEKDAY_SHORT_ORDER[i]),
+      React.createElement("p", { className: "text-xs font-bold", style: { color: isToday ? "var(--text-accent)" : "var(--text-muted)" } }, Jalali.toJalaliParts(d).jd)
+    );
+    const rows = CAL_HOURS.map((mins) => React.createElement("div", {
+      key: mins,
+      onClick: () => onCreateAt && onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins)))),
+      className: "absolute left-0 right-0 border-t border-white/[0.04] cursor-pointer",
+      style: { top: topFor(minutesToHHMM(mins)), height: rowH }
+    }));
+    const blocks = dayTasks.map((tsk) => {
+      const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
+      const h = Math.max((tsk.duration || 30) / 30 * rowH, rowH * 0.7);
+      return React.createElement(
+        "div",
+        {
+          key: tsk.id,
+          onClick: (e) => {
+            e.stopPropagation();
+            onEdit(tsk);
+          },
+          className: "absolute rounded-md overflow-hidden cursor-pointer px-1",
+          style: { top: topFor(tsk.time), height: h, left: 1, right: 1, background: `${q.color}22`, borderRight: `2px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1 }
+        },
+        React.createElement("p", { className: "text-[9px] font-medium truncate", style: { color: q.color } }, tsk.title)
+      );
+    });
+    const grid = React.createElement("div", { className: "relative", style: { height: gridHeight } }, rows, blocks);
+    return React.createElement("div", { key: d.toISOString(), className: "flex-1", style: { minWidth: 64 } }, header, grid);
+  });
+
+  return React.createElement(GlassCard, { className: "p-3 overflow-x-auto" }, React.createElement("div", { className: "flex gap-1", style: { minWidth: 620 } }, hourLabels, dayColumns));
+}
 function MonthView({ cursor, tasks, onJumpDay }) {
   if (!Jalali) return null;
   const grid = Jalali.jalaliMonthGrid(cursor);
@@ -3426,6 +3484,7 @@ function YearView({ cursor, tasks, onJumpMonth }) {
 }
 function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt }) {
   const [view, setView] = useState("day");
+  const [weekSubView, setWeekSubView] = useState("cards");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
   const step = (dir) => {
     if (!Jalali) return;
@@ -3442,7 +3501,21 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     setCursor(d);
     setView("month");
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }), view === "week" && /* @__PURE__ */ React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay }), view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  const weekSubToggle = React.createElement(
+    "div",
+    { className: "flex justify-end" },
+    React.createElement(
+      "div",
+      { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" },
+      [["cards", "\u062E\u0644\u0627\u0635\u0647"], ["hourly", "\u0633\u0627\u0639\u062A\u06CC"]].map(([v, l]) => React.createElement(
+        "button",
+        { key: v, onClick: () => setWeekSubView(v), className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${weekSubView === v ? "bg-white/10 text-white" : "text-slate-400"}` },
+        l
+      ))
+    )
+  );
+  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
