@@ -1633,6 +1633,43 @@ function GoalsView({ goals, setGoals }) {
     return /* @__PURE__ */ React.createElement("div", { key: d.key, className: "flex-1 flex flex-col items-center justify-end gap-1.5 h-full" }, /* @__PURE__ */ React.createElement("span", { className: "text-[9px] text-slate-500" }, val || ""), /* @__PURE__ */ React.createElement("div", { className: "w-full rounded-t-md", style: { height: `${Math.max(val / max * 100, val > 0 ? 6 : 2)}%`, background: val === 0 ? "rgba(255,255,255,.08)" : hit ? "#22D3EE" : "#DB2777" } }), /* @__PURE__ */ React.createElement("span", { className: "text-[9px] text-slate-500" }, d.label));
   }))));
 }
+function PlannedVsActualStats({ tasks, pomodoro }) {
+  const end = /* @__PURE__ */ new Date();
+  end.setHours(0, 0, 0, 0);
+  const weekdayShort = ["\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C", "\u0634"];
+  const rows = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - i);
+    const key = dateKeyOf(d);
+    const due = (tasks || []).filter((tk) => isTaskDueOn(tk, d));
+    const doneCount = due.filter((tk) => tk.status === "done" && tk.completedDate === key).length;
+    const plannedMinutes = due.reduce((s, tk) => s + (tk.duration || 0), 0);
+    const sessions = (pomodoro && pomodoro.sessions || []).filter((s) => s.type === "work" && s.completedAt && dateKeyOf(new Date(s.completedAt)) === key);
+    const actualMinutes = sessions.reduce((s, ses) => s + (ses.durationMin || 0), 0);
+    rows.push({ key, label: weekdayShort[d.getDay()], dueCount: due.length, doneCount, plannedMinutes, actualMinutes });
+  }
+  const totalDue = rows.reduce((s, r) => s + r.dueCount, 0);
+  const totalDone = rows.reduce((s, r) => s + r.doneCount, 0);
+  const totalPlannedMin = rows.reduce((s, r) => s + r.plannedMinutes, 0);
+  const totalActualMin = rows.reduce((s, r) => s + r.actualMinutes, 0);
+  const matchPct = totalPlannedMin > 0 ? Math.round(totalActualMin / totalPlannedMin * 100) : null;
+  const summary = totalDue === 0 && totalPlannedMin === 0 ? "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0634\u062F\u0647\u200C\u0627\u06CC \u062F\u0631 \u0627\u06CC\u0646 \u06F7 \u0631\u0648\u0632 \u0646\u0628\u0648\u062F\u0647." : `${totalDone} \u0627\u0632 ${totalDue} \u062A\u0633\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC‌\u0634\u062F\u0647 \u0627\u0646\u062C\u0627\u0645 \u0634\u062F \u2014 ${totalActualMin} \u0627\u0632 ${totalPlannedMin} \u062F\u0642\u06CC\u0642\u0647\u0650 \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0634\u062F\u0647 \u0635\u0631\u0641 \u062A\u0645\u0631\u06A9\u0632 \u0634\u062F${matchPct !== null ? ` (${matchPct}\u066A)` : ""}.`;
+  const dayRow = (r) => /* @__PURE__ */ React.createElement(
+    "div",
+    { key: r.key, className: "flex items-center justify-between text-[11px] py-1 border-b border-white/[0.04] last:border-0" },
+    /* @__PURE__ */ React.createElement("span", { className: "text-slate-500 w-4 shrink-0" }, r.label),
+    /* @__PURE__ */ React.createElement("span", { className: "text-slate-400" }, r.doneCount, "/", r.dueCount, " \u062A\u0633\u06A9"),
+    /* @__PURE__ */ React.createElement("span", { style: { color: r.actualMinutes >= r.plannedMinutes && r.plannedMinutes > 0 ? "#22D3EE" : "var(--text-muted)" } }, r.actualMinutes, "/", r.plannedMinutes, " \u062F\u0642\u06CC\u0642\u0647")
+  );
+  return /* @__PURE__ */ React.createElement(
+    GlassCard,
+    { className: "p-4" },
+    /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-1" }, "\u062A\u0637\u0627\u0628\u0642 \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0627 \u0639\u0645\u0644\u06A9\u0631\u062F \u0648\u0627\u0642\u0639\u06CC \u2014 \u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631"),
+    /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mb-2", style: { color: "var(--text-faint)" } }, summary),
+    rows.map(dayRow)
+  );
+}
 function DailyReportTrackRow({ subsection, topic, task, onAddProgress }) {
   const [amount, setAmount] = useState(String(subsection.quotaPerPeriod || ""));
   const [note, setNote] = useState("");
@@ -1937,6 +1974,7 @@ function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
       "div",
       { className: "space-y-3" },
       exportButton,
+      React.createElement(PlannedVsActualStats, { tasks, pomodoro }),
       React.createElement(
         GlassCard,
         { className: "p-8 flex flex-col items-center text-center" },
@@ -1950,6 +1988,7 @@ function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
     "div",
     { className: "space-y-3" },
     exportButton,
+    React.createElement(PlannedVsActualStats, { tasks, pomodoro }),
     React.createElement("p", { className: "text-[11px]", style: { color: "var(--text-faint)" } }, "\u0628\u0631\u0627\u06CC \u0647\u0631 \u0645\u0633\u06CC\u0631\u060C \u0645\u0642\u062F\u0627\u0631\u06CC \u06A9\u0647 \u0627\u0645\u0631\u0648\u0632 \u0627\u0646\u062C\u0627\u0645 \u062F\u0627\u062F\u06CC\u062F \u0631\u0627 \u062B\u0628\u062A \u06A9\u0646\u06CC\u062F \u2014 \u06A9\u0645\u062A\u0631/\u0628\u06CC\u0634\u062A\u0631 \u0627\u0632 \u0633\u0647\u0645\u06CC\u0647 \u0647\u0645 \u0627\u06CC\u0631\u0627\u062F \u0646\u06CC\u0633\u062A، \u0641\u0642\u0637 \u062F\u0631 \u0628\u0627\u0644\u0627\u0646\u0633 \u0631\u0648\u0632 \u0628\u0639\u062F \u0644\u062D\u0627\u0638 \u0645\u06CC\u200C\u0634\u0648\u062F."),
     rows.map(({ topic, sec, task }) => React.createElement(DailyReportTrackRow, { key: sec.id, subsection: sec, topic, task, onAddProgress }))
   );
