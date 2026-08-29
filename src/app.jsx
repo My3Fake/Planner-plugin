@@ -2909,7 +2909,7 @@ function NoteListCard({ list, onUpdate, onDelete }) {
       style: { borderColor: it.done ? list.color : "rgba(255,255,255,.25)", background: it.done ? list.color : "transparent" }
     },
     it.done && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 11, color: "#fff" })
-  ), /* @__PURE__ */ React.createElement("span", { className: `text-xs flex-1 ${it.done ? "line-through text-slate-500" : "text-slate-200"}` }, it.text), /* @__PURE__ */ React.createElement("button", { onClick: () => deleteItem(it.id), className: "opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 shrink-0" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 12 })))), list.items.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600 text-center py-2" }, "\u0686\u06CC\u0632\u06CC \u062A\u0648 \u0627\u06CC\u0646 \u0644\u06CC\u0633\u062A \u0646\u06CC\u0633\u062A")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 pt-2 border-t border-white/[0.06]" }, /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("span", { className: `text-xs flex-1 ${it.done ? "line-through text-slate-500" : "text-slate-200"}` }, it.text), /* @__PURE__ */ React.createElement("button", { onClick: () => deleteItem(it.id), className: "opacity-60 hover:opacity-100 text-slate-500 hover:text-rose-400 shrink-0" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 12 })))), list.items.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600 text-center py-2" }, "\u0686\u06CC\u0632\u06CC \u062A\u0648 \u0627\u06CC\u0646 \u0644\u06CC\u0633\u062A \u0646\u06CC\u0633\u062A")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 pt-2 border-t border-white/[0.06]" }, /* @__PURE__ */ React.createElement(
     "input",
     {
       value: newItem,
@@ -3260,6 +3260,19 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
   const [dragId, setDragId] = useState(null);
   const [livePreview, setLivePreview] = useState({});
+  const gridRef = useRef(null);
+  // Inverse of topFor: given a Y position in *client* (viewport) coordinates,
+  // find which 5-minute slot of the grid it falls on. Used by the
+  // pointer-based "drag from the unscheduled basket onto the grid" flow
+  // below, which hit-tests via the grid's own bounding rect instead of
+  // relying on HTML5 drag-and-drop's onDragOver/onDrop targets (removed —
+  // see Session 28 notes in PROGRESS.md for why).
+  const minutesFromClientY = (clientY) => {
+    const rect = gridRef.current && gridRef.current.getBoundingClientRect();
+    if (!rect) return null;
+    const relY = clientY - rect.top;
+    return Math.max(360, Math.min(1410, Math.round(relY / rowH * 30 / 5) * 5 + 360));
+  };
   const dropAt = (mins) => {
     if (dragId == null) return;
     const tsk = tasks.find((x) => String(x.id) === String(dragId));
@@ -3267,9 +3280,53 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     onSchedule(tsk.id, minutesToHHMM(Math.max(360, Math.min(1410, mins))), tsk.duration || 45);
     setDragId(null);
   };
+  // Dragging an *unscheduled* chip onto the hourly grid to schedule it.
+  // Previously HTML5 drag-and-drop (draggable/onDragStart/onDragOver/onDrop)
+  // — which has no meaningful touch support in any mobile browser/WebView,
+  // so this whole interaction was silently unusable on Android. Rewritten
+  // with Pointer Events (unifies mouse/touch/pen). A movement threshold
+  // distinguishes an actual drag from a plain tap: a tap with near-zero
+  // movement must NOT call dropAt (its Y position would be over the basket,
+  // not the grid, and would clamp to 6:00 — scheduling the task by
+  // accident) and instead falls through to the existing onClick, which
+  // opens the edit modal exactly as before.
+  const startBasketDrag = (e, tsk) => {
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let dragging = false;
+    setDragId(tsk.id);
+    const onMove = (ev) => {
+      if (!dragging) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 8) return;
+        dragging = true;
+      }
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    const onUp = (ev) => {
+      cleanup();
+      if (dragging) {
+        const mins = minutesFromClientY(ev.clientY);
+        if (mins != null) dropAt(mins);
+        else setDragId(null);
+      } else {
+        setDragId(null);
+      }
+    };
+    const onCancel = () => {
+      cleanup();
+      setDragId(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  };
   const startMove = (e, tsk) => {
     if (e.button !== 0) return;
-    e.preventDefault();
     const startY = e.clientY;
     const startMins = timeToMinutes(tsk.time);
     const onMove = (ev) => {
@@ -3277,9 +3334,13 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
       const newMins = Math.max(360, Math.min(1410, startMins + deltaMin));
       setLivePreview((p) => ({ ...p, [tsk.id]: { time: minutesToHHMM(newMins), duration: tsk.duration } }));
     };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
     const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      cleanup();
       setLivePreview((p) => {
         const preview = p[tsk.id];
         if (preview) onSchedule(tsk.id, preview.time, preview.duration);
@@ -3287,13 +3348,20 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
         return rest;
       });
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    const onCancel = () => {
+      cleanup();
+      setLivePreview((p) => {
+        const { [tsk.id]: _drop, ...rest } = p;
+        return rest;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   };
   const startResize = (e, tsk) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    e.preventDefault();
     const startY = e.clientY;
     const startDuration = tsk.duration;
     const onMove = (ev) => {
@@ -3301,9 +3369,13 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
       const newDuration = Math.max(5, startDuration + deltaMin);
       setLivePreview((p) => ({ ...p, [tsk.id]: { time: tsk.time, duration: newDuration } }));
     };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
     const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      cleanup();
       setLivePreview((p) => {
         const preview = p[tsk.id];
         if (preview) onSchedule(tsk.id, preview.time, preview.duration);
@@ -3311,8 +3383,16 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
         return rest;
       });
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    const onCancel = () => {
+      cleanup();
+      setLivePreview((p) => {
+        const { [tsk.id]: _drop, ...rest } = p;
+        return rest;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   };
   const createAt = (mins) => {
     if (onCreateAt) onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
@@ -3323,21 +3403,17 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
       "div",
       {
         key: tsk.id,
-        draggable: true,
-        onDragStart: () => setDragId(tsk.id),
-        onDragEnd: () => setDragId(null),
+        onPointerDown: (e) => startBasketDrag(e, tsk),
         onClick: () => onEdit(tsk),
         className: "cursor-grab active:cursor-grabbing px-2.5 py-1.5 rounded-lg text-[11px] border",
-        style: { borderColor: `${q.color}55`, background: `${q.color}18`, color: q.color }
+        style: { borderColor: `${q.color}55`, background: `${q.color}18`, color: q.color, touchAction: "none" }
       },
       tsk.title
     );
-  }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0648\u0633\u0637 \u0628\u0644\u0648\u06A9 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062C\u0627\u0628\u0647\u200C\u062C\u0627\u06CC\u06CC\u061B \u0644\u0628\u0647\u200C\u06CC \u067E\u0627\u06CC\u06CC\u0646\u0634 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062A\u063A\u06CC\u06CC\u0631 \u0645\u062F\u062A \u2014 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC \u0628\u0632\u0646 \u062A\u0627 \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u0627\u0632\u0647 \u0628\u0633\u0627\u0632\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "relative", style: { height: CAL_HOURS.length * rowH }, onDragOver: (e) => e.preventDefault() }, CAL_HOURS.map((mins) => /* @__PURE__ */ React.createElement(
+  }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0648\u0633\u0637 \u0628\u0644\u0648\u06A9 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062C\u0627\u0628\u0647\u200C\u062C\u0627\u06CC\u06CC\u061B \u0644\u0628\u0647\u200C\u06CC \u067E\u0627\u06CC\u06CC\u0646\u0634 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062A\u063A\u06CC\u06CC\u0631 \u0645\u062F\u062A \u2014 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC \u0628\u0632\u0646 \u062A\u0627 \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u0627\u0632\u0647 \u0628\u0633\u0627\u0632\u06CC"), /* @__PURE__ */ React.createElement("div", { ref: gridRef, className: "relative", style: { height: CAL_HOURS.length * rowH } }, CAL_HOURS.map((mins) => /* @__PURE__ */ React.createElement(
     "div",
     {
       key: mins,
-      onDragOver: (e) => e.preventDefault(),
-      onDrop: () => dropAt(mins),
       onClick: () => createAt(mins),
       className: "absolute left-0 right-0 flex items-start gap-2 cursor-pointer",
       style: { top: topFor(minutesToHHMM(mins)), height: rowH }
@@ -3354,17 +3430,17 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
       "div",
       {
         key: tsk.id,
-        onMouseDown: (e) => startMove(e, tsk),
+        onPointerDown: (e) => startMove(e, tsk),
         onClick: () => onEdit(tsk),
         className: "absolute right-1 rounded-lg px-2 py-1 overflow-hidden cursor-grab active:cursor-grabbing group select-none",
-        style: { top: topFor(liveTime), height: h, left: 46, background: `${q.color}22`, borderRight: `3px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1, userSelect: "none" }
+        style: { top: topFor(liveTime), height: h, left: 46, background: `${q.color}22`, borderRight: `3px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1, userSelect: "none", touchAction: "none" }
       },
       /* @__PURE__ */ React.createElement("p", { className: `text-[10px] font-medium truncate ${tsk.status === "done" ? "line-through" : ""}`, style: { color: q.color } }, tsk.title),
       /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-400" }, liveTime, " \xB7 ", liveDur, "\u062F", liveDur > 60 ? ` (${Math.floor(liveDur / 60)}\u0633\u0627\u0639\u062A${liveDur % 60 ? ` ${liveDur % 60}\u062F` : ""})` : ""),
       /* @__PURE__ */ React.createElement(
         "div",
         {
-          onMouseDown: (e) => startResize(e, tsk),
+          onPointerDown: (e) => startResize(e, tsk),
           className: "absolute left-0 right-0 bottom-0 h-2.5 cursor-ns-resize flex items-center justify-center",
           style: { touchAction: "none" }
         },
