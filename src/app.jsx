@@ -1385,7 +1385,7 @@ function TrackHeatmap({ task, subsection, weeks = 12 }) {
   }
   return React.createElement("svg", { viewBox: `0 0 ${weeks * step} ${7 * step}`, width: "100%", height: 62, preserveAspectRatio: "xMidYMid meet" }, rects);
 }
-function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteSubsection, onAddProgress, onTogglePause, onToggleArchive, onDuplicate }) {
+function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteSubsection, onAddProgress, onTogglePause, onToggleArchive, onDuplicate, onExtendGoal }) {
   const [editing, setEditing] = useState(false);
   const [unit, setUnit] = useState(subsection.unit);
   const [target, setTarget] = useState(subsection.target);
@@ -1468,6 +1468,14 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   ) : null;
   const heatmap = !editing && task && showHeatmap ? React.createElement("div", { className: "mb-2" }, React.createElement(TrackHeatmap, { task, subsection })) : null;
 
+  const pct = task ? Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100)) : 0;
+  const completionBanner = !editing && task && pct >= 100 && !subsection.archived ? React.createElement(
+    "div",
+    { className: "flex items-center justify-between gap-2 mb-1.5 px-2.5 py-1.5 rounded-lg", style: { background: "rgba(34,211,238,0.1)", border: "1px solid rgba(34,211,238,0.25)" } },
+    React.createElement("span", { className: "text-[11px] font-bold", style: { color: "#22D3EE" } }, "\u{1F389} \u0647\u062F\u0641 \u062A\u06A9\u0645\u06CC\u0644 \u0634\u062F!"),
+    onExtendGoal && React.createElement("button", { type: "button", onClick: onExtendGoal, title: "\u0628\u0631\u0627\u06CC \u0645\u0633\u06CC\u0631\u0647\u0627\u06CC \u067E\u06CC\u0648\u0633\u062A\u0647/\u062A\u06A9\u0631\u0627\u0631\u06CC (\u0645\u062B\u0644\u0627\u064B \u0645\u0631\u0648\u0631) \u06A9\u0647 \u0647\u0631\u06AF\u0632 «\u062A\u0645\u0627\u0645» \u0646\u0645\u06CC\u200C\u0634\u0648\u0646\u062F", className: "text-[10px] px-2 py-1 rounded-lg font-medium", style: { background: "rgba(34,211,238,0.18)", color: "#22D3EE" } }, "\u0627\u062F\u0627\u0645\u0647/\u0627\u0641\u0632\u0627\u06CC\u0634 \u0647\u062F\u0641")
+  ) : null;
+
   const cadenceModes = [
     ["inherit", "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"],
     ["daily", "\u0647\u0631\u0631\u0648\u0632"],
@@ -1529,7 +1537,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
     React.createElement("button", { onClick: saveEdit, className: "w-full py-1.5 rounded-lg bg-fuchsia-500/20 text-fuchsia-300 text-xs font-medium" }, "\u0630\u062E\u06CC\u0631\u0647")
   );
 
-  const body = editing ? editForm : task ? React.createElement(ProgressiveTaskBar, { task, onAddProgress }) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
+  const body = editing ? editForm : task ? React.createElement(React.Fragment, null, completionBanner, React.createElement(ProgressiveTaskBar, { task, onAddProgress })) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
 
   return React.createElement(GlassCard, { className: "p-3.5" }, header, subtitle, notesDisplay, heatmapToggle, heatmap, body);
 }
@@ -1651,6 +1659,16 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
   const toggleArchive = (sec) => {
     updateSubsection(sec.id, { archived: !sec.archived, paused: false, pausedSince: null });
   };
+  // Progress is capped at progressTarget (see addTaskProgress in
+  // LifeFlowApp), so a track with a quota-based recurring goal (e.g.
+  // "daily review") would get permanently stuck at 100% and stop
+  // accepting new progress once it first reaches its target. Bumping
+  // the target back up re-opens the track for continued logging.
+  const extendGoal = (sec, task) => {
+    if (!task) return;
+    const increment = sec.quotaPerPeriod ? sec.quotaPerPeriod * 30 : Math.max(task.progressTarget, 10);
+    saveTask({ ...task, progressTarget: task.progressTarget + increment, status: "todo", completedDate: null });
+  };
   const duplicateSubsection = (sec) => {
     if (!topic) return;
     const newTaskId = uid();
@@ -1736,21 +1754,25 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     topic.subsections.forEach((s) => s.linkedTaskId && deleteTask(s.linkedTaskId));
     setProjects((prev) => prev.filter((p) => p.id !== topic.id));
     setActiveId(null);
-  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), /* @__PURE__ */ React.createElement(LearningRoutineEditor, { topic, onChange: (next) => updateTopic(() => next) }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => /* @__PURE__ */ React.createElement(
-    SubsectionCard,
-    {
-      key: sec.id,
-      subsection: sec,
-      topic,
-      task: tasks.find((tk) => tk.id === sec.linkedTaskId),
-      onUpdateSubsection: updateSubsection,
-      onDeleteSubsection: deleteSubsection,
-      onAddProgress,
-      onTogglePause: () => togglePause(sec),
-      onToggleArchive: () => toggleArchive(sec),
-      onDuplicate: () => duplicateSubsection(sec)
-    }
-  ))), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
+  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), /* @__PURE__ */ React.createElement(LearningRoutineEditor, { topic, onChange: (next) => updateTopic(() => next) }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
+    const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
+    return /* @__PURE__ */ React.createElement(
+      SubsectionCard,
+      {
+        key: sec.id,
+        subsection: sec,
+        topic,
+        task: linkedTask,
+        onUpdateSubsection: updateSubsection,
+        onDeleteSubsection: deleteSubsection,
+        onAddProgress,
+        onTogglePause: () => togglePause(sec),
+        onToggleArchive: () => toggleArchive(sec),
+        onDuplicate: () => duplicateSubsection(sec),
+        onExtendGoal: () => extendGoal(sec, linkedTask)
+      }
+    );
+  })), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
     const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [] };
     setProjects((prev) => [...prev, p]);
     setActiveId(p.id);
