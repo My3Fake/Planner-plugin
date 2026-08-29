@@ -531,7 +531,18 @@ function Chip({ active, onClick, children, color }) {
       type: "button",
       onClick,
       className: `rounded-lg px-2.5 py-1.5 text-[11px] font-medium border transition-all duration-200 ${active ? "lf-chip-active" : "lf-chip"}`,
-      style: color && active ? { borderColor: color, color } : void 0
+      // NOTE: .lf-chip-active in styles.css sets border-color/color with
+      // !important (so every "colorless" chip — daypart, recurrence type,
+      // etc. — gets a consistent themed accent look). That !important also
+      // silently wins over this component's old style={{borderColor,color}}
+      // attempt, so a `color` prop (quadrant/priority/duration) never
+      // actually showed — active chips with a color prop looked identical
+      // to colorless ones except for barely-visible text. Setting
+      // `background` here fixes it: .lf-chip-active's own background rule
+      // has no !important, so this inline background wins and the chip
+      // gets an actual colored fill; border/text still come from the
+      // shared class for visual consistency across all active chips.
+      style: color && active ? { background: color } : void 0
     },
     children
   );
@@ -852,7 +863,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
         }
       ))),
       /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0646\u0648\u0639 \u062A\u0633\u06A9"),
-      /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3" }, /* @__PURE__ */ React.createElement(Chip, { active: progressType === "binary", onClick: () => setProgressType("binary") }, "\u0633\u0627\u062F\u0647 (\u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F/\u0646\u0634\u062F)"), /* @__PURE__ */ React.createElement(Chip, { active: progressType === "progressive", color: "#22D3EE", onClick: () => setProgressType("progressive") }, t("progress_task", "fa"), " (\u0631\u0648\u0646\u062F\u200C\u062F\u0627\u0631)")),
+      /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3" }, /* @__PURE__ */ React.createElement(Chip, { active: progressType === "binary", onClick: () => setProgressType("binary") }, "\u0633\u0627\u062F\u0647 (\u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F/\u0646\u0634\u062F)"), /* @__PURE__ */ React.createElement(Chip, { active: progressType === "progressive", color: "#22D3EE", onClick: () => setProgressType("progressive") }, t("progress_task", "fa"))),
       progressType === "progressive" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3 flex gap-2 items-end" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-1" }, "\u0648\u0627\u062D\u062F \u067E\u06CC\u0634\u0631\u0641\u062A \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647\u060C \u062F\u0642\u06CC\u0642\u0647"), /* @__PURE__ */ React.createElement(
         "input",
         {
