@@ -692,6 +692,8 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults }) {
   const [yearMonth, setYearMonth] = useState(initialTask && initialTask.recurrenceMonth ? initialTask.recurrenceMonth : Jalali.toJalaliParts(/* @__PURE__ */ new Date()).jm);
   const toggleWeekday = (id) => setWeekdays((p) => p.includes(id) ? p.length > 1 ? p.filter((x) => x !== id) : p : [...p, id]);
   const [subInput, setSubInput] = useState(initialTask && initialTask.subtasks ? initialTask.subtasks.map((s) => s.title).join(", ") : "");
+  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive");
+  const [showMore, setShowMore] = useState(hasAdvancedData);
   const submit = () => {
     if (!title.trim()) return;
     onAdd({
@@ -745,90 +747,105 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults }) {
     /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4" }, PRIORITIES.map((p) => /* @__PURE__ */ React.createElement(Chip, { key: p.level, active: priority === p.level, color: "#DB2777", onClick: () => setPriority(p.level) }, p.label))),
     /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0632\u0645\u0627\u0646 \u0631\u0648\u0632"),
     /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4" }, DAYPARTS.map((d) => /* @__PURE__ */ React.createElement(Chip, { key: d.id, active: daypart === d.id, onClick: () => setDaypart(d.id) }, d.label))),
-    /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062F\u0642\u06CC\u0642 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u2014 \u0628\u0631\u0627\u06CC Time Blocking)"),
-    /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4" }, /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        type: "time",
-        value: time,
-        onChange: (e) => setTime(e.target.value),
-        className: "bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
-      }
-    ), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 items-center" }, DURATIONS.map((d) => /* @__PURE__ */ React.createElement(Chip, { key: d, active: duration === d, color: "#22D3EE", onClick: () => setDuration(d) }, d, " \u062F\u0642\u06CC\u0642\u0647")), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        type: "number",
-        min: "5",
-        step: "5",
-        value: duration,
-        onChange: (e) => setDuration(Math.max(5, Number(e.target.value) || 5)),
-        className: "w-20 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none",
-        placeholder: "\u062F\u0642\u06CC\u0642\u0647"
-      }
-    ))),
-    /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0646\u0648\u0639 \u062A\u0633\u06A9"),
-    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3" }, /* @__PURE__ */ React.createElement(Chip, { active: progressType === "binary", onClick: () => setProgressType("binary") }, "\u0633\u0627\u062F\u0647 (\u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F/\u0646\u0634\u062F)"), /* @__PURE__ */ React.createElement(Chip, { active: progressType === "progressive", color: "#22D3EE", onClick: () => setProgressType("progressive") }, t("progress_task", "fa"), " (\u0631\u0648\u0646\u062F\u200C\u062F\u0627\u0631)")),
-    progressType === "progressive" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3 flex gap-2 items-end" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-1" }, "\u0648\u0627\u062D\u062F \u067E\u06CC\u0634\u0631\u0641\u062A \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647\u060C \u062F\u0642\u06CC\u0642\u0647"), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        value: progressUnit,
-        onChange: (e) => setProgressUnit(e.target.value),
-        placeholder: "\u0635\u0641\u062D\u0647",
-        className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none"
-      }
-    )), /* @__PURE__ */ React.createElement("div", { className: "w-28" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-1" }, "\u0647\u062F\u0641 \u06A9\u0644"), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        type: "number",
-        min: "1",
-        value: progressTarget,
-        onChange: (e) => setProgressTarget(e.target.value),
-        className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none"
-      }
-    ))),
-    /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u062A\u06A9\u0631\u0627\u0631"),
-    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3 flex-wrap" }, RECURRENCE_TYPES.map(([v, l]) => /* @__PURE__ */ React.createElement(Chip, { key: v, active: recurrence === v, onClick: () => setRecurrence(v) }, l))),
-    recurrence === "weekly" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-2" }, "\u062F\u0631 \u0686\u0647 \u0631\u0648\u0632\u0647\u0627\u06CC\u06CC \u0627\u0632 \u0647\u0641\u062A\u0647 \u062A\u06A9\u0631\u0627\u0631 \u0628\u0634\u0647"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap" }, WEEKDAYS.map((w) => /* @__PURE__ */ React.createElement(Chip, { key: w.id, active: weekdays.includes(w.id), color: "#22D3EE", onClick: () => toggleWeekday(w.id) }, w.label)))),
-    recurrence === "monthly" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-2" }, "\u062F\u0631 \u0686\u0646\u062F\u0645 \u0647\u0631 \u0645\u0627\u0647 \u062A\u06A9\u0631\u0627\u0631 \u0628\u0634\u0647"), /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        type: "number",
-        min: "1",
-        max: "31",
-        value: monthDay,
-        onChange: (e) => setMonthDay(Math.min(31, Math.max(1, Number(e.target.value) || 1))),
-        className: "w-24 bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
-      }
-    ), /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-500 mr-2" }, "\u0647\u0631 \u0645\u0627\u0647\u060C \u0631\u0648\u0632 ", monthDay)),
-    recurrence === "yearly" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-2" }, "\u0647\u0631 \u0633\u0627\u0644 \u062F\u0631 \u0686\u0647 \u062A\u0627\u0631\u06CC\u062E\u06CC \u062A\u06A9\u0631\u0627\u0631 \u0628\u0634\u0647"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        type: "number",
-        min: "1",
-        max: "31",
-        value: monthDay,
-        onChange: (e) => setMonthDay(Math.min(31, Math.max(1, Number(e.target.value) || 1))),
-        className: "w-20 bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
-      }
-    ), /* @__PURE__ */ React.createElement(
-      "select",
-      {
-        value: yearMonth,
-        onChange: (e) => setYearMonth(Number(e.target.value)),
-        className: "bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
-      },
-      JALALI_MONTHS_FA.map((m, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i + 1, className: "bg-[#120814]" }, m))
-    ))),
-    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 13 }), " \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setReminder((v) => !v), className: "w-10 h-5 rounded-full relative transition-colors", style: { background: reminder ? "#C026D3" : "rgba(255,255,255,.15)" } }, /* @__PURE__ */ React.createElement("span", { className: "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all", style: { right: reminder ? 20 : 2 } }))),
-    /* @__PURE__ */ React.createElement(TextInput, { value: tag, onChange: (e) => setTag(e.target.value), placeholder: "\u0628\u0631\u0686\u0633\u0628 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)" }),
     /* @__PURE__ */ React.createElement(
-      "input",
+      "button",
       {
-        value: subInput,
-        onChange: (e) => setSubInput(e.target.value),
-        placeholder: "\u0632\u06CC\u0631\u062A\u0633\u06A9\u200C\u0647\u0627 \u0628\u0627 \u06A9\u0627\u0645\u0627 \u062C\u062F\u0627 \u06A9\u0646 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)",
-        className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-xs mb-2 outline-none focus:border-fuchsia-400/60"
-      }
+        type: "button",
+        onClick: () => setShowMore((v) => !v),
+        className: "w-full flex items-center justify-between gap-2 mb-4 text-xs text-slate-300 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5 hover:bg-white/[0.05] transition-colors"
+      },
+      /* @__PURE__ */ React.createElement("span", { className: "text-right" }, "گزینه‌های بیشتر — زمان‌بندی، تکرار، یادآوری، برچسب، زیرتسک"),
+      /* @__PURE__ */ React.createElement(Ic, { name: "chevron-right", size: 13, className: "text-slate-500 shrink-0", style: { transform: showMore ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .2s ease" } })
+    ),
+    showMore && /* @__PURE__ */ React.createElement(
+      React.Fragment,
+      null,
+      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062F\u0642\u06CC\u0642 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u2014 \u0628\u0631\u0627\u06CC Time Blocking)"),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4" }, /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          type: "time",
+          value: time,
+          onChange: (e) => setTime(e.target.value),
+          className: "bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
+        }
+      ), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 items-center" }, DURATIONS.map((d) => /* @__PURE__ */ React.createElement(Chip, { key: d, active: duration === d, color: "#22D3EE", onClick: () => setDuration(d) }, d, " \u062F\u0642\u06CC\u0642\u0647")), /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          type: "number",
+          min: "5",
+          step: "5",
+          value: duration,
+          onChange: (e) => setDuration(Math.max(5, Number(e.target.value) || 5)),
+          className: "w-20 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none",
+          placeholder: "\u062F\u0642\u06CC\u0642\u0647"
+        }
+      ))),
+      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0646\u0648\u0639 \u062A\u0633\u06A9"),
+      /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3" }, /* @__PURE__ */ React.createElement(Chip, { active: progressType === "binary", onClick: () => setProgressType("binary") }, "\u0633\u0627\u062F\u0647 (\u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F/\u0646\u0634\u062F)"), /* @__PURE__ */ React.createElement(Chip, { active: progressType === "progressive", color: "#22D3EE", onClick: () => setProgressType("progressive") }, t("progress_task", "fa"), " (\u0631\u0648\u0646\u062F\u200C\u062F\u0627\u0631)")),
+      progressType === "progressive" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3 flex gap-2 items-end" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-1" }, "\u0648\u0627\u062D\u062F \u067E\u06CC\u0634\u0631\u0641\u062A \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647\u060C \u062F\u0642\u06CC\u0642\u0647"), /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          value: progressUnit,
+          onChange: (e) => setProgressUnit(e.target.value),
+          placeholder: "\u0635\u0641\u062D\u0647",
+          className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none"
+        }
+      )), /* @__PURE__ */ React.createElement("div", { className: "w-28" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-1" }, "\u0647\u062F\u0641 \u06A9\u0644"), /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          type: "number",
+          min: "1",
+          value: progressTarget,
+          onChange: (e) => setProgressTarget(e.target.value),
+          className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none"
+        }
+      ))),
+      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u062A\u06A9\u0631\u0627\u0631"),
+      /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3 flex-wrap" }, RECURRENCE_TYPES.map(([v, l]) => /* @__PURE__ */ React.createElement(Chip, { key: v, active: recurrence === v, onClick: () => setRecurrence(v) }, l))),
+      recurrence === "weekly" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-2" }, "\u062F\u0631 \u0686\u0647 \u0631\u0648\u0632\u0647\u0627\u06CC\u06CC \u0627\u0632 \u0647\u0641\u062A\u0647 \u062A\u06A9\u0631\u0627\u0631 \u0628\u0634\u0647"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap" }, WEEKDAYS.map((w) => /* @__PURE__ */ React.createElement(Chip, { key: w.id, active: weekdays.includes(w.id), color: "#22D3EE", onClick: () => toggleWeekday(w.id) }, w.label)))),
+      recurrence === "monthly" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-2" }, "\u062F\u0631 \u0686\u0646\u062F\u0645 \u0647\u0631 \u0645\u0627\u0647 \u062A\u06A9\u0631\u0627\u0631 \u0628\u0634\u0647"), /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          type: "number",
+          min: "1",
+          max: "31",
+          value: monthDay,
+          onChange: (e) => setMonthDay(Math.min(31, Math.max(1, Number(e.target.value) || 1))),
+          className: "w-24 bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
+        }
+      ), /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-500 mr-2" }, "\u0647\u0631 \u0645\u0627\u0647\u060C \u0631\u0648\u0632 ", monthDay)),
+      recurrence === "yearly" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-2" }, "\u0647\u0631 \u0633\u0627\u0644 \u062F\u0631 \u0686\u0647 \u062A\u0627\u0631\u06CC\u062E\u06CC \u062A\u06A9\u0631\u0627\u0631 \u0628\u0634\u0647"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          type: "number",
+          min: "1",
+          max: "31",
+          value: monthDay,
+          onChange: (e) => setMonthDay(Math.min(31, Math.max(1, Number(e.target.value) || 1))),
+          className: "w-20 bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
+        }
+      ), /* @__PURE__ */ React.createElement(
+        "select",
+        {
+          value: yearMonth,
+          onChange: (e) => setYearMonth(Number(e.target.value)),
+          className: "bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
+        },
+        JALALI_MONTHS_FA.map((m, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i + 1, className: "bg-[#120814]" }, m))
+      ))),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 13 }), " \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setReminder((v) => !v), className: "w-10 h-5 rounded-full relative transition-colors", style: { background: reminder ? "#C026D3" : "rgba(255,255,255,.15)" } }, /* @__PURE__ */ React.createElement("span", { className: "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all", style: { right: reminder ? 20 : 2 } }))),
+      /* @__PURE__ */ React.createElement(TextInput, { value: tag, onChange: (e) => setTag(e.target.value), placeholder: "\u0628\u0631\u0686\u0633\u0628 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)" }),
+      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "زیرتسک‌ها (اختیاری)"),
+      /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          value: subInput,
+          onChange: (e) => setSubInput(e.target.value),
+          placeholder: "\u0632\u06CC\u0631\u062A\u0633\u06A9\u200C\u0647\u0627 \u0628\u0627 \u06A9\u0627\u0645\u0627 \u062C\u062F\u0627 \u06A9\u0646",
+          className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-xs mb-2 outline-none focus:border-fuchsia-400/60"
+        }
+      )
     )
   );
 }
