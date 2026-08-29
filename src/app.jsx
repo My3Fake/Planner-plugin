@@ -2792,6 +2792,41 @@ function timeToMinutes(hhmm) {
   const [h, m] = (hhmm || "00:00").split(":").map(Number);
   return h * 60 + m;
 }
+function AgendaView({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }) {
+  if (!Jalali) return null;
+  const today = /* @__PURE__ */ new Date();
+  const days = Array.from({ length: 14 }, (_, i) => Jalali.addDays(today, i));
+  const groups = days.map((d) => {
+    const items = tasks.filter((tsk) => isTaskDueOn(tsk, d) && tsk.status !== "done").sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+    return { date: d, isToday: Jalali.isSameJalaliDay(d, today), items };
+  }).filter((g) => g.items.length > 0);
+
+  if (groups.length === 0) {
+    return React.createElement(
+      GlassCard,
+      { className: "p-8 flex flex-col items-center text-center" },
+      React.createElement(Ic, { name: "check-square", size: 26, className: "text-fuchsia-300 mb-2" }),
+      React.createElement("p", { className: "text-slate-300 text-sm" }, "\u062A\u0627 ۱۴ روز آینده هیچ تسکی نداری")
+    );
+  }
+
+  const sections = groups.map((g) => {
+    const header = React.createElement(
+      "div",
+      { className: "flex items-center gap-2 mb-1.5" },
+      React.createElement("p", { className: "text-xs font-bold", style: { color: g.isToday ? "var(--text-accent)" : "var(--text-muted)" } }, g.isToday ? "\u0627\u0645\u0631\u0648\u0632" : Jalali.formatJalali(g.date, { year: false })),
+      React.createElement("span", { className: "text-[10px]", style: { color: "var(--text-faint)" } }, "(", g.items.length, " \u0645\u0648\u0631\u062F)")
+    );
+    const rows = React.createElement(
+      GlassCard,
+      { className: "px-3" },
+      g.items.map((tsk) => React.createElement(TaskRow, { key: tsk.id, task: tsk, onToggle, onSchedule, onDelete, onEdit, onAddProgress }))
+    );
+    return React.createElement("div", { key: g.date.toISOString(), className: "mb-3" }, header, rows);
+  });
+
+  return React.createElement("div", null, sections);
+}
 function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
   let title = "";
   if (Jalali) {
@@ -2804,9 +2839,18 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
       title = `${JALALI_MONTHS_FA[jm - 1]} ${jy}`;
     } else if (view === "year") {
       title = `\u0633\u0627\u0644 ${Jalali.toJalaliParts(cursor).jy}`;
+    } else if (view === "agenda") {
+      title = "\u06F1\u06F4 \u0631\u0648\u0632 \u0622\u06CC\u0646\u062F\u0647";
     }
   }
-  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement("button", { onClick: onPrev, className: "w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "chevron-right", size: 15 })), /* @__PURE__ */ React.createElement("button", { onClick: onToday, className: "px-3 h-8 rounded-lg bg-white/[0.06] text-xs text-slate-300 font-medium" }, "\u0627\u0645\u0631\u0648\u0632"), /* @__PURE__ */ React.createElement("button", { onClick: onNext, className: "w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 15 }))), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-0.5" }, [["day", "\u0631\u0648\u0632"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
+  const navButtons = view === "agenda" ? null : React.createElement(
+    "div",
+    { className: "flex items-center gap-1.5" },
+    React.createElement("button", { onClick: onPrev, className: "w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center" }, React.createElement(Ic, { name: "chevron-right", size: 15 })),
+    React.createElement("button", { onClick: onToday, className: "px-3 h-8 rounded-lg bg-white/[0.06] text-xs text-slate-300 font-medium" }, "\u0627\u0645\u0631\u0648\u0632"),
+    React.createElement("button", { onClick: onNext, className: "w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center" }, React.createElement(Ic, { name: "chevron-left", size: 15 }))
+  );
+  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-0.5" }, [["day", "\u0631\u0648\u0632"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
 function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
@@ -2976,7 +3020,7 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
-function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit }) {
+function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }) {
   const [view, setView] = useState("day");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
   const step = (dir) => {
@@ -2994,7 +3038,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit }) {
     setCursor(d);
     setView("month");
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit }), view === "week" && /* @__PURE__ */ React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay }), view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }));
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit }), view === "week" && /* @__PURE__ */ React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay }), view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
@@ -3298,7 +3342,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
