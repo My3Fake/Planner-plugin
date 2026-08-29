@@ -535,6 +535,19 @@ function Chip({ active, onClick, children, color }) {
     children
   );
 }
+function ToggleSwitch({ on, onClick, disabled }) {
+  return /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      type: "button",
+      onClick,
+      disabled,
+      className: "w-10 h-5 rounded-full relative transition-colors shrink-0 disabled:opacity-40",
+      style: { background: on ? "var(--interactive-accent)" : "var(--background-modifier-border)" }
+    },
+    /* @__PURE__ */ React.createElement("span", { className: "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all", style: { right: on ? 20 : 2 } })
+  );
+}
 function ModalShell({ title, onClose, onSubmit, footer, submitLabel, submitDisabled, cancelLabel, children }) {
   // Every Add*/New*Modal used to build its own single-button footer with a
   // hand-picked (and inconsistent — different gradients/directions in each
@@ -890,7 +903,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
         },
         JALALI_MONTHS_FA.map((m, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i + 1, className: "bg-[#120814]" }, m))
       ))),
-      /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 13 }), " \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setReminder((v) => !v), className: "w-10 h-5 rounded-full relative transition-colors", style: { background: reminder ? "#C026D3" : "rgba(255,255,255,.15)" } }, /* @__PURE__ */ React.createElement("span", { className: "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all", style: { right: reminder ? 20 : 2 } }))),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 13 }), " \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC"), /* @__PURE__ */ React.createElement(ToggleSwitch, { on: reminder, onClick: () => setReminder((v) => !v) })),
       /* @__PURE__ */ React.createElement(TextInput, { value: tag, onChange: (e) => setTag(e.target.value), placeholder: "\u0628\u0631\u0686\u0633\u0628 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)" }),
       /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "زیرتسک‌ها (اختیاری)"),
       subtasks.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-2" }, subtasks.map((s) => /* @__PURE__ */ React.createElement(
@@ -2515,17 +2528,8 @@ function SettingsModal({ onClose, settings, onChangeSettings }) {
     ["dndDuringFocus", "\u0639\u062F\u0645\u200C\u0645\u0632\u0627\u062D\u0645\u062A \u062D\u06CC\u0646 \u062C\u0644\u0633\u0647\u200C\u06CC \u06A9\u0627\u0631\u06CC \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648 (\u0628\u0642\u06CC\u0647\u200C\u06CC \u0627\u0639\u0644\u0627\u0646\u200C\u0647\u0627 \u0645\u0648\u0642\u062A\u0627\u064B \u0633\u0627\u06A9\u062A \u0645\u06CC\u200C\u0634\u0648\u0646\u062F)"]
   ].map(([key, label]) => {
     const on = settings.notifications ? settings.notifications[key] : true;
-    return /* @__PURE__ */ React.createElement("div", { key, className: "flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300" }, label), /* @__PURE__ */ React.createElement(
-      "button",
-      {
-        type: "button",
-        onClick: () => onChangeSettings({ ...settings, notifications: { ...settings.notifications || DEFAULT_NOTIFICATIONS, [key]: !on } }),
-        className: "w-10 h-5 rounded-full relative transition-colors shrink-0",
-        style: { background: on ? "#C026D3" : "rgba(255,255,255,.15)" }
-      },
-      /* @__PURE__ */ React.createElement("span", { className: "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all", style: { right: on ? 20 : 2 } })
-    ));
-  })), /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, t("ai_provider_section", lang)), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 mb-3 leading-5" }, t("ai_provider_hint", lang)), /* @__PURE__ */ React.createElement("label", { className: "block text-[11px] text-slate-500 mb-1" }, t("ai_provider", lang)), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap mb-3" }, AI_PROVIDERS.map((p) => /* @__PURE__ */ React.createElement(Chip, { key: p.id, active: aiCfg.provider === p.id, color: "#22D3EE", onClick: () => updateAi({ provider: p.id }) }, p.label))), /* @__PURE__ */ React.createElement("label", { className: "block text-[11px] text-slate-500 mb-1" }, t("api_key", lang)), /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("div", { key, className: "flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300" }, label), /* @__PURE__ */ React.createElement(ToggleSwitch, { on, onClick: () => onChangeSettings({ ...settings, notifications: { ...settings.notifications || DEFAULT_NOTIFICATIONS, [key]: !on } }) }));
+  })), /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u067E\u0646\u062C\u0631\u0647\u200C\u06CC \u062A\u0633\u06A9 \u062C\u062F\u06CC\u062F"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-5 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300" }, "\u06AF\u0632\u06CC\u0646\u0647\u200C\u0647\u0627\u06CC \u0628\u06CC\u0634\u062A\u0631 \u0627\u0632 \u0627\u0628\u062A\u062F\u0627 \u0628\u0627\u0632 \u0628\u0627\u0634\u062F"), /* @__PURE__ */ React.createElement(ToggleSwitch, { on: !!(settings.taskDefaults && settings.taskDefaults.advancedOpenByDefault), onClick: () => onChangeSettings({ ...settings, taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...settings.taskDefaults, advancedOpenByDefault: !(settings.taskDefaults && settings.taskDefaults.advancedOpenByDefault) } }) })), /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, t("ai_provider_section", lang)), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 mb-3 leading-5" }, t("ai_provider_hint", lang)), /* @__PURE__ */ React.createElement("label", { className: "block text-[11px] text-slate-500 mb-1" }, t("ai_provider", lang)), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap mb-3" }, AI_PROVIDERS.map((p) => /* @__PURE__ */ React.createElement(Chip, { key: p.id, active: aiCfg.provider === p.id, color: "#22D3EE", onClick: () => updateAi({ provider: p.id }) }, p.label))), /* @__PURE__ */ React.createElement("label", { className: "block text-[11px] text-slate-500 mb-1" }, t("api_key", lang)), /* @__PURE__ */ React.createElement(
     "input",
     {
       type: "password",
