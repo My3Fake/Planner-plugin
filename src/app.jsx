@@ -3256,7 +3256,10 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
   let title = "";
   if (Jalali) {
     if (view === "day") title = Jalali.formatJalali(cursor);
-    else if (view === "week") {
+    else if (view === "threeDay") {
+      const end = Jalali.addDays(cursor, 2);
+      title = `${Jalali.formatJalali(cursor, { weekday: false, year: false })} \u062A\u0627 ${Jalali.formatJalali(end, { weekday: false })}`;
+    } else if (view === "week") {
       const start = Jalali.jalaliStartOfWeek(cursor), end = Jalali.addDays(start, 6);
       title = `${Jalali.formatJalali(start, { weekday: false, year: false })} \u062A\u0627 ${Jalali.formatJalali(end, { weekday: false })}`;
     } else if (view === "month") {
@@ -3275,7 +3278,7 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
     React.createElement("button", { onClick: onToday, className: "px-3 h-8 rounded-lg bg-white/[0.06] text-xs text-slate-300 font-medium" }, "\u0627\u0645\u0631\u0648\u0632"),
     React.createElement("button", { onClick: onNext, className: "w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center" }, React.createElement(Ic, { name: "chevron-left", size: 15 }))
   );
-  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
+  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
 function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
@@ -3499,12 +3502,12 @@ function WeekView({ cursor, tasks, onJumpDay }) {
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
-function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule }) {
+function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7 }) {
   if (!Jalali) return null;
   const rowH = 22;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
-  const start = Jalali.jalaliStartOfWeek(cursor);
-  const days = Array.from({ length: 7 }, (_, i) => Jalali.addDays(start, i));
+  const start = dayCount === 7 ? Jalali.jalaliStartOfWeek(cursor) : cursor;
+  const days = Array.from({ length: dayCount }, (_, i) => Jalali.addDays(start, i));
   const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(/* @__PURE__ */ new Date()), 6e4);
@@ -3609,7 +3612,7 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule }) {
     const header = React.createElement(
       "div",
       { className: "text-center mb-1", style: { height: headerHeight } },
-      React.createElement("p", { className: "text-[9px] text-slate-500" }, WEEKDAY_SHORT_ORDER[i]),
+      React.createElement("p", { className: "text-[9px] text-slate-500" }, WEEKDAY_SHORT_ORDER[(d.getDay() + 1) % 7]),
       React.createElement("p", { className: "text-xs font-bold", style: { color: isToday ? "var(--text-accent)" : "var(--text-muted)" } }, Jalali.toJalaliParts(d).jd)
     );
     const rows = CAL_HOURS.map((mins) => React.createElement("div", {
@@ -3657,7 +3660,7 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule }) {
     return React.createElement("div", { key: d.toISOString(), className: "flex-1", style: { minWidth: 64 } }, header, grid);
   });
 
-  return React.createElement(GlassCard, { className: "p-3 overflow-x-auto" }, React.createElement("div", { className: "flex gap-1", style: { minWidth: 620 } }, hourLabels, dayColumns));
+  return React.createElement(GlassCard, { className: "p-3 overflow-x-auto" }, React.createElement("div", { className: "flex gap-1", style: { minWidth: 40 + dayCount * 85 } }, hourLabels, dayColumns));
 }
 function MonthView({ cursor, tasks, onJumpDay }) {
   if (!Jalali) return null;
@@ -3705,6 +3708,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   const step = (dir) => {
     if (!Jalali) return;
     if (view === "day") setCursor((c) => Jalali.addDays(c, dir));
+    else if (view === "threeDay") setCursor((c) => Jalali.addDays(c, dir * 3));
     else if (view === "week") setCursor((c) => Jalali.addDays(c, dir * 7));
     else if (view === "month") setCursor((c) => Jalali.jalaliAddMonths(c, dir));
     else setCursor((c) => Jalali.jalaliAddMonths(c, dir * 12));
@@ -3731,7 +3735,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     )
   );
   const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3 }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
