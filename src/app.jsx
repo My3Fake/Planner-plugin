@@ -1378,12 +1378,25 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   }
   if (subsection.rangeLabel) subtitleParts.push(subsection.rangeLabel);
 
+  const streak = computeTrackStreak(subsection, topic, task);
   const iconBtn = (icon, onClick, extraClass, title) => React.createElement("button", { type: "button", onClick, title, className: `text-slate-400 ${extraClass || "hover:text-fuchsia-300"}` }, React.createElement(Ic, { name: icon, size: 13 }));
+
+  const titleRow = React.createElement(
+    "div",
+    { className: "flex items-center gap-1.5 min-w-0" },
+    React.createElement("p", { className: "text-sm font-bold truncate", style: { color: subsection.archived || subsection.paused ? "var(--text-muted)" : "var(--text-normal)" } }, subsection.title),
+    streak > 0 && React.createElement(
+      "span",
+      { title: `${streak} \u0631\u0648\u0632 \u0645\u062A\u0648\u0627\u0644\u06CC \u0628\u062F\u0648\u0646 \u0627\u0641\u062A\u0627\u062F\u06AF\u06CC`, className: "shrink-0 inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full", style: { color: "#F97316", background: "rgba(249,115,22,0.12)" } },
+      React.createElement(Ic, { name: "flame", size: 10, color: "#F97316" }),
+      streak
+    )
+  );
 
   const header = React.createElement(
     "div",
     { className: "flex items-center justify-between mb-1 gap-2" },
-    React.createElement("p", { className: "text-sm font-bold truncate", style: { color: subsection.archived || subsection.paused ? "var(--text-muted)" : "var(--text-normal)" } }, subsection.title),
+    titleRow,
     React.createElement(
       "div",
       { className: "flex items-center gap-2 shrink-0" },
@@ -1752,6 +1765,37 @@ function computeTrackBalance(subsection, topic, task) {
   }
   const doneTotal = (task.progressLog || []).reduce((s, e) => s + e.amount, 0);
   return { dueTotal, doneTotal, balance: dueTotal - doneTotal };
+}
+function computeTrackStreak(subsection, topic, task) {
+  const quota = subsection.quotaPerPeriod || 0;
+  if (!quota || !task || subsection.archived || subsection.paused) return 0;
+  const perDay = {};
+  (task.progressLog || []).forEach((e) => {
+    perDay[e.date] = (perDay[e.date] || 0) + e.amount;
+  });
+  const startKey = subsection.createdDate || todayKey();
+  const cursor = /* @__PURE__ */ new Date();
+  cursor.setHours(0, 0, 0, 0);
+  let streak = 0;
+  let guard = 0;
+  let first = true;
+  while (guard < 3660) {
+    const key = dateKeyOf(cursor);
+    if (key < startKey) break;
+    const due = isTrackDueOn(subsection, topic, cursor);
+    const met = (perDay[key] || 0) >= quota;
+    // An unfinished *today* doesn't break the streak (the day isn't over
+    // yet); any earlier due-but-unmet day does.
+    if (due && !met) {
+      if (!first) break;
+    } else if (due && met) {
+      streak++;
+    }
+    first = false;
+    cursor.setDate(cursor.getDate() - 1);
+    guard++;
+  }
+  return streak;
 }
 function getPersianDateLabel(now) {
   try {
