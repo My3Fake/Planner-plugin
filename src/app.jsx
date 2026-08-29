@@ -738,7 +738,15 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
   const [monthDay, setMonthDay] = useState(initialTask && initialTask.recurrenceDay ? initialTask.recurrenceDay : Jalali.toJalaliParts(/* @__PURE__ */ new Date()).jd);
   const [yearMonth, setYearMonth] = useState(initialTask && initialTask.recurrenceMonth ? initialTask.recurrenceMonth : Jalali.toJalaliParts(/* @__PURE__ */ new Date()).jm);
   const toggleWeekday = (id) => setWeekdays((p) => p.includes(id) ? p.length > 1 ? p.filter((x) => x !== id) : p : [...p, id]);
-  const [subInput, setSubInput] = useState(initialTask && initialTask.subtasks ? initialTask.subtasks.map((s) => s.title).join(", ") : "");
+  const [subtasks, setSubtasks] = useState(initialTask && initialTask.subtasks ? initialTask.subtasks : []);
+  const [subInput, setSubInput] = useState("");
+  const addSubtask = () => {
+    const title2 = subInput.trim();
+    if (!title2) return;
+    setSubtasks((prev) => [...prev, { id: uid(), title: title2, done: false }]);
+    setSubInput("");
+  };
+  const removeSubtask = (id) => setSubtasks((prev) => prev.filter((s) => s.id !== id));
   const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive");
   const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime || !isEdit && !!defaults.advancedOpenByDefault);
   const submit = () => {
@@ -760,7 +768,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       recurrenceWeekdays: recurrence === "weekly" ? weekdays : void 0,
       recurrenceDay: recurrence === "monthly" || recurrence === "yearly" ? monthDay : void 0,
       recurrenceMonth: recurrence === "yearly" ? yearMonth : void 0,
-      subtasks: subInput.trim() ? subInput.split(",").map((s) => ({ id: uid(), title: s.trim(), done: false })).filter((s) => s.title) : [],
+      subtasks,
       progressType,
       progressUnit: progressType === "progressive" ? progressUnit.trim() || "\u0648\u0627\u062D\u062F" : void 0,
       progressTarget: progressType === "progressive" ? Math.max(1, Number(progressTarget) || 1) : void 0,
@@ -885,15 +893,49 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 13 }), " \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setReminder((v) => !v), className: "w-10 h-5 rounded-full relative transition-colors", style: { background: reminder ? "#C026D3" : "rgba(255,255,255,.15)" } }, /* @__PURE__ */ React.createElement("span", { className: "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all", style: { right: reminder ? 20 : 2 } }))),
       /* @__PURE__ */ React.createElement(TextInput, { value: tag, onChange: (e) => setTag(e.target.value), placeholder: "\u0628\u0631\u0686\u0633\u0628 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)" }),
       /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "زیرتسک‌ها (اختیاری)"),
-      /* @__PURE__ */ React.createElement(
+      subtasks.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-2" }, subtasks.map((s) => /* @__PURE__ */ React.createElement(
+        "span",
+        {
+          key: s.id,
+          className: "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] bg-white/[0.06] border border-white/10 text-slate-200"
+        },
+        s.title,
+        /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => removeSubtask(s.id),
+            className: "shrink-0 opacity-70 hover:opacity-100",
+            "aria-label": "\u062D\u0630\u0641 \u0632\u06CC\u0631\u062A\u0633\u06A9"
+          },
+          /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 11 })
+        )
+      ))),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2" }, /* @__PURE__ */ React.createElement(
         "input",
         {
           value: subInput,
           onChange: (e) => setSubInput(e.target.value),
-          placeholder: "\u0632\u06CC\u0631\u062A\u0633\u06A9\u200C\u0647\u0627 \u0628\u0627 \u06A9\u0627\u0645\u0627 \u062C\u062F\u0627 \u06A9\u0646",
-          className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-xs mb-2 outline-none focus:border-fuchsia-400/60"
+          onKeyDown: (e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addSubtask();
+            }
+          },
+          placeholder: "\u0639\u0646\u0648\u0627\u0646 \u0632\u06CC\u0631\u062A\u0633\u06A9 \u0648 Enter",
+          className: "flex-1 bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-xs outline-none focus:border-fuchsia-400/60"
         }
-      )
+      ), /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: addSubtask,
+          disabled: !subInput.trim(),
+          className: "shrink-0 w-9 h-9 rounded-xl flex items-center justify-center border border-white/10 bg-white/[0.05] disabled:opacity-30",
+          "aria-label": "\u0627\u0641\u0632\u0648\u062F\u0646 \u0632\u06CC\u0631\u062A\u0633\u06A9"
+        },
+        /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 })
+      ))
     )
   );
 }
