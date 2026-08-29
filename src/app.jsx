@@ -1582,6 +1582,8 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
   const [showNewTopic, setShowNewTopic] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [sortMode, setSortMode] = useState("default");
+  const [topicExportMsg, setTopicExportMsg] = useState("");
+  const [topicExportErr, setTopicExportErr] = useState("");
   const topic = projects.find((p) => p.id === activeId);
   const updateTopic = (fn) => setProjects((prev) => prev.map((p) => p.id === activeId ? fn(p) : p));
   const subsectionTasks = (t2) => (t2?.subsections || []).map((sec) => tasks.find((tk) => tk.id === sec.linkedTaskId)).filter(Boolean);
@@ -1669,6 +1671,25 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     const increment = sec.quotaPerPeriod ? sec.quotaPerPeriod * 30 : Math.max(task.progressTarget, 10);
     saveTask({ ...task, progressTarget: task.progressTarget + increment, status: "todo", completedDate: null });
   };
+  const exportTopic = async () => {
+    setTopicExportErr("");
+    setTopicExportMsg("");
+    if (!topic) return;
+    try {
+      const plugin = typeof window !== "undefined" && window.__lifeflowPlugin;
+      if (!plugin || typeof plugin.exportDailyReport !== "function") {
+        setTopicExportErr("\u0627\u06CC\u0646 \u0642\u0627\u0628\u0644\u06CC\u062A \u0641\u0642\u0637 \u062F\u0627\u062E\u0644 \u062E\u0648\u062F \u067E\u0644\u0627\u06AF\u06CC\u0646 Obsidian \u06A9\u0627\u0631 \u0645\u06CC\u200C\u06A9\u0646\u062F.");
+        return;
+      }
+      const content = buildLearningTopicMarkdownReport(topic, tasks);
+      const safeTitle = topic.title.replace(/[\\/:*?"<>|]/g, "-").trim() || "topic";
+      const path = await plugin.exportDailyReport(`learning-${safeTitle}-${todayKey()}.md`, content);
+      setTopicExportMsg(`\u0630\u062E\u06CC\u0631\u0647 \u0634\u062F \u062F\u0631: ${path}`);
+      setTimeout(() => setTopicExportMsg(""), 4e3);
+    } catch (e) {
+      setTopicExportErr("\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u06AF\u0632\u0627\u0631\u0634.");
+    }
+  };
   const duplicateSubsection = (sec) => {
     if (!topic) return;
     const newTaskId = uid();
@@ -1728,18 +1749,30 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
   });
   const subsectionsHeader = React.createElement(
     "div",
-    { className: "flex items-center justify-between mb-2 flex-wrap gap-1.5" },
-    React.createElement("p", { className: "text-xs font-bold text-slate-300" }, "\u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627"),
+    { className: "mb-2" },
     React.createElement(
       "div",
-      { className: "flex items-center gap-1.5 flex-wrap" },
-      sortModes.map(([id, label]) => React.createElement(Chip, { key: id, active: sortMode === id, color: "#22D3EE", onClick: () => setSortMode(id) }, label)),
-      archivedCount > 0 && React.createElement(
-        "button",
-        { type: "button", onClick: () => setShowArchived((v) => !v), className: "text-[10px] px-2 py-1 rounded-lg border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-muted)" } },
-        showArchived ? "\u0639\u062F\u0645 \u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627" : `\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627 (${archivedCount})`
+      { className: "flex items-center justify-between flex-wrap gap-1.5" },
+      React.createElement("p", { className: "text-xs font-bold text-slate-300" }, "\u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627"),
+      React.createElement(
+        "div",
+        { className: "flex items-center gap-1.5 flex-wrap" },
+        sortModes.map(([id, label]) => React.createElement(Chip, { key: id, active: sortMode === id, color: "#22D3EE", onClick: () => setSortMode(id) }, label)),
+        archivedCount > 0 && React.createElement(
+          "button",
+          { type: "button", onClick: () => setShowArchived((v) => !v), className: "text-[10px] px-2 py-1 rounded-lg border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-muted)" } },
+          showArchived ? "\u0639\u062F\u0645 \u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627" : `\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627 (${archivedCount})`
+        ),
+        React.createElement(
+          "button",
+          { type: "button", onClick: exportTopic, title: "\u062E\u0631\u0648\u062C\u06CC \u0627\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639 \u0628\u0647 Markdown", className: "text-[10px] px-2 py-1 rounded-lg border flex items-center gap-1", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-muted)" } },
+          React.createElement(Ic, { name: "download", size: 10 }),
+          "\u062E\u0631\u0648\u062C\u06CC"
+        )
       )
-    )
+    ),
+    topicExportMsg && React.createElement("p", { className: "text-[10px] mt-1", style: { color: "var(--text-success, #7fbb6e)" } }, topicExportMsg),
+    topicExportErr && React.createElement("p", { className: "text-[10px] mt-1 text-rose-400" }, topicExportErr)
   );
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-1" }, projects.map((p) => /* @__PURE__ */ React.createElement(
     "button",
@@ -2056,6 +2089,34 @@ function DailyReportTrackRow({ subsection, topic, task, onAddProgress }) {
     React.createElement("button", { type: "submit", className: "px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 text-[12px] font-medium shrink-0" }, "\u062B\u0628\u062A")
   );
   return React.createElement(GlassCard, { className: "p-3.5" }, header, todayNote, form);
+}
+function buildLearningTopicMarkdownReport(topic, tasks) {
+  const lines = [];
+  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC: ${topic.title}`, "", `\u062A\u0627\u0631\u06CC\u062E \u062E\u0631\u0648\u062C\u06CC: ${todayKey()}`, "");
+  (topic.subsections || []).forEach((sec) => {
+    const task = (tasks || []).find((tk) => tk.id === sec.linkedTaskId);
+    const statusLabel = sec.archived ? "\u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647" : sec.paused ? "\u0645\u062A\u0648\u0642\u0641" : "\u0641\u0639\u0627\u0644";
+    lines.push(`## ${sec.title} (${statusLabel})`);
+    if (sec.rangeLabel) lines.push(`- \u0628\u0627\u0632\u0647: ${sec.rangeLabel}`);
+    if (sec.quotaPerPeriod) lines.push(`- \u0633\u0647\u0645\u06CC\u0647: ${sec.quotaPerPeriod} ${sec.unit} / \u062F\u0648\u0631\u0647`);
+    if (task) {
+      const pct = Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100));
+      lines.push(`- \u067E\u06CC\u0634\u0631\u0641\u062A: ${task.progressCurrent} / ${task.progressTarget} ${task.progressUnit} (${pct}%)`);
+      const streak = computeTrackStreak(sec, topic, task);
+      if (streak > 0) lines.push(`- \u0631\u0634\u062A\u0647\u200C\u06CC \u0641\u0639\u0644\u06CC: ${streak} \u0631\u0648\u0632 \u0645\u062A\u0648\u0627\u0644\u06CC`);
+    }
+    if (sec.notes) lines.push(`- \u06CC\u0627\u062F\u062F\u0627\u0634\u062A: ${sec.notes}`);
+    if (task && task.progressLog && task.progressLog.length) {
+      lines.push("", "### \u062A\u0627\u0631\u06CC\u062E\u0686\u0647\u200C\u06CC \u067E\u06CC\u0634\u0631\u0641\u062A");
+      const sortedLog = [...task.progressLog].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+      sortedLog.forEach((e) => {
+        lines.push(`- ${e.date}: +${e.amount} ${sec.unit}${e.note ? ` \u2014 ${e.note}` : ""}`);
+      });
+    }
+    lines.push("");
+  });
+  lines.push(`_\u0635\u0627\u062F\u0631\u0634\u062F\u0647 \u062A\u0648\u0633\u0637 \u067E\u0644\u0627\u06AF\u06CC\u0646 \u0632\u0646\u062F\u06AF\u06CC\u0622\u0631\u0627\u0645 \u062F\u0631 ${(/* @__PURE__ */ new Date()).toLocaleTimeString("fa-IR")}_`);
+  return lines.join("\n");
 }
 function buildDailyMarkdownReport({ tasks, projects, pomodoro }) {
   const today = todayKey();
