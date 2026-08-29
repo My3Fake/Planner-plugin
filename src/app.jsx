@@ -595,10 +595,24 @@ function ModalShell({ title, onClose, onSubmit, footer, submitLabel, submitDisab
       submitLabel
     )
   ) : null;
+  // ModalShell renders through a React portal straight onto document.body
+  // (see the createPortal call below), so it sits OUTSIDE the app's own
+  // root div — the only place that previously set dir={langDir}. Obsidian's
+  // own <body> has no reason to be RTL just because this plugin's language
+  // is Persian, so every modal has been silently laying out as LTR this
+  // whole time: title-left/close-button-right, chip grids filling
+  // left-to-right, the native scrollbar on the right instead of the left,
+  // etc. — exactly what showed up in the user's screenshot. Computing and
+  // applying the direction here, independently of the main app root, fixes
+  // every flex/grid ordering and the scrollbar side in one shot, without
+  // threading a new prop through all eight modal components.
+  const modalLang = loadSettings().language;
+  const modalDir = (LANGUAGES.find((l) => l.id === modalLang) || LANGUAGES[0]).dir;
   const content = /* @__PURE__ */ React.createElement(
     "div",
     {
       onClick: onClose,
+      dir: modalDir,
       className: "lf-modal-backdrop",
       style: { position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "flex-end", justifyContent: "center" }
     },
