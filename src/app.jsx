@@ -3283,6 +3283,19 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const scheduled = dayTasks.filter((tsk) => tsk.time);
   const rowH = 26;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
+  const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(/* @__PURE__ */ new Date()), 6e4);
+    return () => clearInterval(id);
+  }, []);
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const showNow = Jalali && Jalali.isSameJalaliDay(cursor, now) && nowMins >= 360 && nowMins <= 1410;
+  const nowLineEl = showNow ? /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "absolute left-0 right-0 pointer-events-none z-10", style: { top: topFor(minutesToHHMM(nowMins)) } },
+    /* @__PURE__ */ React.createElement("div", { className: "absolute w-1.5 h-1.5 rounded-full", style: { right: 0, top: -3, background: "var(--color-red)" } }),
+    /* @__PURE__ */ React.createElement("div", { className: "border-t", style: { borderColor: "var(--color-red)", marginRight: 4 } })
+  ) : null;
   const [dragId, setDragId] = useState(null);
   const [livePreview, setLivePreview] = useState({});
   const gridRef = useRef(null);
@@ -3472,7 +3485,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
         /* @__PURE__ */ React.createElement("div", { className: "w-6 h-0.5 rounded-full bg-white/40" })
       )
     );
-  }))));
+  }), nowLineEl)));
 }
 function WeekView({ cursor, tasks, onJumpDay }) {
   if (!Jalali) return null;
@@ -3492,7 +3505,13 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt }) {
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
   const start = Jalali.jalaliStartOfWeek(cursor);
   const days = Array.from({ length: 7 }, (_, i) => Jalali.addDays(start, i));
-  const today = /* @__PURE__ */ new Date();
+  const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(/* @__PURE__ */ new Date()), 6e4);
+    return () => clearInterval(id);
+  }, []);
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const nowInRange = nowMins >= 360 && nowMins <= 1410;
   const gridHeight = CAL_HOURS.length * rowH;
   const headerHeight = 34;
 
@@ -3507,7 +3526,7 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt }) {
   );
 
   const dayColumns = days.map((d, i) => {
-    const isToday = Jalali.isSameJalaliDay(d, today);
+    const isToday = Jalali.isSameJalaliDay(d, now);
     const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, d) && tsk.time);
     const header = React.createElement(
       "div",
@@ -3538,7 +3557,13 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt }) {
         React.createElement("p", { className: "text-[9px] font-medium truncate", style: { color: q.color } }, tsk.title)
       );
     });
-    const grid = React.createElement("div", { className: "relative", style: { height: gridHeight } }, rows, blocks);
+    const nowLine = isToday && nowInRange ? React.createElement(
+      "div",
+      { key: "now-line", className: "absolute left-0 right-0 pointer-events-none z-10", style: { top: topFor(minutesToHHMM(nowMins)) } },
+      React.createElement("div", { className: "absolute w-1.5 h-1.5 rounded-full", style: { right: 0, top: -3, background: "var(--color-red)" } }),
+      React.createElement("div", { className: "border-t", style: { borderColor: "var(--color-red)" } })
+    ) : null;
+    const grid = React.createElement("div", { className: "relative", style: { height: gridHeight } }, rows, blocks, nowLine);
     return React.createElement("div", { key: d.toISOString(), className: "flex-1", style: { minWidth: 64 } }, header, grid);
   });
 
