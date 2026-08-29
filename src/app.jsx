@@ -3499,7 +3499,7 @@ function WeekView({ cursor, tasks, onJumpDay }) {
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
-function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt }) {
+function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule }) {
   if (!Jalali) return null;
   const rowH = 22;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
@@ -3510,6 +3510,84 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt }) {
     const id = setInterval(() => setNow(/* @__PURE__ */ new Date()), 6e4);
     return () => clearInterval(id);
   }, []);
+  const [livePreview, setLivePreview] = useState({});
+  // Same-day move/resize only (Pointer Events, delta-based — same pattern as
+  // DayPlannerView's startMove/startResize after the Android touch fix).
+  // Deliberately NOT cross-day drag: tasks have no per-task date, only a
+  // time-of-day + recurrence pattern (see session 21's isTaskDueOn finding),
+  // so "move to a different day column" has no unambiguous meaning for a
+  // recurrence:"none"/"daily" task (already due every day) and would need a
+  // separate weekday-reassignment feature for recurrence:"weekly" tasks —
+  // left for a future session rather than guessed at here.
+  const startWeekMove = (e, tsk) => {
+    if (e.button !== 0) return;
+    const startY = e.clientY;
+    const startMins = timeToMinutes(tsk.time);
+    const onMove = (ev) => {
+      const deltaMin = Math.round((ev.clientY - startY) / rowH * 30 / 5) * 5;
+      const newMins = Math.max(360, Math.min(1410, startMins + deltaMin));
+      setLivePreview((p) => ({ ...p, [tsk.id]: { time: minutesToHHMM(newMins), duration: tsk.duration } }));
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    const onUp = () => {
+      cleanup();
+      setLivePreview((p) => {
+        const preview = p[tsk.id];
+        if (preview) onSchedule && onSchedule(tsk.id, preview.time, preview.duration);
+        const { [tsk.id]: _drop, ...rest } = p;
+        return rest;
+      });
+    };
+    const onCancel = () => {
+      cleanup();
+      setLivePreview((p) => {
+        const { [tsk.id]: _drop, ...rest } = p;
+        return rest;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  };
+  const startWeekResize = (e, tsk) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startDuration = tsk.duration;
+    const onMove = (ev) => {
+      const deltaMin = Math.round((ev.clientY - startY) / rowH * 30 / 5) * 5;
+      const newDuration = Math.max(5, startDuration + deltaMin);
+      setLivePreview((p) => ({ ...p, [tsk.id]: { time: tsk.time, duration: newDuration } }));
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    const onUp = () => {
+      cleanup();
+      setLivePreview((p) => {
+        const preview = p[tsk.id];
+        if (preview) onSchedule && onSchedule(tsk.id, preview.time, preview.duration);
+        const { [tsk.id]: _drop, ...rest } = p;
+        return rest;
+      });
+    };
+    const onCancel = () => {
+      cleanup();
+      setLivePreview((p) => {
+        const { [tsk.id]: _drop, ...rest } = p;
+        return rest;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  };
   const nowMins = now.getHours() * 60 + now.getMinutes();
   const nowInRange = nowMins >= 360 && nowMins <= 1410;
   const gridHeight = CAL_HOURS.length * rowH;
@@ -3542,19 +3620,31 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt }) {
     }));
     const blocks = dayTasks.map((tsk) => {
       const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
-      const h = Math.max((tsk.duration || 30) / 30 * rowH, rowH * 0.7);
+      const preview = livePreview[tsk.id];
+      const liveTime = preview ? preview.time : tsk.time;
+      const liveDur = preview ? preview.duration : tsk.duration;
+      const h = Math.max((liveDur || 30) / 30 * rowH, rowH * 0.7);
       return React.createElement(
         "div",
         {
           key: tsk.id,
+          onPointerDown: onSchedule ? (e) => startWeekMove(e, tsk) : void 0,
           onClick: (e) => {
             e.stopPropagation();
             onEdit(tsk);
           },
-          className: "absolute rounded-md overflow-hidden cursor-pointer px-1",
-          style: { top: topFor(tsk.time), height: h, left: 1, right: 1, background: `${q.color}22`, borderRight: `2px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1 }
+          className: "absolute rounded-md overflow-hidden px-1 select-none" + (onSchedule ? " cursor-grab active:cursor-grabbing" : " cursor-pointer"),
+          style: { top: topFor(liveTime), height: h, left: 1, right: 1, background: `${q.color}22`, borderRight: `2px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1, touchAction: "none" }
         },
-        React.createElement("p", { className: "text-[9px] font-medium truncate", style: { color: q.color } }, tsk.title)
+        React.createElement("p", { className: "text-[9px] font-medium truncate", style: { color: q.color } }, tsk.title),
+        onSchedule ? React.createElement(
+          "div",
+          {
+            onPointerDown: (e) => startWeekResize(e, tsk),
+            className: "absolute left-0 right-0 bottom-0 h-1.5 cursor-ns-resize",
+            style: { touchAction: "none" }
+          }
+        ) : null
       );
     });
     const nowLine = isToday && nowInRange ? React.createElement(
@@ -3640,7 +3730,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       ))
     )
   );
-  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
+  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
 }
 var NAV = [
