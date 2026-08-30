@@ -125,7 +125,131 @@ function parseYouTubeId(url) {
 function formatWhen(v) {
   if (!v) return null;
   const [d, t2] = v.split("T");
-  return `${d} ${t2 || ""}`.trim();
+  if (!d || !Jalali) return `${d || ""} ${t2 || ""}`.trim();
+  const [y, m, day] = d.split("-").map(Number);
+  if (!y || !m || !day) return `${d} ${t2 || ""}`.trim();
+  const dateObj = new Date(y, m - 1, day);
+  const jFormatted = Jalali.formatJalali(dateObj, { weekday: false });
+  if (!t2) return jFormatted;
+  const [hh, mm] = t2.split(":");
+  return `${jFormatted} \u2014 ${Jalali.toFaDigits(hh)}:${Jalali.toFaDigits(mm)}`;
+}
+// Reusable Jalali calendar popup for picking a date (or date+time), used
+// anywhere the app previously relied on a native <input type="datetime-
+// local">/"date"> \u2014 those always render the Gregorian calendar with
+// Latin digits and there's no HTML attribute to change that, so a native
+// picker can never satisfy "the calendar must be Jalali everywhere".
+// Storage format is kept identical to the old native input's value
+// ("YYYY-MM-DDTHH:mm", Gregorian ISO) for backward compatibility with
+// already-saved data \u2014 only the picking UI changes, not what's stored.
+function JalaliDateTimePicker({ value, onChange, includeTime = true, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const parsed = React.useMemo(() => {
+    if (!value) return null;
+    const [d, t2] = value.split("T");
+    const [y, m, day] = (d || "").split("-").map(Number);
+    if (!y || !m || !day) return null;
+    const dt = new Date(y, m - 1, day);
+    if (t2) {
+      const [hh, mm] = t2.split(":").map(Number);
+      dt.setHours(hh || 0, mm || 0, 0, 0);
+    }
+    return dt;
+  }, [value]);
+  const [viewCursor, setViewCursor] = useState(parsed || /* @__PURE__ */ new Date());
+  const [hour, setHour] = useState(parsed ? pad2(parsed.getHours()) : "12");
+  const [minute, setMinute] = useState(parsed ? pad2(parsed.getMinutes()) : "00");
+  if (!Jalali) return null;
+  const grid = Jalali.jalaliMonthGrid(viewCursor);
+  const { jm: curJm, jy: curJy } = Jalali.toJalaliParts(viewCursor);
+  const commit = (dayDate) => {
+    const y = dayDate.getFullYear(), m = dayDate.getMonth() + 1, d = dayDate.getDate();
+    let out = `${y}-${pad2(m)}-${pad2(d)}`;
+    if (includeTime) out += `T${hour}:${minute}`;
+    onChange(out);
+    setOpen(false);
+  };
+  const label = parsed ? Jalali.formatJalali(parsed, { weekday: false }) + (includeTime ? ` \u2014 ${Jalali.toFaDigits(pad2(parsed.getHours()))}:${Jalali.toFaDigits(pad2(parsed.getMinutes()))}` : "") : placeholder || "\u0627\u0646\u062A\u062E\u0627\u0628 \u062A\u0627\u0631\u06CC\u062E";
+  const trigger = React.createElement(
+    "button",
+    {
+      type: "button",
+      onClick: () => {
+        setViewCursor(parsed || /* @__PURE__ */ new Date());
+        setOpen((v) => !v);
+      },
+      className: "w-full flex items-center justify-between gap-2 bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3 text-sm outline-none",
+      style: { color: parsed ? "var(--text-normal)" : "var(--text-faint)" }
+    },
+    React.createElement("span", null, label),
+    React.createElement(Ic, { name: "calendar", size: 15, className: "text-slate-500 shrink-0" })
+  );
+  const weekdayHeader = React.createElement(
+    "div",
+    { style: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px", marginBottom: "4px" } },
+    Jalali.WEEKDAY_SHORT_FA.map((w, i) => React.createElement("p", { key: i, className: "text-center text-[10px]", style: { color: "var(--text-faint)" } }, w))
+  );
+  const dayGrid = React.createElement(
+    "div",
+    { style: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px" } },
+    grid.map((d) => {
+      const { jm, jd } = Jalali.toJalaliParts(d);
+      const inMonth = jm === curJm;
+      const isSelected = parsed && Jalali.isSameJalaliDay(d, parsed);
+      const isToday = Jalali.isSameJalaliDay(d, /* @__PURE__ */ new Date());
+      return React.createElement(
+        "button",
+        {
+          key: d.toISOString(),
+          type: "button",
+          onClick: () => commit(d),
+          style: {
+            aspectRatio: "1",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "8px",
+            fontSize: "11px",
+            opacity: inMonth ? 1 : 0.3,
+            background: isSelected ? "var(--interactive-accent)" : isToday ? "var(--background-modifier-hover)" : "transparent",
+            color: isSelected ? "var(--text-on-accent)" : "var(--text-normal)",
+            border: "none",
+            cursor: "pointer"
+          }
+        },
+        Jalali.toFaDigits(jd)
+      );
+    })
+  );
+  const monthNav = React.createElement(
+    "div",
+    { className: "flex items-center justify-between mb-2" },
+    React.createElement("button", { type: "button", onClick: () => setViewCursor((c) => Jalali.jalaliAddMonths(c, 1)), className: "w-7 h-7 rounded-lg flex items-center justify-center", style: { background: "rgba(255,255,255,0.06)" } }, React.createElement(Ic, { name: "chevron-right", size: 13 })),
+    React.createElement("p", { className: "text-xs font-bold" }, `${JALALI_MONTHS_FA[curJm - 1]} ${Jalali.toFaDigits(curJy)}`),
+    React.createElement("button", { type: "button", onClick: () => setViewCursor((c) => Jalali.jalaliAddMonths(c, -1)), className: "w-7 h-7 rounded-lg flex items-center justify-center", style: { background: "rgba(255,255,255,0.06)" } }, React.createElement(Ic, { name: "chevron-left", size: 13 }))
+  );
+  const timeRow = includeTime ? React.createElement(
+    "div",
+    { className: "flex items-center justify-center gap-2", style: { borderTop: "1px solid var(--background-modifier-border)", marginTop: "12px", paddingTop: "12px" } },
+    React.createElement("input", { type: "number", min: 0, max: 23, value: Number(hour), onChange: (e) => setHour(pad2(Math.min(23, Math.max(0, Number(e.target.value) || 0)))), className: "w-14 text-center bg-white/[0.05] border border-white/10 rounded-lg px-1 py-1 text-xs outline-none" }),
+    React.createElement("span", { className: "text-xs", style: { color: "var(--text-faint)" } }, ":"),
+    React.createElement("input", { type: "number", min: 0, max: 59, value: Number(minute), onChange: (e) => setMinute(pad2(Math.min(59, Math.max(0, Number(e.target.value) || 0)))), className: "w-14 text-center bg-white/[0.05] border border-white/10 rounded-lg px-1 py-1 text-xs outline-none" })
+  ) : null;
+  const clearBtn = parsed ? React.createElement("button", { type: "button", onClick: () => {
+    onChange("");
+    setOpen(false);
+  }, className: "w-full mt-2 text-[11px] py-1.5 rounded-lg", style: { color: "var(--text-muted)", background: "rgba(255,255,255,0.04)" } }, "\u067E\u0627\u06A9 \u06A9\u0631\u062F\u0646 \u062A\u0627\u0631\u06CC\u062E") : null;
+  const backdrop = open ? React.createElement("div", { onClick: () => setOpen(false), style: { position: "fixed", inset: 0, zIndex: 39 } }) : null;
+  const popup = open ? React.createElement(
+    "div",
+    { style: { position: "absolute", zIndex: 40, top: "calc(100% + 4px)", right: 0, left: 0, background: "var(--background-primary)", border: "1px solid var(--background-modifier-border)", borderRadius: "12px", padding: "10px", boxShadow: "0 8px 24px rgba(0,0,0,0.35)" } },
+    monthNav,
+    weekdayHeader,
+    dayGrid,
+    timeRow,
+    clearBtn
+  ) : null;
+  return React.createElement("div", { style: { position: "relative" } }, trigger, backdrop, popup);
 }
 var storage = {
   get(key) {
@@ -1165,15 +1289,7 @@ function AddVideoModal({ onClose, onAdd }) {
     error && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-rose-400 -mt-2 mb-3" }, error),
     /* @__PURE__ */ React.createElement(TextInput, { value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0639\u0646\u0648\u0627\u0646 \u0648\u06CC\u062F\u06CC\u0648 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)" }),
     /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0686\u0647 \u0632\u0645\u0627\u0646\u06CC \u0645\u06CC\u200C\u062E\u0648\u0627\u0645 \u0628\u0628\u06CC\u0646\u0645 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"),
-    /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        type: "datetime-local",
-        value: watchAt,
-        onChange: (e) => setWatchAt(e.target.value),
-        className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3 text-white text-sm mb-2 outline-none"
-      }
-    )
+    /* @__PURE__ */ React.createElement("div", { className: "mb-2" }, /* @__PURE__ */ React.createElement(JalaliDateTimePicker, { value: watchAt, onChange: setWatchAt }))
   );
 }
 function PodcastCard({ p, onToggleListened, onDelete }) {
@@ -1228,15 +1344,7 @@ function AddPodcastModal({ onClose, onAdd }) {
     error && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-rose-400 mb-3" }, error),
     /* @__PURE__ */ React.createElement(TextInput, { value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0639\u0646\u0648\u0627\u0646 \u0627\u067E\u06CC\u0632\u0648\u062F" }),
     /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0686\u0647 \u0632\u0645\u0627\u0646\u06CC \u06AF\u0648\u0634 \u0628\u062F\u0645 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"),
-    /* @__PURE__ */ React.createElement(
-      "input",
-      {
-        type: "datetime-local",
-        value: listenAt,
-        onChange: (e) => setListenAt(e.target.value),
-        className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3 text-white text-sm mb-2 outline-none"
-      }
-    )
+    /* @__PURE__ */ React.createElement("div", { className: "mb-2" }, /* @__PURE__ */ React.createElement(JalaliDateTimePicker, { value: listenAt, onChange: setListenAt }))
   );
 }
 function smoothSvgPath(points) {
