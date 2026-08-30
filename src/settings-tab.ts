@@ -43,6 +43,12 @@ interface LifeFlowSettings {
 	appearance: {
 		fontFamily: string;
 		density: string;
+		quadrantColors: {
+			q1: string;
+			q2: string;
+			q3: string;
+			q4: string;
+		};
 	};
 	[key: string]: unknown;
 }
@@ -51,6 +57,12 @@ interface AiConfig {
 	provider: string;
 	apiKey: string;
 }
+
+// Mirrors app.jsx's QUADRANTS default colors exactly (id -> hex). Kept as a
+// separate named constant (not inlined into DEFAULT_SETTINGS) so both the
+// default-value assignment below and the nested merge in readSettings() can
+// reference the same object without repeating the 4 hex values twice.
+const DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
 
 const DEFAULT_SETTINGS: LifeFlowSettings = {
 	theme: "dark",
@@ -62,7 +74,7 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 	},
 	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false },
 	reports: { folderName: "LifeFlow Reports" },
-	appearance: { fontFamily: "default", density: "comfortable" },
+	appearance: { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS },
 };
 
 const LANGUAGE_OPTIONS: Record<string, string> = {
@@ -117,6 +129,16 @@ const DENSITY_OPTIONS: Record<string, string> = {
 	compact: "فشرده (فاصله‌گذاری کمتر بین عناصر)",
 };
 
+// Mirrors QUADRANTS' id/label/sub text in app.jsx exactly (kept separate
+// since settings-tab.ts is plain TS, not part of the React tree) — same
+// low-divergence-risk duplication already used for FONT_OPTIONS etc.
+const QUADRANT_SETTING_LABELS: Record<string, string> = {
+	q1: "فوری و مهم (همین الان)",
+	q2: "مهم، غیرفوری (برنامه‌ریزی کن)",
+	q3: "فوری، غیرمهم (واگذار یا سریع رد کن)",
+	q4: "غیرفوری و غیرمهم (بعداً یا حذف)",
+};
+
 export class LifeFlowSettingTab extends PluginSettingTab {
 	plugin: LifeFlowPlugin;
 
@@ -141,7 +163,11 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 				},
 				taskDefaults: { ...DEFAULT_SETTINGS.taskDefaults, ...(parsed.taskDefaults || {}) },
 				reports: { ...DEFAULT_SETTINGS.reports, ...(parsed.reports || {}) },
-				appearance: { ...DEFAULT_SETTINGS.appearance, ...(parsed.appearance || {}) },
+				appearance: {
+					...DEFAULT_SETTINGS.appearance,
+					...(parsed.appearance || {}),
+					quadrantColors: { ...DEFAULT_SETTINGS.appearance.quadrantColors, ...((parsed.appearance || {}).quadrantColors || {}) },
+				},
 			};
 		} catch (e) {
 			return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
@@ -230,6 +256,36 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					this.writeSettings(next);
 				});
 			});
+
+		// ---------------------------------------------------------------
+		containerEl.createEl("h3", { text: "رنگ‌های ماتریس آیزنهاور" });
+		containerEl.createEl("p", {
+			text: "این ۴ رنگ در همه‌جای برنامه (ماتریس، ردیف تسک‌ها، کانبان، برنامه‌ریزی روزانه/هفتگی، نمودارها) برای همان دسته به کار می‌روند.",
+			cls: "setting-item-description",
+		});
+
+		(Object.entries(QUADRANT_SETTING_LABELS) as [keyof LifeFlowSettings["appearance"]["quadrantColors"], string][]).forEach(([quadId, label]) => {
+			new Setting(containerEl)
+				.setName(label)
+				.addColorPicker((picker) => {
+					picker.setValue(settings.appearance.quadrantColors[quadId]);
+					picker.onChange((value) => {
+						const next = this.readSettings();
+						next.appearance.quadrantColors[quadId] = value;
+						this.writeSettings(next);
+					});
+				})
+				.addExtraButton((btn) => {
+					btn.setIcon("rotate-ccw");
+					btn.setTooltip("بازگشت به رنگ پیش‌فرض");
+					btn.onClick(() => {
+						const next = this.readSettings();
+						next.appearance.quadrantColors[quadId] = DEFAULT_QUADRANT_COLORS[quadId];
+						this.writeSettings(next);
+						this.display();
+					});
+				});
+		});
 
 		// ---------------------------------------------------------------
 		containerEl.createEl("h3", { text: "قابلیت‌ها" });

@@ -318,7 +318,8 @@ var DEFAULT_FEATURES = {
   showMatrix: true,
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
-var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable" };
+var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
+var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS };
 // Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
 // settings-tab.ts is plain TS, not part of this React tree) — same
 // low-divergence-risk duplication already used for QUADRANTS/PRIORITIES/
@@ -340,15 +341,45 @@ function resolveFontFamily(id) {
 function mergeFeatures(f) {
   return { ...DEFAULT_FEATURES, ...(f || {}), tabs: { ...DEFAULT_FEATURES.tabs, ...((f || {}).tabs || {}) } };
 }
+// quadrantColors is a nested object (like features.tabs), so it needs its
+// own one-level-deeper merge too — a flat { ...DEFAULT_APPEARANCE, ...a }
+// would let a partial saved override (e.g. just { q1: "#123456" } from an
+// older/corrupted save) silently wipe out q2/q3/q4's defaults instead of
+// keeping them, the same pitfall mergeFeatures already exists to avoid for
+// features.tabs.
+function mergeAppearance(a) {
+  return { ...DEFAULT_APPEARANCE, ...(a || {}), quadrantColors: { ...DEFAULT_QUADRANT_COLORS, ...((a || {}).quadrantColors || {}) } };
+}
+// Mutates the shared QUADRANTS array's `color` fields in place so every one
+// of its many existing read sites (QUADRANTS.find/.map, scattered across
+// the whole file — the matrix, task rows, kanban, day/week planners,
+// charts, ...) automatically shows a user's custom colors with zero
+// changes to any of those call sites, the same "one shared choke point"
+// reasoning already used for the storage layer (see PROGRESS.md, Task 2).
+// Falls back to the original hardcoded defaults for anything missing or
+// not a valid 6-digit hex string, so a corrupt/partial settings object can
+// never leave a quadrant with no color at all.
+function applyQuadrantColors(overrides) {
+  QUADRANTS.forEach((q) => {
+    const custom = overrides && overrides[q.id];
+    q.color = typeof custom === "string" && /^#[0-9a-fA-F]{6}$/.test(custom) ? custom : DEFAULT_QUADRANT_COLORS[q.id];
+  });
+}
 function loadSettings() {
+  let result;
   try {
     const raw = storage.get(SETTINGS_KEY);
-    if (!raw) return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
-    const parsed = JSON.parse(raw);
-    return { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: { ...DEFAULT_APPEARANCE, ...parsed.appearance || {} } };
+    if (!raw) {
+      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+    } else {
+      const parsed = JSON.parse(raw);
+      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance) };
+    }
   } catch (e) {
-    return { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
   }
+  applyQuadrantColors(result.appearance.quadrantColors);
+  return result;
 }
 function saveSettings(s) {
   try {
