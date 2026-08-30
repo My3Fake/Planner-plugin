@@ -3595,10 +3595,11 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
   const nowInRange = nowMins >= 360 && nowMins <= 1410;
   const gridHeight = CAL_HOURS.length * rowH;
   const headerHeight = 34;
+  const untimedHeight = 16;
 
   const hourLabels = React.createElement(
     "div",
-    { className: "relative w-8 shrink-0", style: { height: gridHeight, marginTop: headerHeight } },
+    { className: "relative w-8 shrink-0", style: { height: gridHeight, marginTop: headerHeight + untimedHeight } },
     CAL_HOURS.filter((mins) => mins % 60 === 0).map((mins) => React.createElement(
       "span",
       { key: mins, className: "absolute text-[9px] text-slate-500", style: { top: topFor(minutesToHHMM(mins)) - 5 } },
@@ -3609,11 +3610,30 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
   const dayColumns = days.map((d, i) => {
     const isToday = Jalali.isSameJalaliDay(d, now);
     const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, d) && tsk.time);
+    const untimedTasks = tasks.filter((tsk) => isTaskDueOn(tsk, d) && !tsk.time);
     const header = React.createElement(
       "div",
       { className: "text-center mb-1", style: { height: headerHeight } },
       React.createElement("p", { className: "text-[9px] text-slate-500" }, WEEKDAY_SHORT_ORDER[(d.getDay() + 1) % 7]),
       React.createElement("p", { className: "text-xs font-bold", style: { color: isToday ? "var(--text-accent)" : "var(--text-muted)" } }, Jalali.toJalaliParts(d).jd)
+    );
+    const untimedRow = React.createElement(
+      "div",
+      { className: "flex items-center justify-center flex-wrap gap-0.5 mb-1", style: { height: untimedHeight } },
+      untimedTasks.slice(0, 5).map((tsk) => {
+        const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
+        return React.createElement("button", {
+          key: tsk.id,
+          onClick: (e) => {
+            e.stopPropagation();
+            onEdit(tsk);
+          },
+          className: "w-1.5 h-1.5 rounded-full shrink-0",
+          style: { background: q.color, opacity: tsk.status === "done" ? 0.35 : 1 },
+          title: tsk.title
+        });
+      }),
+      untimedTasks.length > 5 ? React.createElement("span", { className: "text-[9px]", style: { color: "var(--text-faint)" } }, "+", untimedTasks.length - 5) : null
     );
     const rows = CAL_HOURS.map((mins) => React.createElement("div", {
       key: mins,
@@ -3657,7 +3677,7 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
       React.createElement("div", { className: "border-t", style: { borderColor: "var(--color-red)" } })
     ) : null;
     const grid = React.createElement("div", { className: "relative", style: { height: gridHeight } }, rows, blocks, nowLine);
-    return React.createElement("div", { key: d.toISOString(), className: "flex-1", style: { minWidth: 64 } }, header, grid);
+    return React.createElement("div", { key: d.toISOString(), className: "flex-1", style: { minWidth: 64 } }, header, untimedRow, grid);
   });
 
   return React.createElement(GlassCard, { className: "p-3 overflow-x-auto" }, React.createElement("div", { className: "flex gap-1", style: { minWidth: 40 + dayCount * 85 } }, hourLabels, dayColumns));
