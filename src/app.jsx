@@ -3538,7 +3538,50 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
   );
   return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
-function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }) {
+// Google-Calendar-style side-by-side layout for tasks that overlap in time.
+// Groups mutually-overlapping tasks into clusters, then greedily assigns
+// each task the first column (within its cluster) whose previous occupant
+// has already ended by the time this task starts — the same algorithm
+// used by most calendar UIs. Returns Map(id -> {column, totalColumns}).
+function computeOverlapLayout(items) {
+  const sorted = [...items].sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+  const clusters = [];
+  let cluster = [];
+  let clusterMaxEnd = -Infinity;
+  for (const it of sorted) {
+    if (cluster.length > 0 && it.startMin >= clusterMaxEnd) {
+      clusters.push(cluster);
+      cluster = [];
+      clusterMaxEnd = -Infinity;
+    }
+    cluster.push(it);
+    clusterMaxEnd = Math.max(clusterMaxEnd, it.endMin);
+  }
+  if (cluster.length) clusters.push(cluster);
+  const result = /* @__PURE__ */ new Map();
+  for (const clusterItems of clusters) {
+    const colEndTimes = [];
+    for (const it of clusterItems) {
+      let placedCol = -1;
+      for (let i = 0; i < colEndTimes.length; i++) {
+        if (it.startMin >= colEndTimes[i]) {
+          colEndTimes[i] = it.endMin;
+          placedCol = i;
+          break;
+        }
+      }
+      if (placedCol === -1) {
+        colEndTimes.push(it.endMin);
+        placedCol = colEndTimes.length - 1;
+      }
+      result.set(it.id, { column: placedCol, totalColumns: 0 });
+    }
+    const totalColumns = colEndTimes.length;
+    for (const it of clusterItems) result.get(it.id).totalColumns = totalColumns;
+  }
+  return result;
+}
+function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, onAddProgress }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
   const unscheduled = dayTasks.filter((tsk) => !tsk.time);
   const scheduled = dayTasks.filter((tsk) => tsk.time);
@@ -3560,6 +3603,32 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const [dragId, setDragId] = useState(null);
   const [livePreview, setLivePreview] = useState({});
   const gridRef = useRef(null);
+  // Guards against a real bug: after a resize/move/basket-drop drag ends,
+  // the browser still fires a native "click" wherever the pointer happens
+  // to land — which, because the 5-minute snapping means the pointer and
+  // the (snapped) visual edge of the block drift apart during a drag, is
+  // very often an empty grid row rather than the block/handle itself. That
+  // row's onClick opens the "create task" modal — so every resize/move
+  // ended with an unwanted empty "new task" modal popping up. Two
+  // complementary fixes: (1) setPointerCapture locks pointermove/pointerup
+  // to originate from the element the drag actually started on, which
+  // removes most of the drift; (2) suppressClickRef is a short-lived flag
+  // set the instant a real drag/resize/drop completes, checked at the top
+  // of every onClick in this view, as a hard backstop regardless of what
+  // element the stray click's hit-test lands on.
+  const suppressClickRef = useRef(false);
+  const markSuppressClick = () => {
+    suppressClickRef.current = true;
+    setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  };
+  const capturePointer = (e) => {
+    try {
+      e.target.setPointerCapture(e.pointerId);
+    } catch (err) {
+    }
+  };
   // Inverse of topFor: given a Y position in *client* (viewport) coordinates,
   // find which 5-minute slot of the grid it falls on. Used by the
   // pointer-based "drag from the unscheduled basket onto the grid" flow
@@ -3578,6 +3647,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     if (!tsk) return;
     onSchedule(tsk.id, minutesToHHMM(Math.max(360, Math.min(1410, mins))), tsk.duration || 45);
     setDragId(null);
+    markSuppressClick();
   };
   // Dragging an *unscheduled* chip onto the hourly grid to schedule it.
   // Previously HTML5 drag-and-drop (draggable/onDragStart/onDragOver/onDrop)
@@ -3591,6 +3661,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   // opens the edit modal exactly as before.
   const startBasketDrag = (e, tsk) => {
     if (e.button !== 0) return;
+    capturePointer(e);
     const startX = e.clientX;
     const startY = e.clientY;
     let dragging = false;
@@ -3626,6 +3697,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   };
   const startMove = (e, tsk) => {
     if (e.button !== 0) return;
+    capturePointer(e);
     const startY = e.clientY;
     const startMins = timeToMinutes(tsk.time);
     const onMove = (ev) => {
@@ -3640,6 +3712,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     };
     const onUp = () => {
       cleanup();
+      markSuppressClick();
       setLivePreview((p) => {
         const preview = p[tsk.id];
         if (preview) onSchedule(tsk.id, preview.time, preview.duration);
@@ -3661,6 +3734,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const startResize = (e, tsk) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    capturePointer(e);
     const startY = e.clientY;
     const startDuration = tsk.duration;
     const onMove = (ev) => {
@@ -3675,6 +3749,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     };
     const onUp = () => {
       cleanup();
+      markSuppressClick();
       setLivePreview((p) => {
         const preview = p[tsk.id];
         if (preview) onSchedule(tsk.id, preview.time, preview.duration);
@@ -3694,22 +3769,52 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     window.addEventListener("pointercancel", onCancel);
   };
   const createAt = (mins) => {
+    if (suppressClickRef.current) return;
     if (onCreateAt) onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
-    const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
-    return /* @__PURE__ */ React.createElement(
-      "div",
-      {
-        key: tsk.id,
-        onPointerDown: (e) => startBasketDrag(e, tsk),
-        onClick: () => onEdit(tsk),
-        className: "cursor-grab active:cursor-grabbing px-2.5 py-1.5 rounded-lg text-[11px] border",
-        style: { borderColor: `${q.color}55`, background: `${q.color}18`, color: q.color, touchAction: "none" }
-      },
-      tsk.title
-    );
-  }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0648\u0633\u0637 \u0628\u0644\u0648\u06A9 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062C\u0627\u0628\u0647\u200C\u062C\u0627\u06CC\u06CC\u061B \u0644\u0628\u0647\u200C\u06CC \u067E\u0627\u06CC\u06CC\u0646\u0634 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062A\u063A\u06CC\u06CC\u0631 \u0645\u062F\u062A \u2014 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC \u0628\u0632\u0646 \u062A\u0627 \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u0627\u0632\u0647 \u0628\u0633\u0627\u0632\u06CC"), /* @__PURE__ */ React.createElement("div", { ref: gridRef, className: "relative", style: { height: CAL_HOURS.length * rowH } }, CAL_HOURS.map((mins) => /* @__PURE__ */ React.createElement(
+  const [expandedId, setExpandedId] = useState(null);
+  const onTaskClick = (tsk) => {
+    if (suppressClickRef.current) return;
+    if (tsk.progressType === "progressive") {
+      setExpandedId((id) => id === tsk.id ? null : tsk.id);
+    } else {
+      onEdit(tsk);
+    }
+  };
+  const scheduledWithLive = scheduled.map((tsk) => {
+    const preview = livePreview[tsk.id];
+    const liveTime = preview ? preview.time : tsk.time;
+    const liveDur = preview ? preview.duration : tsk.duration;
+    return { tsk, liveTime, liveDur, startMin: timeToMinutes(liveTime), endMin: timeToMinutes(liveTime) + liveDur };
+  });
+  const overlapLayout = computeOverlapLayout(scheduledWithLive.map((x) => ({ id: x.tsk.id, startMin: x.startMin, endMin: x.endMin })));
+  const laneLeft = 46;
+  const laneRight = 4;
+
+  const unscheduledStrip = unscheduled.length > 0 ? React.createElement(
+    GlassCard,
+    { className: "p-3" },
+    React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"),
+    React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
+      const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
+      return React.createElement(
+        "div",
+        {
+          key: tsk.id,
+          onPointerDown: (e) => startBasketDrag(e, tsk),
+          onClick: () => {
+            if (suppressClickRef.current) return;
+            onEdit(tsk);
+          },
+          className: "px-2.5 py-1.5 rounded-lg text-[11px] border",
+          style: { borderColor: `${q.color}55`, background: `${q.color}18`, color: q.color, touchAction: "none", cursor: dragId === tsk.id ? "grabbing" : "grab", userSelect: "none" }
+        },
+        tsk.title
+      );
+    }))
+  ) : null;
+
+  const emptyRows = CAL_HOURS.map((mins) => React.createElement(
     "div",
     {
       key: mins,
@@ -3717,36 +3822,111 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
       className: "absolute left-0 right-0 flex items-start gap-2 cursor-pointer",
       style: { top: topFor(minutesToHHMM(mins)), height: rowH }
     },
-    mins % 60 === 0 && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 w-9 shrink-0" }, pad2(mins / 60), ":\u06F0\u06F0"),
-    /* @__PURE__ */ React.createElement("div", { className: "flex-1 border-t border-white/[0.04]", style: { marginRight: mins % 60 === 0 ? 0 : 44 } })
-  )), scheduled.map((tsk) => {
+    mins % 60 === 0 && React.createElement("span", { className: "text-[10px] text-slate-500 w-9 shrink-0" }, pad2(mins / 60), ":\u06F0\u06F0"),
+    React.createElement("div", { className: "flex-1 border-t border-white/[0.04]", style: { marginRight: mins % 60 === 0 ? 0 : 44 } })
+  ));
+
+  const taskBlocks = [];
+  const popovers = [];
+  scheduledWithLive.forEach(({ tsk, liveTime, liveDur }) => {
     const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
-    const preview = livePreview[tsk.id];
-    const liveTime = preview ? preview.time : tsk.time;
-    const liveDur = preview ? preview.duration : tsk.duration;
     const h = Math.max(liveDur / 30 * rowH, rowH * 0.7);
-    return /* @__PURE__ */ React.createElement(
+    const layout = overlapLayout.get(tsk.id) || { column: 0, totalColumns: 1 };
+    const colWidthPct = 100 / layout.totalColumns;
+    const leftPct = layout.column * colWidthPct;
+    const gapPx = layout.totalColumns > 1 ? 2 : 0;
+    const isDragging = !!livePreview[tsk.id];
+    const isExpanded = expandedId === tsk.id;
+
+    const titleEl = React.createElement("p", { className: `text-[10px] font-medium truncate ${tsk.status === "done" ? "line-through" : ""}`, style: { color: q.color } }, tsk.title);
+    const metaEl = React.createElement("p", { className: "text-[9px] text-slate-400" }, liveTime, " \xB7 ", liveDur, "\u062F", liveDur > 60 ? ` (${Math.floor(liveDur / 60)}\u0633\u0627\u0639\u062A${liveDur % 60 ? ` ${liveDur % 60}\u062F` : ""})` : "");
+    const resizeHandle = React.createElement(
+      "div",
+      {
+        onPointerDown: (e) => startResize(e, tsk),
+        className: "absolute left-0 right-0 bottom-0 h-2.5 flex items-center justify-center",
+        style: { touchAction: "none", cursor: "ns-resize" }
+      },
+      React.createElement("div", { className: "w-6 h-0.5 rounded-full bg-white/40" })
+    );
+    // left/width are percentages of the *lane* div below (which already
+    // accounts for the 46px time-label gutter via its own left/right), NOT
+    // of the outer grid — mixing a full-container percentage with a
+    // per-task fixed px offset here previously produced a ~52px phantom
+    // gap between adjacent overlapping tasks instead of the intended 2px
+    // (caught by a symbolic sanity check before this was ever committed).
+    taskBlocks.push(React.createElement(
       "div",
       {
         key: tsk.id,
         onPointerDown: (e) => startMove(e, tsk),
-        onClick: () => onEdit(tsk),
-        className: "absolute right-1 rounded-lg px-2 py-1 overflow-hidden cursor-grab active:cursor-grabbing group select-none",
-        style: { top: topFor(liveTime), height: h, left: 46, background: `${q.color}22`, borderRight: `3px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1, userSelect: "none", touchAction: "none" }
+        onClick: () => onTaskClick(tsk),
+        className: "absolute rounded-lg px-2 py-1 overflow-hidden group select-none",
+        style: {
+          top: topFor(liveTime),
+          height: h,
+          left: `calc(${leftPct}% + ${gapPx / 2}px)`,
+          width: `calc(${colWidthPct}% - ${gapPx}px)`,
+          background: `${q.color}22`,
+          borderRight: `3px solid ${q.color}`,
+          opacity: tsk.status === "done" ? 0.5 : 1,
+          userSelect: "none",
+          touchAction: "none",
+          cursor: isDragging ? "grabbing" : "grab",
+          zIndex: isExpanded ? 20 : 1
+        }
       },
-      /* @__PURE__ */ React.createElement("p", { className: `text-[10px] font-medium truncate ${tsk.status === "done" ? "line-through" : ""}`, style: { color: q.color } }, tsk.title),
-      /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-400" }, liveTime, " \xB7 ", liveDur, "\u062F", liveDur > 60 ? ` (${Math.floor(liveDur / 60)}\u0633\u0627\u0639\u062A${liveDur % 60 ? ` ${liveDur % 60}\u062F` : ""})` : ""),
-      /* @__PURE__ */ React.createElement(
+      titleEl,
+      metaEl,
+      resizeHandle
+    ));
+
+    if (!isExpanded) return;
+
+    popovers.push(React.createElement(
+      GlassCard,
+      { key: `${tsk.id}-progress`, className: "absolute p-2.5 z-30", style: { top: topFor(liveTime) + h + 4, left: laneLeft, right: laneRight } },
+      React.createElement(
         "div",
+        { className: "flex items-center justify-between mb-1" },
+        React.createElement("p", { className: "text-[11px] font-bold text-slate-200 truncate" }, tsk.title),
+        React.createElement("button", { onClick: () => setExpandedId(null), className: "text-slate-400 shrink-0" }, React.createElement(Ic, { name: "x", size: 13 }))
+      ),
+      React.createElement(ProgressiveTaskBar, { task: tsk, onAddProgress }),
+      React.createElement(
+        "button",
         {
-          onPointerDown: (e) => startResize(e, tsk),
-          className: "absolute left-0 right-0 bottom-0 h-2.5 cursor-ns-resize flex items-center justify-center",
-          style: { touchAction: "none" }
+          onClick: () => {
+            setExpandedId(null);
+            onEdit(tsk);
+          },
+          className: "mt-1.5 text-[10px]",
+          style: { color: "var(--text-accent)" }
         },
-        /* @__PURE__ */ React.createElement("div", { className: "w-6 h-0.5 rounded-full bg-white/40" })
+        "\u0648\u06CC\u0631\u0627\u06CC\u0634 \u06A9\u0627\u0645\u0644 \u062A\u0633\u06A9"
       )
-    );
-  }), nowLineEl)));
+    ));
+  });
+  const taskLane = React.createElement("div", { className: "absolute top-0 bottom-0", style: { left: laneLeft, right: laneRight } }, taskBlocks);
+
+  return React.createElement(
+    "div",
+    { className: "space-y-3" },
+    unscheduledStrip,
+    React.createElement(
+      GlassCard,
+      { className: "p-3" },
+      React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0648\u0633\u0637 \u0628\u0644\u0648\u06A9 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062C\u0627\u0628\u0647\u200C\u062C\u0627\u06CC\u06CC\u061B \u0644\u0628\u0647\u200C\u06CC \u067E\u0627\u06CC\u06CC\u0646\u0634 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062A\u063A\u06CC\u06CC\u0631 \u0645\u062F\u062A \u2014 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC \u0628\u0632\u0646 \u062A\u0627 \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u0627\u0632\u0647 \u0628\u0633\u0627\u0632\u06CC"),
+      React.createElement(
+        "div",
+        { ref: gridRef, className: "relative", style: { height: CAL_HOURS.length * rowH } },
+        emptyRows,
+        taskLane,
+        popovers,
+        nowLineEl
+      )
+    )
+  );
 }
 function WeekView({ cursor, tasks, onJumpDay }) {
   if (!Jalali) return null;
@@ -3760,7 +3940,7 @@ function WeekView({ cursor, tasks, onJumpDay }) {
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
-function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7 }) {
+function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, onAddProgress, dayCount = 7 }) {
   if (!Jalali) return null;
   const rowH = 22;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
@@ -3772,6 +3952,24 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
     return () => clearInterval(id);
   }, []);
   const [livePreview, setLivePreview] = useState({});
+  const [expandedId, setExpandedId] = useState(null);
+  // Same click-after-drag bug (and the same two-part fix: pointer capture +
+  // a short-lived suppress flag) as DayPlannerView — see its comment for
+  // the full explanation. Shared here because this view has its own
+  // separate move/resize handlers, not because the bug itself differs.
+  const suppressClickRef = useRef(false);
+  const markSuppressClick = () => {
+    suppressClickRef.current = true;
+    setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  };
+  const capturePointer = (e) => {
+    try {
+      e.target.setPointerCapture(e.pointerId);
+    } catch (err) {
+    }
+  };
   // Same-day move/resize only (Pointer Events, delta-based — same pattern as
   // DayPlannerView's startMove/startResize after the Android touch fix).
   // Deliberately NOT cross-day drag: tasks have no per-task date, only a
@@ -3782,6 +3980,7 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
   // left for a future session rather than guessed at here.
   const startWeekMove = (e, tsk) => {
     if (e.button !== 0) return;
+    capturePointer(e);
     const startY = e.clientY;
     const startMins = timeToMinutes(tsk.time);
     const onMove = (ev) => {
@@ -3796,6 +3995,7 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
     };
     const onUp = () => {
       cleanup();
+      markSuppressClick();
       setLivePreview((p) => {
         const preview = p[tsk.id];
         if (preview) onSchedule && onSchedule(tsk.id, preview.time, preview.duration);
@@ -3817,6 +4017,7 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
   const startWeekResize = (e, tsk) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    capturePointer(e);
     const startY = e.clientY;
     const startDuration = tsk.duration;
     const onMove = (ev) => {
@@ -3831,6 +4032,7 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
     };
     const onUp = () => {
       cleanup();
+      markSuppressClick();
       setLivePreview((p) => {
         const preview = p[tsk.id];
         if (preview) onSchedule && onSchedule(tsk.id, preview.time, preview.duration);
@@ -3848,6 +4050,18 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
+  };
+  const onTaskClick = (tsk) => {
+    if (suppressClickRef.current) return;
+    if (tsk.progressType === "progressive") {
+      setExpandedId((id) => id === tsk.id ? null : tsk.id);
+    } else {
+      onEdit(tsk);
+    }
+  };
+  const createAtGuarded = (mins) => {
+    if (suppressClickRef.current) return;
+    onCreateAt && onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
   };
   const nowMins = now.getHours() * 60 + now.getMinutes();
   const nowInRange = nowMins >= 360 && nowMins <= 1410;
@@ -3895,38 +4109,88 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
     );
     const rows = CAL_HOURS.map((mins) => React.createElement("div", {
       key: mins,
-      onClick: () => onCreateAt && onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins)))),
+      onClick: () => createAtGuarded(mins),
       className: "absolute left-0 right-0 border-t border-white/[0.04] cursor-pointer",
       style: { top: topFor(minutesToHHMM(mins)), height: rowH }
     }));
-    const blocks = dayTasks.map((tsk) => {
-      const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
+    const dayTasksWithLive = dayTasks.map((tsk) => {
       const preview = livePreview[tsk.id];
       const liveTime = preview ? preview.time : tsk.time;
-      const liveDur = preview ? preview.duration : tsk.duration;
+      const liveDur = preview ? preview.duration : tsk.duration || 30;
+      return { tsk, liveTime, liveDur, startMin: timeToMinutes(liveTime), endMin: timeToMinutes(liveTime) + liveDur };
+    });
+    const overlapLayout = computeOverlapLayout(dayTasksWithLive.map((x) => ({ id: x.tsk.id, startMin: x.startMin, endMin: x.endMin })));
+    const blocks = dayTasksWithLive.map(({ tsk, liveTime, liveDur }) => {
+      const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
       const h = Math.max((liveDur || 30) / 30 * rowH, rowH * 0.7);
-      return React.createElement(
+      const layout = overlapLayout.get(tsk.id) || { column: 0, totalColumns: 1 };
+      const colWidthPct = 100 / layout.totalColumns;
+      const leftPct = layout.column * colWidthPct;
+      const gapPx = layout.totalColumns > 1 ? 1 : 0;
+      const isDragging = !!livePreview[tsk.id];
+      const isExpanded = expandedId === tsk.id;
+      const block = React.createElement(
         "div",
         {
           key: tsk.id,
           onPointerDown: onSchedule ? (e) => startWeekMove(e, tsk) : void 0,
           onClick: (e) => {
             e.stopPropagation();
-            onEdit(tsk);
+            onTaskClick(tsk);
           },
-          className: "absolute rounded-md overflow-hidden px-1 select-none" + (onSchedule ? " cursor-grab active:cursor-grabbing" : " cursor-pointer"),
-          style: { top: topFor(liveTime), height: h, left: 1, right: 1, background: `${q.color}22`, borderRight: `2px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1, touchAction: "none" }
+          className: "absolute rounded-md overflow-hidden px-1 select-none",
+          style: {
+            top: topFor(liveTime),
+            height: h,
+            left: `calc(${leftPct}% + ${gapPx / 2}px)`,
+            width: `calc(${colWidthPct}% - ${gapPx}px)`,
+            background: `${q.color}22`,
+            borderRight: `2px solid ${q.color}`,
+            opacity: tsk.status === "done" ? 0.5 : 1,
+            touchAction: "none",
+            cursor: onSchedule ? isDragging ? "grabbing" : "grab" : "pointer",
+            zIndex: isExpanded ? 20 : 1
+          }
         },
         React.createElement("p", { className: "text-[9px] font-medium truncate", style: { color: q.color } }, tsk.title),
         onSchedule ? React.createElement(
           "div",
           {
             onPointerDown: (e) => startWeekResize(e, tsk),
-            className: "absolute left-0 right-0 bottom-0 h-1.5 cursor-ns-resize",
-            style: { touchAction: "none" }
+            className: "absolute left-0 right-0 bottom-0 h-1.5",
+            style: { touchAction: "none", cursor: "ns-resize" }
           }
         ) : null
       );
+      if (!isExpanded) return block;
+      const popover = React.createElement(
+        GlassCard,
+        { key: `${tsk.id}-progress`, className: "absolute p-2.5 z-30", style: { top: topFor(liveTime) + h + 4, left: 0, width: 190 } },
+        React.createElement(
+          "div",
+          { className: "flex items-center justify-between mb-1" },
+          React.createElement("p", { className: "text-[11px] font-bold text-slate-200 truncate" }, tsk.title),
+          React.createElement("button", { onClick: (e) => {
+            e.stopPropagation();
+            setExpandedId(null);
+          }, className: "text-slate-400 shrink-0" }, React.createElement(Ic, { name: "x", size: 13 }))
+        ),
+        React.createElement(ProgressiveTaskBar, { task: tsk, onAddProgress }),
+        React.createElement(
+          "button",
+          {
+            onClick: (e) => {
+              e.stopPropagation();
+              setExpandedId(null);
+              onEdit(tsk);
+            },
+            className: "mt-1.5 text-[10px]",
+            style: { color: "var(--text-accent)" }
+          },
+          "\u0648\u06CC\u0631\u0627\u06CC\u0634 \u06A9\u0627\u0645\u0644 \u062A\u0633\u06A9"
+        )
+      );
+      return [block, popover];
     });
     const nowLine = isToday && nowInRange ? React.createElement(
       "div",
@@ -4012,8 +4276,8 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       ))
     )
   );
-  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3 }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, onAddProgress }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, onAddProgress }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, onAddProgress, dayCount: 3 }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
