@@ -421,6 +421,7 @@ function GlobalSearchModal({ onClose, onNavigate, tasks, books, videos, podcasts
   return /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col", onClick: onClose }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto w-full px-4 pt-8", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1 flex items-center gap-2 bg-white/[0.06] border border-white/10 rounded-xl px-3 py-2.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 16, className: "text-slate-400 shrink-0" }), /* @__PURE__ */ React.createElement(
     "input",
     {
+      type: "text",
       autoFocus: true,
       value: q,
       onChange: (e) => setQ(e.target.value),
@@ -622,19 +623,23 @@ function ModalShell({ title, onClose, onSubmit, footer, submitLabel, submitDisab
     const modalDir = (LANGUAGES.find((l) => l.id === modalLang) || LANGUAGES[0]).dir;
     const modal = plugin.openReactModal(() => onCloseRef.current());
     modal.contentEl.setAttribute("dir", modalDir);
-    // Every existing theme-color override in styles.css (text-white/
-    // text-slate-*/bg-white/etc -> Obsidian CSS vars) is scoped as
-    // `.lifeflow-app-root [class*="..."]` because it was written assuming
-    // this content lives inside the main view's root div. Modal content
-    // never did (it portals to a separate node, previously document.body,
-    // now this contentEl) — so those Tailwind color classes were silently
-    // falling back to their literal compiled colors (plain white text,
-    // fixed slate grays) the whole time. That happened to look passable in
-    // a dark Obsidian theme by coincidence, but would be broken (e.g.
-    // white text) in a light theme. Adding the same class here — rather
-    // than rewriting every rule in styles.css to also match a second
-    // selector — makes every one of those existing rules apply here too.
-    modal.contentEl.addClass("lifeflow-app-root", "lifeflow-modal-content");
+    // Two separate things were missing, and the previous attempt (see
+    // PROGRESS.md Lane 1 session 3) only fixed one of them:
+    // (a) theme-color overrides (text-white -> var(--text-normal) etc.)
+    //     are scoped `.lifeflow-app-root [class*="..."]` — fixed before by
+    //     adding "lifeflow-app-root" here.
+    // (b) EVERY compiled Tailwind utility class (flex, gap-*, rounded-*,
+    //     px-*/py-*, text-[11px] — literally the whole compiled block at
+    //     the top of styles.css) is scoped under `.lifeflow-plugin-host`,
+    //     the class on LifeFlowView's own container — an ancestor the
+    //     modal's contentEl never had either, since it's a separate DOM
+    //     subtree Obsidian creates. Missing this meant every layout/spacing
+    //     utility class was silently inert: fields still had *some*
+    //     border/padding from Obsidian's own default input/button styling,
+    //     but none of the intended flex/gap/margin — exactly the "jumbled,
+    //     spacing everywhere" look from the user's screenshots. Adding
+    //     "lifeflow-plugin-host" too fixes (b).
+    modal.contentEl.addClass("lifeflow-plugin-host", "lifeflow-app-root", "lifeflow-modal-content");
     modalRef.current = modal;
     setContentEl(modal.contentEl);
     return () => {
@@ -667,7 +672,7 @@ function FieldLabel({ children, icon }) {
   return /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold mb-2 flex items-center gap-1.5", style: { color: "var(--text-muted)", marginTop: 18 } }, icon && /* @__PURE__ */ React.createElement(Ic, { name: icon, size: 12 }), children);
 }
 function TextInput(props) {
-  return /* @__PURE__ */ React.createElement("input", { ...props, className: `w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 text-sm mb-3 outline-none focus:border-fuchsia-400/60 ${props.className || ""}` });
+  return /* @__PURE__ */ React.createElement("input", { type: "text", ...props, className: `w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 text-sm mb-3 outline-none focus:border-fuchsia-400/60 ${props.className || ""}` });
 }
 function SubTabs({ options, value, onChange }) {
   return /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1 overflow-x-auto" }, options.map(([id, label, Icon]) => /* @__PURE__ */ React.createElement("button", { key: id, onClick: () => onChange(id), className: `flex-1 shrink-0 flex items-center justify-center gap-1.5 rounded-lg py-2 px-2 text-xs font-medium whitespace-nowrap ${value === id ? "bg-white/10 text-white" : "text-slate-400"}` }, Icon && /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }), " ", label)));
@@ -900,6 +905,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       progressType === "progressive" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3 flex gap-2 items-end" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-1" }, "\u0648\u0627\u062D\u062F \u067E\u06CC\u0634\u0631\u0641\u062A \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647\u060C \u062F\u0642\u06CC\u0642\u0647"), /* @__PURE__ */ React.createElement(
         "input",
         {
+          type: "text",
           value: progressUnit,
           onChange: (e) => setProgressUnit(e.target.value),
           placeholder: "\u0635\u0641\u062D\u0647",
@@ -972,6 +978,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2" }, /* @__PURE__ */ React.createElement(
         "input",
         {
+          type: "text",
           value: subInput,
           onChange: (e) => setSubInput(e.target.value),
           onKeyDown: (e) => {
@@ -1604,7 +1611,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
         "div",
         { className: "flex-1" },
         React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0648\u0627\u062D\u062F \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647"),
-        React.createElement("input", { value: unit, onChange: (e) => setUnit(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })
+        React.createElement("input", { type: "text", value: unit, onChange: (e) => setUnit(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })
       ),
       React.createElement(
         "div",
@@ -1623,7 +1630,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
       "div",
       null,
       React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0628\u0627\u0632\u0647 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u0635\u0641\u062D\u0647 \u06F1 \u062A\u0627 \u06F2\u06F0\xBB)"),
-      React.createElement("input", { value: rangeLabel, onChange: (e) => setRangeLabel(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none mt-1" })
+      React.createElement("input", { type: "text", value: rangeLabel, onChange: (e) => setRangeLabel(e.target.value), className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none mt-1" })
     ),
     React.createElement(
       "div",
@@ -1665,6 +1672,7 @@ function AddSubsectionForm({ onAdd }) {
   } }, /* @__PURE__ */ React.createElement(
     "input",
     {
+      type: "text",
       value: val,
       onChange: (e) => setVal(e.target.value),
       placeholder: "\u0632\u06CC\u0631\u0628\u062E\u0634 \u062C\u062F\u06CC\u062F \u2014 \u0645\u062B\u0644\u0627\u064B \u0645\u0631\u0648\u0631",
@@ -2143,6 +2151,7 @@ function GroupCard({ group, onAddTask, onToggleTask, onDeleteTask, onDeleteGroup
   } }, /* @__PURE__ */ React.createElement(
     "input",
     {
+      type: "text",
       value: taskTitle,
       onChange: (e) => setTaskTitle(e.target.value),
       placeholder: "\u06A9\u0627\u0631 \u062C\u062F\u06CC\u062F \u062A\u0648\u06CC \u0627\u06CC\u0646 \u0628\u062E\u0634...",
@@ -2178,6 +2187,7 @@ function DaypartSection({ id, label, groups, onChange }) {
   } }, /* @__PURE__ */ React.createElement(
     "input",
     {
+      type: "text",
       value: groupName,
       onChange: (e) => setGroupName(e.target.value),
       placeholder: "\u0628\u062E\u0634 \u062C\u062F\u06CC\u062F \u2014 \u0645\u062B\u0644\u0627\u064B \u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647",
@@ -3111,6 +3121,7 @@ function NoteListCard({ list, onUpdate, onDelete }) {
   return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4 flex flex-col", style: { borderTop: `2.5px solid ${list.color}` } }, /* @__PURE__ */ React.createElement("div", { className: "flex items-start justify-between gap-2 mb-2.5" }, editingTitle ? /* @__PURE__ */ React.createElement(
     "input",
     {
+      type: "text",
       autoFocus: true,
       value: titleDraft,
       onChange: (e) => setTitleDraft(e.target.value),
@@ -3138,6 +3149,7 @@ function NoteListCard({ list, onUpdate, onDelete }) {
   ), /* @__PURE__ */ React.createElement("span", { className: `text-xs flex-1 ${it.done ? "line-through text-slate-500" : "text-slate-200"}` }, it.text), /* @__PURE__ */ React.createElement("button", { onClick: () => deleteItem(it.id), className: "opacity-60 hover:opacity-100 text-slate-500 hover:text-rose-400 shrink-0" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 12 })))), list.items.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600 text-center py-2" }, "\u0686\u06CC\u0632\u06CC \u062A\u0648 \u0627\u06CC\u0646 \u0644\u06CC\u0633\u062A \u0646\u06CC\u0633\u062A")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 pt-2 border-t border-white/[0.06]" }, /* @__PURE__ */ React.createElement(
     "input",
     {
+      type: "text",
       value: newItem,
       onChange: (e) => setNewItem(e.target.value),
       onKeyDown: (e) => e.key === "Enter" && addItem(),

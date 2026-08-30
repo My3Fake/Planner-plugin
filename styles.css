@@ -82,7 +82,15 @@
    theme's own modal background/shadow/radius all come from Obsidian
    itself. This just adds a little breathing room in case the active
    theme's own .modal-content has none. */
-.lifeflow-modal-content{ padding: 4px 2px; }
+/* .lifeflow-plugin-host itself sets height:100%/overflow:auto/a solid
+   background — correct for the main view's own container, but not for a
+   modal's contentEl (which now also carries that class so its compiled
+   Tailwind utilities work — see ModalShell in app.jsx). Two classes on the
+   same element outweighs the single-class rule above, so this cleanly
+   overrides just those three self-referencing properties without
+   touching any of the many descendant utility-class rules that came
+   bundled with `.lifeflow-plugin-host`. */
+.lifeflow-modal-content.lifeflow-plugin-host{ height: auto; overflow: visible; background: transparent; padding: 4px 2px; }
 
 /* Primary "gradient" CTA buttons: keep the plugin's accent identity but
    pull from Obsidian's interactive-accent so it still matches the theme */
