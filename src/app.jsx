@@ -2127,10 +2127,16 @@ function GroupCard({ group, onAddTask, onToggleTask, onDeleteTask, onDeleteGroup
     "button",
     {
       onClick: () => onToggleTask(t2.id),
-      className: "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
-      style: { borderColor: t2.done ? "#22D3EE" : "rgba(255,255,255,.25)", background: t2.done ? "#22D3EE" : "transparent" }
+      className: "lifeflow-tap-pad shrink-0 flex items-center justify-center"
     },
-    t2.done && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 9, color: "#0A0A0A", strokeWidth: 3 })
+    /* @__PURE__ */ React.createElement(
+      "span",
+      {
+        className: "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+        style: { borderColor: t2.done ? "#22D3EE" : "rgba(255,255,255,.25)", background: t2.done ? "#22D3EE" : "transparent" }
+      },
+      t2.done && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 9, color: "#0A0A0A", strokeWidth: 3 })
+    )
   ), /* @__PURE__ */ React.createElement("span", { className: `text-xs flex-1 truncate ${t2.done ? "text-slate-500 line-through" : "text-slate-200"}` }, t2.title), /* @__PURE__ */ React.createElement(PriorityBars, { level: t2.priority }), /* @__PURE__ */ React.createElement("button", { onClick: () => onDeleteTask(t2.id), className: "shrink-0 text-rose-400/70 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 11 }))))), /* @__PURE__ */ React.createElement("form", { className: "flex items-center gap-1.5", onSubmit: (e) => {
     e.preventDefault();
     submit();
@@ -3119,10 +3125,16 @@ function NoteListCard({ list, onUpdate, onDelete }) {
     "button",
     {
       onClick: () => toggleItem(it.id),
-      className: "w-4 h-4 shrink-0 rounded-md border flex items-center justify-center",
-      style: { borderColor: it.done ? list.color : "rgba(255,255,255,.25)", background: it.done ? list.color : "transparent" }
+      className: "lifeflow-tap-pad shrink-0 flex items-center justify-center"
     },
-    it.done && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 11, color: "#fff" })
+    /* @__PURE__ */ React.createElement(
+      "span",
+      {
+        className: "w-4 h-4 rounded-md border flex items-center justify-center",
+        style: { borderColor: it.done ? list.color : "rgba(255,255,255,.25)", background: it.done ? list.color : "transparent" }
+      },
+      it.done && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 11, color: "#fff" })
+    )
   ), /* @__PURE__ */ React.createElement("span", { className: `text-xs flex-1 ${it.done ? "line-through text-slate-500" : "text-slate-200"}` }, it.text), /* @__PURE__ */ React.createElement("button", { onClick: () => deleteItem(it.id), className: "opacity-60 hover:opacity-100 text-slate-500 hover:text-rose-400 shrink-0" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 12 })))), list.items.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600 text-center py-2" }, "\u0686\u06CC\u0632\u06CC \u062A\u0648 \u0627\u06CC\u0646 \u0644\u06CC\u0633\u062A \u0646\u06CC\u0633\u062A")), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 pt-2 border-t border-white/[0.06]" }, /* @__PURE__ */ React.createElement(
     "input",
     {
