@@ -29,6 +29,14 @@ const LEGACY_LOCAL_STORAGE_KEYS = [
 const SETTINGS_KEY = "lifeflow_settings_v1";
 const DEFAULT_REPORTS_FOLDER = "LifeFlow Reports";
 
+// Mirrors app.jsx's STORAGE_KEY. Used to read the live `pomodoro.activeTimer`
+// snapshot for the status-bar item below — see PomodoroTimerView's
+// pushActiveTimer for what writes into it and why (PROGRESS.md Task 6 /
+// Lane 4 notes: this avoids fully lifting the timer's tick loop, since the
+// status bar can derive "seconds left now" from data.json directly, even
+// while the LifeFlow view itself is closed).
+const DATA_KEY = "lifeflow_data_v1";
+
 /** Plain string->string map, JSON-serialised into data.json as-is (each
  * value is itself already a JSON string produced by the React app, so this
  * plugin doesn't need to know its shape). */
@@ -69,6 +77,7 @@ export default class LifeFlowPlugin extends Plugin {
 	 * expects synchronous localStorage-style get/set) never has to await. */
 	data: LifeFlowData = {};
 	private saveTimer: number | null = null;
+	private pomodoroStatusBarEl: HTMLElement | null = null;
 
 	async onload() {
 		this.data = ((await this.loadData()) as LifeFlowData) || {};
@@ -87,6 +96,19 @@ export default class LifeFlowPlugin extends Plugin {
 			callback: () => this.activateView(),
 		});
 		this.addSettingTab(new LifeFlowSettingTab(this.app, this));
+
+		// Pomodoro status-bar indicator: reads pomodoro.activeTimer straight
+		// from data.json (via getDataValue), so it keeps working even when the
+		// LifeFlow view itself isn't open. See DATA_KEY comment above and
+		// updatePomodoroStatusBar below for the derivation.
+		this.pomodoroStatusBarEl = this.addStatusBarItem();
+		this.pomodoroStatusBarEl.addClass("lifeflow-pomodoro-status");
+		this.pomodoroStatusBarEl.style.cursor = "pointer";
+		this.pomodoroStatusBarEl.onclick = () => {
+			void this.activateView();
+		};
+		this.updatePomodoroStatusBar();
+		this.registerInterval(window.setInterval(() => this.updatePomodoroStatusBar(), 1000));
 	}
 
 	onunload() {
@@ -152,6 +174,57 @@ export default class LifeFlowPlugin extends Plugin {
 			await leaf.setViewState({ type: VIEW_TYPE, active: true });
 		}
 		workspace.revealLeaf(leaf);
+	}
+
+	/** Derives "seconds left right now" for the active pomodoro timer (if any)
+	 * from the activeTimer snapshot PomodoroTimerView writes into `pomodoro`
+	 * (part of the same lifeflow_data_v1 blob everything else persists to),
+	 * and updates the status-bar text. Reading this straight from data.json
+	 * (rather than relying on the React tree being mounted) is what lets the
+	 * indicator work while the user has a different nav tab or Obsidian pane
+	 * focused — see DATA_KEY's comment for why this approach was chosen over
+	 * lifting the timer's own tick loop.
+	 *
+	 * Known limitation (documented in PROGRESS.md, not fixed by this feature):
+	 * if the timer reaches 00:00 while the LifeFlow view isn't open, this
+	 * will correctly show "۰۰:۰۰" but won't itself log the session, play the
+	 * chime, or advance to the next mode — those side effects live inside
+	 * PomodoroTimerView's own interval and only run once that view remounts.
+	 */
+	private updatePomodoroStatusBar() {
+		if (!this.pomodoroStatusBarEl) return;
+		try {
+			const raw = this.getDataValue(DATA_KEY);
+			if (!raw) {
+				this.pomodoroStatusBarEl.setText("");
+				return;
+			}
+			const parsed = JSON.parse(raw);
+			const at = parsed?.pomodoro?.activeTimer;
+			if (!at || typeof at.mode !== "string" || typeof at.totalSeconds !== "number") {
+				this.pomodoroStatusBarEl.setText("");
+				return;
+			}
+			let secondsLeft: number = at.secondsLeftAtAnchor;
+			if (at.running && at.anchorAt) {
+				const elapsedSec = Math.floor((Date.now() - new Date(at.anchorAt).getTime()) / 1000);
+				secondsLeft = Math.max(0, at.secondsLeftAtAnchor - elapsedSec);
+			}
+			// Idle at the mode's full duration (fresh mount / reset / switched
+			// mode without starting) — nothing meaningfully "active" to show.
+			if (!at.running && secondsLeft >= at.totalSeconds) {
+				this.pomodoroStatusBarEl.setText("");
+				return;
+			}
+			const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+			const ss = String(secondsLeft % 60).padStart(2, "0");
+			const modeIcon = at.mode === "work" ? "🍅" : at.mode === "short" ? "☕" : "🛋️";
+			const suffix = at.running ? "" : " (متوقف)";
+			this.pomodoroStatusBarEl.setText(`${modeIcon} ${mm}:${ss}${suffix}`);
+		} catch (e) {
+			// Malformed/missing data — fail silently rather than break the
+			// status bar or throw on every tick.
+		}
 	}
 
 	/** Reads the user-configurable reports folder name (settings-tab.ts "گزارش‌گیری"

@@ -3039,6 +3039,39 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const durations = { work: settings.work, short: settings.shortBreak, long: settings.longBreak };
   const activeTasks = tasks.filter((t2) => t2.status !== "done");
   const activeTask = tasks.find((t2) => t2.id === taskId);
+  // Writes a small, transition-only snapshot into the *already-lifted*
+  // `pomodoro` state (not a new prop/state layer) so main.ts's status-bar
+  // item can derive "seconds left right now" via elapsed-time math, reading
+  // straight from data.json, even while this component is unmounted (e.g.
+  // the user switched to a different nav tab). This deliberately does NOT
+  // rewrite the tested per-second countdown below — it just mirrors state
+  // at each transition point (start/pause/reset/skip/switchMode/finish).
+  // See PROGRESS.md Task 6 notes for why this shape was chosen over fully
+  // lifting the timer.
+  const pushActiveTimer = (m, isRunning, secLeft) => {
+    setPomodoro((p) => ({
+      ...p,
+      activeTimer: {
+        mode: m,
+        running: isRunning,
+        totalSeconds: durations[m] * 60,
+        secondsLeftAtAnchor: secLeft,
+        anchorAt: isRunning ? (/* @__PURE__ */ new Date()).toISOString() : null
+      }
+    }));
+  };
+  const modeRef = useRef(mode);
+  const secondsLeftRef = useRef(secondsLeft);
+  useEffect(() => {
+    modeRef.current = mode;
+    secondsLeftRef.current = secondsLeft;
+  }, [mode, secondsLeft]);
+  useEffect(() => {
+    pushActiveTimer(modeRef.current, false, secondsLeftRef.current);
+    return () => {
+      pushActiveTimer(modeRef.current, false, secondsLeftRef.current);
+    };
+  }, []);
   // Report "actively running a work session" up to LifeFlowApp so it can
   // suppress other notifications (DND) while the user is trying to focus.
   // This is a small, targeted callback — it does NOT lift the timer's own
@@ -3101,22 +3134,29 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       setSecondsLeft(durations.work * 60);
     } else {
       setSecondsLeft(durations[mode] * 60);
+      nextMode = mode;
     }
     if (completed && settings.autoStartNext) {
       startedAtRef.current = (/* @__PURE__ */ new Date()).toISOString();
       setRunning(true);
     }
+    pushActiveTimer(nextMode, !!(completed && settings.autoStartNext), durations[nextMode] * 60);
   };
   const start = () => {
     if (typeof Notification !== "undefined" && Notification.permission === "default") Notification.requestPermission().catch(() => {
     });
     startedAtRef.current = (/* @__PURE__ */ new Date()).toISOString();
     setRunning(true);
+    pushActiveTimer(mode, true, secondsLeft);
   };
-  const pause = () => setRunning(false);
+  const pause = () => {
+    setRunning(false);
+    pushActiveTimer(mode, false, secondsLeft);
+  };
   const reset = () => {
     setRunning(false);
     setSecondsLeft(durations[mode] * 60);
+    pushActiveTimer(mode, false, durations[mode] * 60);
   };
   const skip = () => {
     if (running || secondsLeft < durations[mode] * 60) logSession(false);
@@ -3124,11 +3164,13 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     setMode(next);
     setSecondsLeft(durations[next] * 60);
     setRunning(false);
+    pushActiveTimer(next, false, durations[next] * 60);
   };
   const switchMode = (m) => {
     setRunning(false);
     setMode(m);
     setSecondsLeft(durations[m] * 60);
+    pushActiveTimer(m, false, durations[m] * 60);
   };
   const submitProgress = () => {
     const n = Number(progressInput);
