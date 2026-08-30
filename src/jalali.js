@@ -53,16 +53,37 @@ var MONTH_NAMES_FA = ["\u0641\u0631\u0648\u0631\u062F\u06CC\u0646", "\u0627\u063
 var WEEKDAY_NAMES_FA = ["\u06CC\u06A9\u0634\u0646\u0628\u0647", "\u062F\u0648\u0634\u0646\u0628\u0647", "\u0633\u0647\u200C\u0634\u0646\u0628\u0647", "\u0686\u0647\u0627\u0631\u0634\u0646\u0628\u0647", "\u067E\u0646\u062C\u0634\u0646\u0628\u0647", "\u062C\u0645\u0639\u0647", "\u0634\u0646\u0628\u0647"];
 var WEEKDAY_SHORT_FA = ["\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C", "\u0634"];
 var WEEK_ORDER = [6, 0, 1, 2, 3, 4, 5];
+// Self-contained (no dependency on app.jsx) Persian-digit renderer, since
+// jalali.js is imported BY app.jsx and must not import back from it.
+// Deliberately a plain digit-map (not Number(...).toLocaleString) because
+// this is used for calendar dates: a year like 1405 must never grow a
+// thousands separator (toLocaleString("fa-IR") would render "۱٬۴۰۵"), and
+// zero-padded month/day strings ("06") must keep their leading zero
+// (round-tripping through Number() would silently drop it).
+var FA_DIGIT_CHARS = ["\u06F0", "\u06F1", "\u06F2", "\u06F3", "\u06F4", "\u06F5", "\u06F6", "\u06F7", "\u06F8", "\u06F9"];
+function toFaDigits(n) {
+  return String(n).replace(/[0-9]/g, (d) => FA_DIGIT_CHARS[d]);
+}
 function formatJalali(dateObj, opts = {}) {
   const { jy, jm, jd } = toJalaliParts(dateObj);
   const withWeekday = opts.weekday !== false;
   const weekdayStr = withWeekday ? WEEKDAY_NAMES_FA[dateObj.getDay()] + "\u060C " : "";
-  return `${weekdayStr}${jd} ${MONTH_NAMES_FA[jm - 1]}${opts.year === false ? "" : " " + jy}`.trim();
+  return `${weekdayStr}${toFaDigits(jd)} ${MONTH_NAMES_FA[jm - 1]}${opts.year === false ? "" : " " + toFaDigits(jy)}`.trim();
 }
 function formatJalaliNumeric(dateObj, sep = "/") {
   const { jy, jm, jd } = toJalaliParts(dateObj);
   const p2 = (n) => String(n).padStart(2, "0");
   return `${jy}${sep}${p2(jm)}${sep}${p2(jd)}`;
+}
+// Persian-digit counterpart of formatJalaliNumeric, for display contexts
+// (date pickers, compact "1405/06/08"-style labels). formatJalaliNumeric
+// itself is left with Latin digits since nothing currently uses it as a
+// display string, and keeping it Latin-safe avoids surprising a future
+// caller that expects a sortable/parseable key.
+function formatJalaliNumericFa(dateObj, sep = "/") {
+  const { jy, jm, jd } = toJalaliParts(dateObj);
+  const p2 = (n) => toFaDigits(String(n).padStart(2, "0"));
+  return `${toFaDigits(jy)}${sep}${p2(jm)}${sep}${p2(jd)}`;
 }
 function jalaliDateKey(dateObj) {
   return formatJalaliNumeric(dateObj, "-");
@@ -112,6 +133,8 @@ var Jalali2 = {
   fromJalaliParts,
   formatJalali,
   formatJalaliNumeric,
+  formatJalaliNumericFa,
+  toFaDigits,
   jalaliDateKey,
   addDays,
   jalaliStartOfWeek,
@@ -135,6 +158,8 @@ export {
   fromJalaliParts,
   formatJalali,
   formatJalaliNumeric,
+  formatJalaliNumericFa,
+  toFaDigits,
   jalaliDateKey,
   addDays,
   jalaliStartOfWeek,

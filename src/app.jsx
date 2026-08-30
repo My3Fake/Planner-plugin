@@ -934,7 +934,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
           onChange: (e) => setMonthDay(Math.min(31, Math.max(1, Number(e.target.value) || 1))),
           className: "w-24 bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
         }
-      ), /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-500 mr-2" }, "\u0647\u0631 \u0645\u0627\u0647\u060C \u0631\u0648\u0632 ", monthDay)),
+      ), /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-500 mr-2" }, "\u0647\u0631 \u0645\u0627\u0647\u060C \u0631\u0648\u0632 ", Jalali.toFaDigits(monthDay))),
       recurrence === "yearly" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-2" }, "\u0647\u0631 \u0633\u0627\u0644 \u062F\u0631 \u0686\u0647 \u062A\u0627\u0631\u06CC\u062E\u06CC \u062A\u06A9\u0631\u0627\u0631 \u0628\u0634\u0647"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement(
         "input",
         {
@@ -3534,9 +3534,9 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
       title = `${Jalali.formatJalali(start, { weekday: false, year: false })} \u062A\u0627 ${Jalali.formatJalali(end, { weekday: false })}`;
     } else if (view === "month") {
       const { jy, jm } = Jalali.toJalaliParts(cursor);
-      title = `${JALALI_MONTHS_FA[jm - 1]} ${jy}`;
+      title = `${JALALI_MONTHS_FA[jm - 1]} ${Jalali.toFaDigits(jy)}`;
     } else if (view === "year") {
-      title = `\u0633\u0627\u0644 ${Jalali.toJalaliParts(cursor).jy}`;
+      title = `\u0633\u0627\u0644 ${Jalali.toFaDigits(Jalali.toJalaliParts(cursor).jy)}`;
     } else if (view === "agenda") {
       title = "\u06F1\u06F4 \u0631\u0648\u0632 \u0622\u06CC\u0646\u062F\u0647";
     }
@@ -3768,7 +3768,7 @@ function WeekView({ cursor, tasks, onJumpDay }) {
     const due = tasks.filter((tsk) => isTaskDueOn(tsk, d));
     const done = due.filter((tsk) => tsk.status === "done").length;
     const isToday = Jalali.isSameJalaliDay(d, /* @__PURE__ */ new Date());
-    return /* @__PURE__ */ React.createElement("button", { key: d.toISOString(), onClick: () => onJumpDay(d), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: `p-2 h-24 flex flex-col ${isToday ? "" : ""}` }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, WEEKDAY_SHORT_ORDER[days.indexOf(d)] || ""), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold", style: { color: isToday ? "#EAB4F2" : "#e2e8f0" } }, Jalali.toJalaliParts(d).jd), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex flex-wrap gap-0.5" }, due.slice(0, 6).map((tsk) => /* @__PURE__ */ React.createElement("span", { key: tsk.id, className: "w-1.5 h-1.5 rounded-full", style: { background: QUADRANTS.find((q) => q.id === tsk.quad)?.color, opacity: tsk.status === "done" ? 0.35 : 1 } }))), due.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-500 mt-1" }, done, "/", due.length)));
+    return /* @__PURE__ */ React.createElement("button", { key: d.toISOString(), onClick: () => onJumpDay(d), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: `p-2 h-24 flex flex-col ${isToday ? "" : ""}` }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, WEEKDAY_SHORT_ORDER[days.indexOf(d)] || ""), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold", style: { color: isToday ? "#EAB4F2" : "#e2e8f0" } }, Jalali.toFaDigits(Jalali.toJalaliParts(d).jd)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex flex-wrap gap-0.5" }, due.slice(0, 6).map((tsk) => /* @__PURE__ */ React.createElement("span", { key: tsk.id, className: "w-1.5 h-1.5 rounded-full", style: { background: QUADRANTS.find((q) => q.id === tsk.quad)?.color, opacity: tsk.status === "done" ? 0.35 : 1 } }))), due.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-500 mt-1" }, done, "/", due.length)));
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
@@ -3885,7 +3885,7 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
       "div",
       { className: "text-center mb-1", style: { height: headerHeight } },
       React.createElement("p", { className: "text-[9px] text-slate-500" }, WEEKDAY_SHORT_ORDER[(d.getDay() + 1) % 7]),
-      React.createElement("p", { className: "text-xs font-bold", style: { color: isToday ? "var(--text-accent)" : "var(--text-muted)" } }, Jalali.toJalaliParts(d).jd)
+      React.createElement("p", { className: "text-xs font-bold", style: { color: isToday ? "var(--text-accent)" : "var(--text-muted)" } }, Jalali.toFaDigits(Jalali.toJalaliParts(d).jd))
     );
     const untimedRow = React.createElement(
       "div",
@@ -3969,7 +3969,7 @@ function MonthView({ cursor, tasks, onJumpDay }) {
         className: "aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 border",
         style: { opacity: inMonth ? 1 : 0.3, borderColor: isToday ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: isToday ? "var(--background-modifier-hover)" : "var(--background-primary)" }
       },
-      /* @__PURE__ */ React.createElement("span", { className: "text-[11px]", style: { color: isToday ? "#EAB4F2" : "#cbd5e1" } }, jd),
+      /* @__PURE__ */ React.createElement("span", { className: "text-[11px]", style: { color: isToday ? "#EAB4F2" : "#cbd5e1" } }, Jalali.toFaDigits(jd)),
       due.length > 0 && /* @__PURE__ */ React.createElement("span", { className: "w-1 h-1 rounded-full bg-fuchsia-400" })
     );
   })));
