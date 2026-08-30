@@ -795,6 +795,15 @@ function ModalShell({ title, onClose, onSubmit, footer, submitLabel, submitDisab
     //     spacing everywhere" look from the user's screenshots. Adding
     //     "lifeflow-plugin-host" too fixes (b).
     modal.contentEl.addClass("lifeflow-plugin-host", "lifeflow-app-root", "lifeflow-modal-content");
+    // Compact density (a Lane 2 feature added after this modal work) is
+    // scoped `.lifeflow-app-root.lifeflow-density-compact` — both classes
+    // on the SAME element, so a user with compact mode on would see the
+    // main view get tighter spacing but every modal stay at full/default
+    // spacing, an inconsistency. Read the same setting used to add that
+    // class on the main root and mirror it here.
+    if (loadSettings().appearance?.density === "compact") {
+      modal.contentEl.addClass("lifeflow-density-compact");
+    }
     modalRef.current = modal;
     setContentEl(modal.contentEl);
     return () => {
