@@ -3062,14 +3062,29 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   };
   const modeRef = useRef(mode);
   const secondsLeftRef = useRef(secondsLeft);
+  const runningRef = useRef(running);
   useEffect(() => {
     modeRef.current = mode;
     secondsLeftRef.current = secondsLeft;
-  }, [mode, secondsLeft]);
+    runningRef.current = running;
+  }, [mode, secondsLeft, running]);
   useEffect(() => {
+    // Mount: a freshly-mounted timer widget always starts at running=false
+    // (see the useState(false) above), so pushing false here is always
+    // correct, not a placeholder.
     pushActiveTimer(modeRef.current, false, secondsLeftRef.current);
     return () => {
-      pushActiveTimer(modeRef.current, false, secondsLeftRef.current);
+      // Unmount (e.g. user switches to a different nav tab): MUST reflect
+      // whatever the timer's actual running state was at that moment, not
+      // hardcode false — this is what lets the status-bar item keep ticking
+      // via elapsed-time math while the user is away, which is the entire
+      // point of this feature (see the comment on pushActiveTimer above).
+      // The very first version of this effect hardcoded false in the
+      // cleanup too, which silently froze the status bar the instant the
+      // user left an *active* timer running and left this tab — self-
+      // defeating the feature it was implementing. Caught while reviewing
+      // this commit, not by a test; see PROGRESS.md Lane 4 notes.
+      pushActiveTimer(modeRef.current, runningRef.current, secondsLeftRef.current);
     };
   }, []);
   // Report "actively running a work session" up to LifeFlowApp so it can
