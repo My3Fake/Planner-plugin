@@ -735,7 +735,7 @@ function ProgressiveTaskBar({ task, onAddProgress }) {
       placeholder: "\u062A\u0648\u0636\u06CC\u062D (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC) \u2014 \u0645\u062B\u0644 \u06A9\u0627\u0645\u06CC\u062A",
       className: "flex-1 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white placeholder:text-slate-500 outline-none"
     }
-  ), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 text-[11px] font-medium shrink-0" }, "\u062B\u0628\u062A")), /* @__PURE__ */ React.createElement(ProgressLogList, { log: task.progressLog }));
+  ), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "px-2.5 py-1 rounded-lg text-cyan-300 text-[11px] font-medium shrink-0", style: { background: "rgba(6,182,212,0.2)" } }, "\u062B\u0628\u062A")), /* @__PURE__ */ React.createElement(ProgressLogList, { log: task.progressLog }));
 }
 function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress }) {
   const q = QUADRANTS.find((x) => x.id === task.quad) || QUADRANTS[1];
@@ -1429,6 +1429,74 @@ function TrackHeatmap({ task, subsection, weeks = 12 }) {
   }
   return React.createElement("svg", { viewBox: `0 0 ${weeks * step} ${7 * step}`, width: "100%", height: 62, preserveAspectRatio: "xMidYMid meet" }, rects);
 }
+// Learning-specific progress log list (kept separate from the shared
+// ProgressLogList used by ProgressiveTaskBar/TaskRow across other lanes —
+// see the lane-system note in PROGRESS.md \u00a70.2 — so Persian-digit
+// formatting here doesn't touch non-learning progressive tasks).
+function LearningProgressLogList({ log, unit }) {
+  if (!log || !log.length) return null;
+  return React.createElement("div", { className: "mt-2 space-y-1", style: { maxHeight: 96, overflowY: "auto" } }, log.slice(0, 8).map((entry) => React.createElement("div", { key: entry.id, className: "text-[10px] flex items-center justify-between text-slate-500" },
+    React.createElement("span", null, entry.date, entry.note ? ` \u2014 ${entry.note}` : ""),
+    React.createElement("span", { style: { color: "#22D3EE" } }, `+${toFa(entry.amount)} ${unit || ""}`)
+  )));
+}
+// Learning-specific progress entry widget (default value = the configured
+// quota, +/- steppers, Persian digits, and the "banked surplus" line) —
+// intentionally NOT a change to the shared ProgressiveTaskBar, which
+// other lanes' non-learning progressive tasks (books/exercise/etc.) also
+// render; see PROGRESS.md session 27 for the reasoning.
+function LearningProgressEntry({ task, subsection, topic, onAddProgress }) {
+  const quota = subsection.quotaPerPeriod || 0;
+  const [amount, setAmount] = useState(quota ? toFa(quota) : "");
+  const [note, setNote] = useState("");
+  const pct = Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100));
+  const surplusInfo = computeTrackSurplusInfo(subsection, topic, task);
+  const stillOwed = computeTodayStillOwed(subsection, topic, task);
+  const step = (delta) => {
+    const current = parseFaNumber(amount) || 0;
+    setAmount(toFa(Math.max(0, current + delta)));
+  };
+  const submit = () => {
+    const n = parseFaNumber(amount);
+    if (!n || n <= 0) return;
+    onAddProgress(task.id, n, note);
+    setAmount(quota ? toFa(quota) : "");
+    setNote("");
+  };
+  const bankParts = [];
+  if (quota > 0 && surplusInfo && surplusInfo.surplus > 0) {
+    if (stillOwed === 0) bankParts.push("\u0633\u0647\u0645\u06CC\u0647\u200C\u06CC \u0627\u0645\u0631\u0648\u0632 \u067E\u0648\u0634\u0634 \u062F\u0627\u062F\u0647 \u0634\u062F");
+    else if (stillOwed < quota) bankParts.push(`\u0627\u0645\u0631\u0648\u0632 \u0641\u0642\u0637 ${toFa(stillOwed)} ${subsection.unit} \u0644\u0627\u0632\u0645 \u0627\u0633\u062A`);
+    if (surplusInfo.coveredDays > 0) bankParts.push(`${toFa(surplusInfo.coveredDays)} \u0631\u0648\u0632 \u0622\u06CC\u0646\u062F\u0647 \u0631\u0627 \u0647\u0645 \u067E\u0648\u0634\u0627\u0646\u062F\u062F`);
+  }
+  const bankLine = bankParts.length ? React.createElement(
+    "p",
+    { className: "text-[10px]", style: { color: "#34D399" } },
+    `\u{1F381} ${toFa(surplusInfo.surplus)} ${subsection.unit} \u0630\u062E\u06CC\u0631\u0647 \u062F\u0627\u0631\u06CC \u2014 ${bankParts.join("\u060C ")}`
+  ) : null;
+  return React.createElement(
+    "div",
+    { className: "space-y-1.5" },
+    React.createElement(
+      "div",
+      { className: "flex items-center justify-between text-[10px] text-slate-400" },
+      React.createElement("span", null, `${toFa(task.progressCurrent)} / ${toFa(task.progressTarget)} ${task.progressUnit}`),
+      React.createElement("span", null, `${toFa(pct)}\u066A`)
+    ),
+    React.createElement("div", { className: "h-1.5 bg-white/[0.05] rounded-full overflow-hidden" }, React.createElement("div", { className: "h-full", style: { width: `${pct}%`, background: "linear-gradient(to right, #06B6D4, #D946EF)" } })),
+    bankLine,
+    pct < 100 && React.createElement(
+      "div",
+      { className: "flex items-center gap-1 pt-2" },
+      React.createElement("button", { type: "button", onClick: () => step(-1), className: "w-6 h-6 shrink-0 rounded-lg text-sm font-bold", style: { background: "rgba(255,255,255,0.06)", color: "var(--text-muted)" } }, "\u2212"),
+      React.createElement("input", { type: "text", inputMode: "decimal", dir: "ltr", value: amount, onChange: (e) => setAmount(e.target.value), placeholder: "\u0645\u0642\u062F\u0627\u0631", className: "w-14 text-center bg-white/[0.05] border border-white/10 rounded-lg px-1 py-1 text-white text-xs outline-none" }),
+      React.createElement("button", { type: "button", onClick: () => step(1), className: "w-6 h-6 shrink-0 rounded-lg text-sm font-bold", style: { background: "rgba(255,255,255,0.06)", color: "var(--text-muted)" } }, "+"),
+      React.createElement("input", { type: "text", value: note, onChange: (e) => setNote(e.target.value), placeholder: "\u06CC\u0627\u062F\u062F\u0627\u0634\u062A (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)", className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none" }),
+      React.createElement("button", { type: "button", onClick: submit, className: "px-2.5 py-1 bg-fuchsia-500/20 text-fuchsia-300 rounded-lg text-xs shrink-0" }, "\u062B\u0628\u062A")
+    ),
+    React.createElement(LearningProgressLogList, { log: task.progressLog, unit: subsection.unit })
+  );
+}
 function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteSubsection, onAddProgress, onTogglePause, onToggleArchive, onDuplicate, onExtendGoal }) {
   const [editing, setEditing] = useState(false);
   const [unit, setUnit] = useState(subsection.unit);
@@ -1467,7 +1535,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   } else if (subsection.paused) {
     subtitleParts.push("\u23F8\uFE0F \u0645\u062A\u0648\u0642\u0641 \u0634\u062F\u0647 \u2014 \u0633\u0647\u0645\u06CC\u0647/\u0628\u062F\u0647\u06CC \u0645\u0648\u0642\u062A\u0627\u064B \u062D\u0633\u0627\u0628 \u0646\u0645\u06CC\u200C\u0634\u0648\u062F");
   } else {
-    if (subsection.quotaPerPeriod) subtitleParts.push(`\u0633\u0647\u0645\u06CC\u0647: ${subsection.quotaPerPeriod} ${subsection.unit} / \u062F\u0648\u0631\u0647`);
+    if (subsection.quotaPerPeriod) subtitleParts.push(`\u0633\u0647\u0645\u06CC\u0647: ${toFa(subsection.quotaPerPeriod)} ${subsection.unit} / \u062F\u0648\u0631\u0647`);
     subtitleParts.push(cadenceLabel);
   }
   if (subsection.rangeLabel) subtitleParts.push(subsection.rangeLabel);
@@ -1483,7 +1551,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
       "span",
       { title: `${streak} \u0631\u0648\u0632 \u0645\u062A\u0648\u0627\u0644\u06CC \u0628\u062F\u0648\u0646 \u0627\u0641\u062A\u0627\u062F\u06AF\u06CC`, className: "shrink-0 items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full", style: { color: "#F97316", background: "rgba(249,115,22,0.12)", display: "inline-flex" } },
       React.createElement(Ic, { name: "flame", size: 10, color: "#F97316" }),
-      streak
+      toFa(streak)
     )
   );
 
@@ -1581,7 +1649,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
     React.createElement("button", { onClick: saveEdit, className: "w-full py-1.5 rounded-lg bg-fuchsia-500/20 text-fuchsia-300 text-xs font-medium" }, "\u0630\u062E\u06CC\u0631\u0647")
   );
 
-  const body = editing ? editForm : task ? React.createElement(React.Fragment, null, completionBanner, React.createElement(ProgressiveTaskBar, { task, onAddProgress })) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
+  const body = editing ? editForm : task ? React.createElement(React.Fragment, null, completionBanner, React.createElement(LearningProgressEntry, { task, subsection, topic, onAddProgress })) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
 
   return React.createElement(GlassCard, { className: "p-3.5" }, header, subtitle, notesDisplay, heatmapToggle, heatmap, body);
 }
@@ -1886,6 +1954,27 @@ function addDaysToKey(key, days) {
 function daysBetweenKeys(key1, key2) {
   return Math.round((keyToDate(key2) - keyToDate(key1)) / 864e5);
 }
+// --- Persian-digit display/input helpers (used inside the Learning module,
+// see session 27 in PROGRESS.md — scoped there rather than app-wide since
+// the rest of the UI still uses Latin digits and a blanket switch wasn't
+// requested). toFa() renders for display (relies on the JS engine's real
+// fa-IR locale formatting, which Obsidian's Chromium runtime supports
+// natively, rather than a hand-rolled digit map). faDigitsToEn()/
+// parseFaNumber() do the reverse for parsing whatever the user typed,
+// since native <input> elements don't parse localized digits themselves.
+const FA_DIGIT_MAP = { "\u06F0": "0", "\u06F1": "1", "\u06F2": "2", "\u06F3": "3", "\u06F4": "4", "\u06F5": "5", "\u06F6": "6", "\u06F7": "7", "\u06F8": "8", "\u06F9": "9", "\u0660": "0", "\u0661": "1", "\u0662": "2", "\u0663": "3", "\u0664": "4", "\u0665": "5", "\u0666": "6", "\u0667": "7", "\u0668": "8", "\u0669": "9" };
+function toFa(n) {
+  if (n === null || n === void 0 || n === "" || isNaN(n)) return "";
+  return Number(n).toLocaleString("fa-IR");
+}
+function faDigitsToEn(str) {
+  return String(str ?? "").replace(/[\u06F0-\u06F9\u0660-\u0669]/g, (ch) => FA_DIGIT_MAP[ch] || ch).replace(/\u066B/g, ".").replace(/[\u066C,]/g, "");
+}
+function parseFaNumber(str) {
+  const cleaned = faDigitsToEn(str).replace(/[^0-9.\-]/g, "");
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? 0 : n;
+}
 function isTrackDueOn(subsection, topic, d) {
   // Paused/archived tracks are never "due" — callers that need to know
   // *why* (to show a distinct label instead of a numeric balance) check
@@ -1952,6 +2041,68 @@ function computeTrackStreak(subsection, topic, task) {
     guard++;
   }
   return streak;
+}
+// The "surplus bank": when someone logs more than a day's quota, the
+// extra doesn't just vanish — it should visibly cover future due days.
+// computeTrackBalance() already nets this out in aggregate (a negative
+// balance = ahead), this function turns that aggregate number into
+// something concrete: how many whole future due-days are already paid
+// for, and through what date.
+function computeTrackSurplusInfo(subsection, topic, task) {
+  const quota = subsection.quotaPerPeriod || 0;
+  if (!quota || !task || subsection.archived || subsection.paused) return null;
+  const balanceInfo = computeTrackBalance(subsection, topic, task);
+  if (!balanceInfo) return null;
+  const surplus = Math.max(0, -balanceInfo.balance);
+  let remaining = surplus;
+  let coveredDays = 0;
+  let coveredUntilKey = null;
+  const cursor = /* @__PURE__ */ new Date();
+  cursor.setHours(0, 0, 0, 0);
+  cursor.setDate(cursor.getDate() + 1);
+  let guard = 0;
+  while (remaining > 0 && guard < 3660) {
+    if (isTrackDueOn(subsection, topic, cursor)) {
+      if (remaining >= quota) {
+        remaining -= quota;
+        coveredDays++;
+        coveredUntilKey = dateKeyOf(cursor);
+      } else {
+        break;
+      }
+    }
+    cursor.setDate(cursor.getDate() + 1);
+    guard++;
+  }
+  return { surplus, coveredDays, coveredUntilKey, partialRemaining: remaining };
+}
+// What's actually still owed *today*, after subtracting any surplus
+// banked from before today (today's own logging isn't counted yet, so
+// this is stable to show as a target *before* the user logs anything).
+// This is the number shown as the default in the log-entry box and in
+// the daily-report quick-log list — see PROGRESS.md session 27 for why
+// this is a separate figure from the flat quotaPerPeriod.
+function computeTodayStillOwed(subsection, topic, task) {
+  const quota = subsection.quotaPerPeriod || 0;
+  if (!quota || subsection.archived || subsection.paused) return 0;
+  const today = /* @__PURE__ */ new Date();
+  today.setHours(0, 0, 0, 0);
+  if (!isTrackDueOn(subsection, topic, today)) return 0;
+  if (!task) return quota;
+  const startKey = subsection.createdDate || todayKey();
+  const cursor = keyToDate(startKey);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  let dueTotal = 0;
+  let guard = 0;
+  while (cursor <= yesterday && guard < 3660) {
+    if (isTrackDueOn(subsection, topic, cursor)) dueTotal += quota;
+    cursor.setDate(cursor.getDate() + 1);
+    guard++;
+  }
+  const doneBeforeToday = (task.progressLog || []).filter((e) => e.date < todayKey()).reduce((s, e) => s + e.amount, 0);
+  const surplusYesterday = Math.max(0, doneBeforeToday - dueTotal);
+  return Math.max(0, quota - Math.min(quota, surplusYesterday));
 }
 function getPersianDateLabel(now) {
   try {
@@ -2095,23 +2246,35 @@ function PlannedVsActualStats({ tasks, pomodoro }) {
   );
 }
 function DailyReportTrackRow({ subsection, topic, task, onAddProgress }) {
-  const [amount, setAmount] = useState(String(subsection.quotaPerPeriod || ""));
+  const quota = subsection.quotaPerPeriod || 0;
+  const stillOwed = computeTodayStillOwed(subsection, topic, task);
+  // Default/prefill is the *adjusted* today's-need (quota minus any banked
+  // surplus already covering it) since this row's whole point is "what do
+  // I actually need to do right now" — unlike SubsectionCard's entry box,
+  // which defaults to the flat configured quota (see PROGRESS.md session
+  // 27 for why those two intentionally differ).
+  const [amount, setAmount] = useState(toFa(stillOwed || quota));
   const [note, setNote] = useState("");
   if (!task) return null;
   const balance = computeTrackBalance(subsection, topic, task);
+  const surplusInfo = computeTrackSurplusInfo(subsection, topic, task);
   const loggedToday = (task.progressLog || []).filter((e) => e.date === todayKey());
   const todaySum = loggedToday.reduce((s, e) => s + e.amount, 0);
+  const step = (delta) => {
+    const current = parseFaNumber(amount) || 0;
+    setAmount(toFa(Math.max(0, current + delta)));
+  };
   const submit = () => {
-    const n = Number(amount);
+    const n = parseFaNumber(amount);
     if (!n || n <= 0) return;
     onAddProgress(task.id, n, note);
-    setAmount("");
+    setAmount(toFa(computeTodayStillOwed(subsection, topic, task) || quota));
     setNote("");
   };
   const balanceNode = balance && React.createElement(
     "span",
     { className: "text-[10px] font-bold", style: { color: balance.balance > 0 ? "#DB2777" : "#22D3EE" } },
-    balance.balance > 0 ? `${balance.balance} ${subsection.unit} \u0639\u0642\u0628` : balance.balance < 0 ? `${-balance.balance} ${subsection.unit} \u062C\u0644\u0648` : "\u0645\u0637\u0627\u0628\u0642 \u0628\u0631\u0646\u0627\u0645\u0647"
+    balance.balance > 0 ? `${toFa(balance.balance)} ${subsection.unit} \u0639\u0642\u0628` : balance.balance < 0 ? `${toFa(-balance.balance)} ${subsection.unit} \u062C\u0644\u0648` : "\u0645\u0637\u0627\u0628\u0642 \u0628\u0631\u0646\u0627\u0645\u0647"
   );
   const header = React.createElement(
     "div",
@@ -2120,19 +2283,26 @@ function DailyReportTrackRow({ subsection, topic, task, onAddProgress }) {
       "div",
       null,
       React.createElement("p", { className: "text-sm font-bold text-slate-100" }, topic.title, " \u2014 ", subsection.title),
-      subsection.quotaPerPeriod ? React.createElement("p", { className: "text-[10px] text-slate-500 mt-0.5" }, "\u0633\u0647\u0645\u06CC\u0647\u200C\u06CC \u0627\u0645\u0631\u0648\u0632: ", subsection.quotaPerPeriod, " ", subsection.unit) : null
+      quota ? React.createElement("p", { className: "text-[10px] text-slate-500 mt-0.5" }, "\u0633\u0647\u0645\u06CC\u0647\u200C\u06CC \u0627\u0645\u0631\u0648\u0632: ", toFa(quota), " ", subsection.unit, stillOwed !== quota ? ` \u2014 \u0627\u0645\u0631\u0648\u0632 \u0641\u0642\u0637 ${toFa(stillOwed)} \u0644\u0627\u0632\u0645 \u0627\u0633\u062A` : "") : null
     ),
     balanceNode
   );
-  const todayNote = todaySum > 0 ? React.createElement("p", { className: "text-[10px] mb-1.5", style: { color: "var(--text-faint)" } }, "\u0627\u0645\u0631\u0648\u0632 \u062B\u0628\u062A \u0634\u062F\u0647: +", todaySum, " ", subsection.unit) : null;
+  const todayNote = todaySum > 0 ? React.createElement("p", { className: "text-[10px] mb-1.5", style: { color: "var(--text-faint)" } }, "\u0627\u0645\u0631\u0648\u0632 \u062B\u0628\u062A \u0634\u062F\u0647: +", toFa(todaySum), " ", subsection.unit) : null;
+  const bankNote = surplusInfo && surplusInfo.surplus > 0 ? React.createElement(
+    "p",
+    { className: "text-[10px] mb-1.5", style: { color: "#34D399" } },
+    `\u{1F381} ${toFa(surplusInfo.surplus)} ${subsection.unit} \u0630\u062E\u06CC\u0631\u0647 \u062F\u0627\u0631\u06CC` + (surplusInfo.coveredDays > 0 ? ` \u2014 ${toFa(surplusInfo.coveredDays)} \u0631\u0648\u0632 \u0622\u06CC\u0646\u062F\u0647 \u0631\u0627 \u0647\u0645 \u067E\u0648\u0634\u0627\u0646\u062F\u062F` : "")
+  ) : null;
   const form = React.createElement(
     "form",
     { className: "flex items-center gap-1.5", onSubmit: (e) => { e.preventDefault(); submit(); } },
-    React.createElement("input", { type: "number", min: "0", value: amount, onChange: (e) => setAmount(e.target.value), placeholder: `\u0645\u0642\u062F\u0627\u0631 ${subsection.unit}`, className: "w-24 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-[12px] text-white placeholder:text-slate-500 outline-none" }),
-    React.createElement("input", { type: "text", value: note, onChange: (e) => setNote(e.target.value), placeholder: "\u062A\u0648\u0636\u06CC\u062D (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)", className: "flex-1 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-[12px] text-white placeholder:text-slate-500 outline-none" }),
-    React.createElement("button", { type: "submit", className: "px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 text-[12px] font-medium shrink-0" }, "\u062B\u0628\u062A")
+    React.createElement("button", { type: "button", onClick: () => step(-1), className: "w-6 h-6 shrink-0 rounded-lg text-sm font-bold", style: { background: "rgba(255,255,255,0.06)", color: "var(--text-muted)" } }, "\u2212"),
+    React.createElement("input", { type: "text", inputMode: "decimal", dir: "ltr", value: amount, onChange: (e) => setAmount(e.target.value), placeholder: `\u0645\u0642\u062F\u0627\u0631 ${subsection.unit}`, className: "w-14 text-center bg-white/[0.05] border border-white/10 rounded-lg px-1 py-1.5 text-xs text-white placeholder:text-slate-500 outline-none" }),
+    React.createElement("button", { type: "button", onClick: () => step(1), className: "w-6 h-6 shrink-0 rounded-lg text-sm font-bold", style: { background: "rgba(255,255,255,0.06)", color: "var(--text-muted)" } }, "+"),
+    React.createElement("input", { type: "text", value: note, onChange: (e) => setNote(e.target.value), placeholder: "\u062A\u0648\u0636\u06CC\u062D (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)", className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white placeholder:text-slate-500 outline-none" }),
+    React.createElement("button", { type: "submit", className: "px-3 py-1.5 rounded-lg text-cyan-300 text-xs font-medium shrink-0", style: { background: "rgba(6,182,212,0.2)" } }, "\u062B\u0628\u062A")
   );
-  return React.createElement(GlassCard, { className: "p-3.5" }, header, todayNote, form);
+  return React.createElement(GlassCard, { className: "p-3.5" }, header, todayNote, bankNote, form);
 }
 function buildLearningTopicMarkdownReport(topic, tasks) {
   const lines = [];
