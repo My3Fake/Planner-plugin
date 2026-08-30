@@ -829,7 +829,7 @@ function ProgressLogList({ log }) {
   const [expanded, setExpanded] = useState(false);
   if (!log || log.length === 0) return null;
   const shown = expanded ? log : log.slice(0, 2);
-  return /* @__PURE__ */ React.createElement("div", { className: "mt-1.5 space-y-1" }, shown.map((entry) => /* @__PURE__ */ React.createElement("div", { key: entry.id, className: "text-[10px] text-slate-500 flex items-start gap-1.5" }, /* @__PURE__ */ React.createElement("span", { className: "shrink-0 font-mono", style: { color: "var(--text-faint)" } }, "+", entry.amount), /* @__PURE__ */ React.createElement("span", { className: "shrink-0" }, entry.date), entry.note && /* @__PURE__ */ React.createElement("span", { className: "truncate" }, "\u2014 ", entry.note))), log.length > 2 && /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setExpanded((v) => !v), className: "text-[10px]", style: { color: "var(--text-accent)" } }, expanded ? "\u0646\u0645\u0627\u06CC\u0634 \u06A9\u0645\u062A\u0631" : `${log.length - 2} \u062B\u0628\u062A \u0642\u062F\u06CC\u0645\u06CC\u200C\u062A\u0631 \u2026`));
+  return /* @__PURE__ */ React.createElement("div", { className: "mt-1.5 space-y-1" }, shown.map((entry) => /* @__PURE__ */ React.createElement("div", { key: entry.id, className: "text-[10px] text-slate-500 flex items-start gap-1.5" }, /* @__PURE__ */ React.createElement("span", { className: "shrink-0 font-mono", style: { color: "var(--text-faint)" } }, "+", entry.amount), /* @__PURE__ */ React.createElement("span", { className: "shrink-0" }, formatDateKeyFa(entry.date)), entry.note && /* @__PURE__ */ React.createElement("span", { className: "truncate" }, "\u2014 ", entry.note))), log.length > 2 && /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setExpanded((v) => !v), className: "text-[10px]", style: { color: "var(--text-accent)" } }, expanded ? "\u0646\u0645\u0627\u06CC\u0634 \u06A9\u0645\u062A\u0631" : `${log.length - 2} \u062B\u0628\u062A \u0642\u062F\u06CC\u0645\u06CC\u200C\u062A\u0631 \u2026`));
 }
 function ProgressiveTaskBar({ task, onAddProgress }) {
   const [amount, setAmount] = useState("");
@@ -1463,6 +1463,24 @@ function LearningGoalEditor({ topic, onChange }) {
   const jy = g.targetJy || nowJ.jy, jm = g.targetJm || nowJ.jm, jd = g.targetJd || nowJ.jd;
   const hasTarget = !!g.targetJy;
   const daysLeft = hasTarget && Jalali ? Math.round((Jalali.fromJalaliParts(g.targetJy, g.targetJm, g.targetJd) - /* @__PURE__ */ new Date()) / 864e5) : null;
+  // JalaliDateTimePicker works with a "YYYY-MM-DD"-style Gregorian ISO
+  // string (to stay generic/reusable across the app), while the goal's
+  // target date is stored as separate Jalali {targetJy, targetJm,
+  // targetJd} fields (an older, pre-existing schema) \u2014 these two small
+  // converters bridge that gap without changing the stored schema.
+  const targetAsIso = hasTarget && Jalali ? (() => {
+    const d = Jalali.fromJalaliParts(g.targetJy, g.targetJm, g.targetJd);
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  })() : "";
+  const onPickTarget = (iso) => {
+    if (!iso) {
+      onChange({ ...g, targetJy: null });
+      return;
+    }
+    const [y, m, d] = iso.split("-").map(Number);
+    const { jy: ty, jm: tm, jd: td } = Jalali.toJalaliParts(new Date(y, m - 1, d));
+    onChange({ ...g, targetJy: ty, targetJm: tm, targetJd: td });
+  };
   return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u0647\u062F\u0641"), /* @__PURE__ */ React.createElement(
     "textarea",
     {
@@ -1472,7 +1490,7 @@ function LearningGoalEditor({ topic, onChange }) {
       placeholder: "\u0645\u062B\u0644\u0627\u064B: \u062A\u0627 \u067E\u0627\u06CC\u0627\u0646 \u0633\u0627\u0644 \u06A9\u0644 \u062C\u0632\u0621 \u0639\u0645 \u0631\u0648 \u062D\u0641\u0638 \u06A9\u0646\u0645",
       className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none resize-none mb-3"
     }
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 flex-wrap mb-2.5" }, /* @__PURE__ */ React.createElement(
     "button",
     {
       type: "button",
@@ -1481,7 +1499,7 @@ function LearningGoalEditor({ topic, onChange }) {
       style: { borderColor: hasTarget ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: hasTarget ? "var(--background-modifier-hover)" : "transparent", color: hasTarget ? "var(--text-accent)" : "var(--text-muted)" }
     },
     hasTarget ? "\u062A\u0627\u0631\u06CC\u062E \u0647\u062F\u0641 \u062F\u0627\u0631\u062F" : "+ \u0627\u0641\u0632\u0648\u062F\u0646 \u062A\u0627\u0631\u06CC\u062E \u0647\u062F\u0641 (\u0634\u0645\u0633\u06CC)"
-  ), daysLeft !== null && /* @__PURE__ */ React.createElement("span", { className: "text-[11px]", style: { color: daysLeft < 0 ? "#DB2777" : "#22D3EE" } }, daysLeft >= 0 ? `${daysLeft} \u0631\u0648\u0632 \u0645\u0648\u0646\u062F\u0647` : `${-daysLeft} \u0631\u0648\u0632 \u06AF\u0630\u0634\u062A\u0647`)), hasTarget && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-2.5" }, /* @__PURE__ */ React.createElement("input", { type: "number", value: jy, onChange: (e) => onChange({ ...g, targetJy: Number(e.target.value) }), className: "w-20 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" }), /* @__PURE__ */ React.createElement("select", { value: jm, onChange: (e) => onChange({ ...g, targetJm: Number(e.target.value) }), className: "bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" }, JALALI_MONTHS_FA.map((m, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i + 1, className: "bg-[#120814]" }, m))), /* @__PURE__ */ React.createElement("input", { type: "number", min: "1", max: "31", value: jd, onChange: (e) => onChange({ ...g, targetJd: Number(e.target.value) }), className: "w-16 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" })));
+  ), daysLeft !== null && /* @__PURE__ */ React.createElement("span", { className: "text-[11px]", style: { color: daysLeft < 0 ? "#DB2777" : "#22D3EE" } }, daysLeft >= 0 ? `${toFa(daysLeft)} \u0631\u0648\u0632 \u0645\u0648\u0646\u062F\u0647` : `${toFa(-daysLeft)} \u0631\u0648\u0632 \u06AF\u0630\u0634\u062A\u0647`)), hasTarget && /* @__PURE__ */ React.createElement(JalaliDateTimePicker, { value: targetAsIso, onChange: onPickTarget, includeTime: false }));
 }
 function LearningRoutineEditor({ topic, onChange }) {
   return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u0631\u0648\u062A\u06CC\u0646 \u062A\u06A9\u0631\u0627\u0631 \u2014 \u0628\u0631\u0627\u06CC \u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627\u06CC \u0627\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 flex-wrap mb-2" }, RECURRENCE_TYPES.filter(([v]) => v !== "none").map(([v, l]) => /* @__PURE__ */ React.createElement(Chip, { key: v, active: topic.recurrence === v, color: "#22D3EE", onClick: () => onChange({ ...topic, recurrence: v, recurrenceWeekdays: v === "weekly" && !(topic.recurrenceWeekdays && topic.recurrenceWeekdays.length) ? [(/* @__PURE__ */ new Date()).getDay()] : topic.recurrenceWeekdays }) }, l))), topic.recurrence === "weekly" && /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap" }, WEEKDAYS.map((w) => /* @__PURE__ */ React.createElement(
@@ -1551,7 +1569,7 @@ function TrackHeatmap({ task, subsection, weeks = 12 }) {
 function LearningProgressLogList({ log, unit }) {
   if (!log || !log.length) return null;
   return React.createElement("div", { className: "mt-2 space-y-1", style: { maxHeight: 96, overflowY: "auto" } }, log.slice(0, 8).map((entry) => React.createElement("div", { key: entry.id, className: "text-[10px] flex items-center justify-between text-slate-500" },
-    React.createElement("span", null, entry.date, entry.note ? ` \u2014 ${entry.note}` : ""),
+    React.createElement("span", null, formatDateKeyFa(entry.date), entry.note ? ` \u2014 ${entry.note}` : ""),
     React.createElement("span", { style: { color: "#22D3EE" } }, `+${toFa(entry.amount)} ${unit || ""}`)
   )));
 }
@@ -2091,6 +2109,18 @@ function parseFaNumber(str) {
   const n = parseFloat(cleaned);
   return isNaN(n) ? 0 : n;
 }
+// Renders a "YYYY-MM-DD" internal date key (used throughout as a data
+// key \u2014 progressLog entries, journal entries, todayKey() \u2014 and left
+// untouched everywhere as *storage*) as a short Jalali/Persian-digit
+// string for *display* only. Falls back to the raw key if Jalali isn't
+// available or the key doesn't parse, rather than showing nothing.
+function formatDateKeyFa(key) {
+  if (!key) return "";
+  if (!Jalali) return key;
+  const [y, m, d] = key.split("-").map(Number);
+  if (!y || !m || !d) return key;
+  return Jalali.formatJalali(new Date(y, m - 1, d), { weekday: false });
+}
 function isTrackDueOn(subsection, topic, d) {
   // Paused/archived tracks are never "due" — callers that need to know
   // *why* (to show a distinct label instead of a numeric balance) check
@@ -2430,7 +2460,7 @@ function DailyReportTrackRow({ subsection, topic, task, onAddProgress }) {
 }
 function buildLearningTopicMarkdownReport(topic, tasks) {
   const lines = [];
-  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC: ${topic.title}`, "", `\u062A\u0627\u0631\u06CC\u062E \u062E\u0631\u0648\u062C\u06CC: ${todayKey()}`, "");
+  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC: ${topic.title}`, "", `\u062A\u0627\u0631\u06CC\u062E \u062E\u0631\u0648\u062C\u06CC: ${formatDateKeyFa(todayKey())}`, "");
   (topic.subsections || []).forEach((sec) => {
     const task = (tasks || []).find((tk) => tk.id === sec.linkedTaskId);
     const statusLabel = sec.archived ? "\u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647" : sec.paused ? "\u0645\u062A\u0648\u0642\u0641" : "\u0641\u0639\u0627\u0644";
@@ -2448,7 +2478,7 @@ function buildLearningTopicMarkdownReport(topic, tasks) {
       lines.push("", "### \u062A\u0627\u0631\u06CC\u062E\u0686\u0647\u200C\u06CC \u067E\u06CC\u0634\u0631\u0641\u062A");
       const sortedLog = [...task.progressLog].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
       sortedLog.forEach((e) => {
-        lines.push(`- ${e.date}: +${e.amount} ${sec.unit}${e.note ? ` \u2014 ${e.note}` : ""}`);
+        lines.push(`- ${formatDateKeyFa(e.date)}: +${e.amount} ${sec.unit}${e.note ? ` \u2014 ${e.note}` : ""}`);
       });
     }
     lines.push("");
@@ -2478,7 +2508,7 @@ function buildDailyMarkdownReport({ tasks, projects, pomodoro }) {
     });
   });
   const lines = [];
-  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0631\u0648\u0632\u0627\u0646\u0647 \u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645 \u2014 ${today}`, "");
+  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0631\u0648\u0632\u0627\u0646\u0647 \u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645 \u2014 ${formatDateKeyFa(today)}`, "");
   lines.push("## \u062A\u0633\u06A9\u200C\u0647\u0627", `${doneToday.length} \u0627\u0632 ${todaysPlan.length} \u062A\u0633\u06A9 \u0627\u0645\u0631\u0648\u0632 \u0627\u0646\u062C\u0627\u0645 \u0634\u062F.`, "");
   doneToday.forEach((tk) => lines.push(`- [x] ${tk.title}`));
   pendingToday.forEach((tk) => lines.push(`- [ ] ${tk.title}`));
@@ -2548,12 +2578,12 @@ function buildWeeklyMarkdownReport({ tasks, projects, pomodoro }) {
     });
   });
   const lines = [];
-  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0647\u0641\u062A\u06AF\u06CC \u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645 \u2014 ${startKey} \u062A\u0627 ${endKey}`, "");
+  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0647\u0641\u062A\u06AF\u06CC \u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645 \u2014 ${formatDateKeyFa(startKey)} \u062A\u0627 ${formatDateKeyFa(endKey)}`, "");
   lines.push("## \u062A\u0633\u06A9\u200C\u0647\u0627", `${totalDone} \u0627\u0632 ${totalDue} \u062A\u0633\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0634\u062F\u0647 \u062F\u0631 \u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 \u0627\u0646\u062C\u0627\u0645 \u0634\u062F.`, "");
   if (doneEntries.length === 0) {
     lines.push("_\u0647\u06CC\u0686 \u062A\u0633\u06A9\u06CC \u062F\u0631 \u0627\u06CC\u0646 \u0647\u0641\u062A\u0647 \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647 \u062B\u0628\u062A \u0646\u0634\u062F\u0647._");
   } else {
-    doneEntries.forEach((e) => lines.push(`- [x] ${e.date} \u2014 ${e.title}`));
+    doneEntries.forEach((e) => lines.push(`- [x] ${formatDateKeyFa(e.date)} \u2014 ${e.title}`));
   }
   lines.push("", "## \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648", `- \u062F\u0648\u0631\u0647\u0627\u06CC \u06A9\u0627\u0631\u06CC \u06A9\u0627\u0645\u0644\u200C\u0634\u062F\u0647: ${completedWork.length}`, `- \u0645\u062C\u0645\u0648\u0639 \u0632\u0645\u0627\u0646 \u062A\u0645\u0631\u06A9\u0632: ${focusedMinutes} \u062F\u0642\u06CC\u0642\u0647`, "");
   lines.push("## \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC");
@@ -2620,7 +2650,7 @@ function buildMonthlyMarkdownReport({ tasks, projects, pomodoro }) {
     });
   });
   const lines = [];
-  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0645\u0627\u0647\u0627\u0646\u0647 \u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645 \u2014 ${startKey} \u062A\u0627 ${endKey}`, "");
+  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0645\u0627\u0647\u0627\u0646\u0647 \u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645 \u2014 ${formatDateKeyFa(startKey)} \u062A\u0627 ${formatDateKeyFa(endKey)}`, "");
   lines.push("## \u062A\u0633\u06A9\u200C\u0647\u0627", `${totalDone} \u0627\u0632 ${totalDue} \u062A\u0633\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0634\u062F\u0647 \u062F\u0631 \u0627\u06CC\u0646 \u06F3\u06F0 \u0631\u0648\u0632 \u0627\u0646\u062C\u0627\u0645 \u0634\u062F.`, "");
   const titles = Object.keys(doneCountByTitle);
   if (titles.length === 0) {
@@ -3342,7 +3372,7 @@ function JournalCard({ journal, setJournal }) {
       style: { background: "linear-gradient(135deg,#C026D3,#DB2777)" }
     },
     "\u062B\u0628\u062A \u06CC\u0627\u062F\u062F\u0627\u0634\u062A"
-  )), journal.length === 0 ? /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600 text-center py-2" }, "\u0647\u0646\u0648\u0632 \u06CC\u0627\u062F\u062F\u0627\u0634\u062A\u06CC \u0646\u0646\u0648\u0634\u062A\u06CC") : /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, visible.map((e) => /* @__PURE__ */ React.createElement("div", { key: e.id, className: "rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-start justify-between gap-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-200 leading-relaxed whitespace-pre-wrap flex-1" }, e.text), /* @__PURE__ */ React.createElement("button", { onClick: () => deleteEntry(e.id), className: "shrink-0 text-rose-400/70 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 12 }))), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, e.date))), journal.length > 3 && /* @__PURE__ */ React.createElement("button", { onClick: () => setExpanded((v) => !v), className: "w-full text-[11px] text-fuchsia-300 text-center py-1" }, expanded ? "\u0646\u0645\u0627\u06CC\u0634 \u06A9\u0645\u062A\u0631" : `${journal.length - 3} \u06CC\u0627\u062F\u062F\u0627\u0634\u062A \u0642\u062F\u06CC\u0645\u06CC\u200C\u062A\u0631 \u062F\u06CC\u06AF\u0647`)));
+  )), journal.length === 0 ? /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600 text-center py-2" }, "\u0647\u0646\u0648\u0632 \u06CC\u0627\u062F\u062F\u0627\u0634\u062A\u06CC \u0646\u0646\u0648\u0634\u062A\u06CC") : /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, visible.map((e) => /* @__PURE__ */ React.createElement("div", { key: e.id, className: "rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-start justify-between gap-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-200 leading-relaxed whitespace-pre-wrap flex-1" }, e.text), /* @__PURE__ */ React.createElement("button", { onClick: () => deleteEntry(e.id), className: "shrink-0 text-rose-400/70 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 12 }))), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mt-1.5" }, formatDateKeyFa(e.date)))), journal.length > 3 && /* @__PURE__ */ React.createElement("button", { onClick: () => setExpanded((v) => !v), className: "w-full text-[11px] text-fuchsia-300 text-center py-1" }, expanded ? "\u0646\u0645\u0627\u06CC\u0634 \u06A9\u0645\u062A\u0631" : `${journal.length - 3} \u06CC\u0627\u062F\u062F\u0627\u0634\u062A \u0642\u062F\u06CC\u0645\u06CC\u200C\u062A\u0631 \u062F\u06CC\u06AF\u0647`)));
 }
 function pad2(n) {
   return String(n).padStart(2, "0");
