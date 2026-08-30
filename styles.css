@@ -44,12 +44,15 @@
 .lifeflow-app-root [class*="bg-black"]{ background-color: var(--background-modifier-cover, rgba(0,0,0,.6)) !important; }
 .lifeflow-app-root ::placeholder{ color: var(--text-faint) !important; opacity: 1; }
 
-/* Inputs */
-.lifeflow-app-root input[type="text"],
-.lifeflow-app-root input[type="number"],
-.lifeflow-app-root input[type="date"],
-.lifeflow-app-root input[type="time"],
-.lifeflow-app-root input[type="search"],
+/* Inputs — styled by exclusion rather than an allow-list of every
+   type="..." value. An allow-list (input[type="text"], input[type="date"],
+   ...) silently misses any type someone adds later (this exact bug: a
+   type="password" field was invisible to this rule until now, and only an
+   explicit type="text" on plain-text inputs made this rule match them at
+   all — see PROGRESS.md Lane 1 session 4). The few input types that
+   legitimately need native OS chrome (not this styling) are excluded
+   instead, so a newly-added input type is styled correctly by default. */
+.lifeflow-app-root input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]),
 .lifeflow-app-root textarea,
 .lifeflow-app-root select{
   background: var(--background-primary) !important;
