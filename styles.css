@@ -76,19 +76,13 @@
   color: var(--text-on-accent) !important;
 }
 
-/* Modal */
-.lifeflow-app-root ~ .lf-modal-backdrop,
-.lf-modal-backdrop{
-  background: var(--background-modifier-cover, rgba(0,0,0,.6));
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
-.lf-modal-sheet{
-  background: var(--background-primary) !important;
-  border: 1px solid var(--background-modifier-border);
-  box-shadow: var(--shadow-l, 0 -6px 24px rgba(0,0,0,.25));
-}
-.lf-modal-sheet h3{ color: var(--text-normal) !important; }
+/* Modal content now portals into a real Obsidian Modal's contentEl (see
+   ModalShell in app.jsx + openReactModal in main.ts) instead of a
+   hand-rolled backdrop/sheet, so centering, the dimmed backdrop, and the
+   theme's own modal background/shadow/radius all come from Obsidian
+   itself. This just adds a little breathing room in case the active
+   theme's own .modal-content has none. */
+.lifeflow-modal-content{ padding: 4px 2px; }
 
 /* Primary "gradient" CTA buttons: keep the plugin's accent identity but
    pull from Obsidian's interactive-accent so it still matches the theme */

@@ -1,4 +1,4 @@
-import { ItemView, Plugin, WorkspaceLeaf } from "obsidian";
+import { ItemView, Modal, Plugin, WorkspaceLeaf } from "obsidian";
 import * as React from "react";
 import * as ReactDOMClient from "react-dom/client";
 import LifeFlowApp from "./app.jsx";
@@ -41,6 +41,32 @@ const DATA_KEY = "lifeflow_data_v1";
  * value is itself already a JSON string produced by the React app, so this
  * plugin doesn't need to know its shape). */
 type LifeFlowData = Record<string, string>;
+
+/** Thin wrapper around Obsidian's own Modal so React-rendered content (from
+ * ModalShell in app.jsx) gets native modal chrome for free — centered on
+ * screen, dimmed backdrop with click-outside-to-close, Escape-to-close, and
+ * the active theme's own modal background/shadow/border-radius — instead of
+ * a hand-rolled bottom sheet that never quite matched what other Obsidian
+ * plugins' modals look like (the exact bug a user screenshot reported; see
+ * PROGRESS.md Lane 1 notes). This class does no React rendering itself —
+ * ModalShell portals its content straight into `contentEl` via
+ * ReactDOM.createPortal, same mechanism as before, just targeting a
+ * different node. */
+class LifeFlowReactModal extends Modal {
+	/** Fires only when Obsidian closes the modal through its own
+	 * mechanisms — Escape key, clicking the dimmed backdrop, or a
+	 * subsequent explicit .close() call — so app.jsx can update its React
+	 * state (e.g. setShowAdd(false)) to match. ModalShell nulls this out
+	 * right before calling close() itself (component unmounted because
+	 * React state already changed), so the callback doesn't fire a second,
+	 * redundant time in that direction. */
+	onExternalClose: (() => void) | null = null;
+
+	onClose() {
+		this.contentEl.empty();
+		if (this.onExternalClose) this.onExternalClose();
+	}
+}
 
 export class LifeFlowView extends ItemView {
 	root: ReactDOMClient.Root | null = null;
@@ -174,6 +200,18 @@ export default class LifeFlowPlugin extends Plugin {
 			await leaf.setViewState({ type: VIEW_TYPE, active: true });
 		}
 		workspace.revealLeaf(leaf);
+	}
+
+	/** Opens a native Obsidian Modal and returns it (its `contentEl` is
+	 * already available synchronously — Modal's constructor builds the DOM
+	 * structure before open() is even called) so ModalShell can portal its
+	 * React content straight into it instead of document.body. Exposed via
+	 * window.__lifeflowPlugin, same bridge as getDataValue/exportDailyReport. */
+	openReactModal(onExternalClose: () => void): LifeFlowReactModal {
+		const modal = new LifeFlowReactModal(this.app);
+		modal.onExternalClose = onExternalClose;
+		modal.open();
+		return modal;
 	}
 
 	/** Derives "seconds left right now" for the active pomodoro timer (if any)

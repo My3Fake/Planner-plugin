@@ -595,54 +595,73 @@ function ModalShell({ title, onClose, onSubmit, footer, submitLabel, submitDisab
       submitLabel
     )
   ) : null;
-  // ModalShell renders through a React portal straight onto document.body
-  // (see the createPortal call below), so it sits OUTSIDE the app's own
-  // root div — the only place that previously set dir={langDir}. Obsidian's
-  // own <body> has no reason to be RTL just because this plugin's language
-  // is Persian, so every modal has been silently laying out as LTR this
-  // whole time: title-left/close-button-right, chip grids filling
-  // left-to-right, the native scrollbar on the right instead of the left,
-  // etc. — exactly what showed up in the user's screenshot. Computing and
-  // applying the direction here, independently of the main app root, fixes
-  // every flex/grid ordering and the scrollbar side in one shot, without
-  // threading a new prop through all eight modal components.
-  const modalLang = loadSettings().language;
-  const modalDir = (LANGUAGES.find((l) => l.id === modalLang) || LANGUAGES[0]).dir;
-  const content = /* @__PURE__ */ React.createElement(
-    "div",
+
+  // A user screenshot showed this used to render as a hand-rolled bottom
+  // sheet (position:fixed + a manually-drawn backdrop, portaled straight
+  // onto document.body) — it looked nothing like a normal Obsidian modal:
+  // pinned to the bottom of the screen instead of centered, its own
+  // custom colors instead of the active theme's modal chrome, and (a
+  // separate bug fixed earlier the same day) it silently laid out
+  // left-to-right because document.body has no reason to be RTL just
+  // because this plugin's language is Persian. Rather than hand-tuning
+  // more CSS to *imitate* a native Obsidian modal, this now opens an
+  // actual Obsidian Modal (via window.__lifeflowPlugin.openReactModal, see
+  // main.ts) and portals this same React content straight into its
+  // contentEl — so centering, the dimmed backdrop, click-outside/Escape to
+  // close, and the theme's own modal background/shadow/radius are all
+  // real Obsidian behavior, not a reimplementation of it.
+  const [contentEl, setContentEl] = useState(null);
+  const modalRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const plugin = typeof window !== "undefined" && window.__lifeflowPlugin;
+    if (!plugin || typeof plugin.openReactModal !== "function") return void 0;
+    const modalLang = loadSettings().language;
+    const modalDir = (LANGUAGES.find((l) => l.id === modalLang) || LANGUAGES[0]).dir;
+    const modal = plugin.openReactModal(() => onCloseRef.current());
+    modal.contentEl.setAttribute("dir", modalDir);
+    // Every existing theme-color override in styles.css (text-white/
+    // text-slate-*/bg-white/etc -> Obsidian CSS vars) is scoped as
+    // `.lifeflow-app-root [class*="..."]` because it was written assuming
+    // this content lives inside the main view's root div. Modal content
+    // never did (it portals to a separate node, previously document.body,
+    // now this contentEl) — so those Tailwind color classes were silently
+    // falling back to their literal compiled colors (plain white text,
+    // fixed slate grays) the whole time. That happened to look passable in
+    // a dark Obsidian theme by coincidence, but would be broken (e.g.
+    // white text) in a light theme. Adding the same class here — rather
+    // than rewriting every rule in styles.css to also match a second
+    // selector — makes every one of those existing rules apply here too.
+    modal.contentEl.addClass("lifeflow-app-root", "lifeflow-modal-content");
+    modalRef.current = modal;
+    setContentEl(modal.contentEl);
+    return () => {
+      modal.onExternalClose = null;
+      modal.close();
+      modalRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (modalRef.current) modalRef.current.setTitle(title);
+  }, [title]);
+
+  if (!contentEl) return null;
+
+  const body = /* @__PURE__ */ React.createElement(
+    "form",
     {
-      onClick: onClose,
-      dir: modalDir,
-      className: "lf-modal-backdrop",
-      style: { position: "fixed", inset: 0, zIndex: 9999, display: "flex", alignItems: "flex-end", justifyContent: "center" }
+      onSubmit: (e) => {
+        e.preventDefault();
+        if (onSubmit) onSubmit();
+      }
     },
-    /* @__PURE__ */ React.createElement(
-      "form",
-      {
-        onClick: (e) => e.stopPropagation(),
-        onSubmit: (e) => {
-          e.preventDefault();
-          if (onSubmit) onSubmit();
-        },
-        className: "modal-glass-pop lf-modal-sheet",
-        style: {
-          width: "100%",
-          maxWidth: 440,
-          maxHeight: "85%",
-          display: "flex",
-          flexDirection: "column",
-          borderTopLeftRadius: 16,
-          borderTopRightRadius: 16,
-          position: "relative",
-          overflow: "hidden"
-        }
-      },
-      /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 20px 12px", flexShrink: 0, position: "relative", zIndex: 1 } }, /* @__PURE__ */ React.createElement("h3", { className: "text-white font-bold text-lg", style: { margin: 0 } }, title), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: onClose, className: "text-slate-400 hover:text-white w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.06] border border-white/10" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 18 }))),
-      /* @__PURE__ */ React.createElement("div", { style: { padding: "0 20px", overflowY: "auto", flex: "1 1 auto", minHeight: 0, position: "relative", zIndex: 1 } }, children),
-      (footer || defaultFooter) && /* @__PURE__ */ React.createElement("div", { style: { padding: "12px 20px 20px", flexShrink: 0, borderTop: "1px solid var(--background-modifier-border)", position: "relative", zIndex: 1 } }, footer || defaultFooter)
-    )
+    children,
+    (footer || defaultFooter) && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--background-modifier-border)" } }, footer || defaultFooter)
   );
-  return ReactDOM.createPortal(content, document.body);
+  return ReactDOM.createPortal(body, contentEl);
 }
 function FieldLabel({ children, icon }) {
   return /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold mb-2 flex items-center gap-1.5", style: { color: "var(--text-muted)", marginTop: 18 } }, icon && /* @__PURE__ */ React.createElement(Ic, { name: icon, size: 12 }), children);
