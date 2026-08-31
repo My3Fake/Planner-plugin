@@ -1912,6 +1912,37 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     }
     saveTask(taskPatch);
   };
+  // Changing the *topic-level* routine (LearningRoutineEditor) previously
+  // only called updateTopic() — isTrackDueOn() reads topic.recurrence live
+  // so LearningHub's own due/balance/streak numbers picked up the change
+  // immediately, but every inheriting subsection's *linked task* kept its
+  // old recurrence fields, since nothing re-synced them the way
+  // updateSubsection() already does when a per-track override changes.
+  // Concretely: a topic switched from "daily" to "weekly, Mondays only"
+  // would make LearningHub correctly show a track as not-due on Tuesday,
+  // while the Tasks tab / Calendar (which read the linked task's own
+  // recurrence via the separate isTaskDueOn()) would still show it due
+  // every day — two views of the same track silently disagreeing.
+  // Reproduced and fixed after finding it during the testing/polish pass
+  // requested for the topic-routine + track-quota combination (Lane 2
+  // queue item 2). Mirrors updateSubsection()'s existing sync exactly:
+  // only recurrence/recurrenceWeekdays, never recurrenceDay/recurrenceMonth
+  // (those are a per-task, Tasks-tab-only detail for monthly/yearly, per
+  // LearningRoutineEditor's own hint text, and must not be clobbered back
+  // to a default here).
+  const updateTopicRoutine = (nextTopic) => {
+    updateTopic(() => nextTopic);
+    nextTopic.subsections.forEach((sec) => {
+      if (sec.recurrenceOverride) return;
+      const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
+      if (!linkedTask) return;
+      saveTask({
+        ...linkedTask,
+        recurrence: nextTopic.recurrence || "daily",
+        recurrenceWeekdays: nextTopic.recurrence === "weekly" ? nextTopic.recurrenceWeekdays : void 0
+      });
+    });
+  };
   const deleteSubsection = (id) => {
     if (!topic) return;
     const sec = topic.subsections.find((s) => s.id === id);
@@ -2064,7 +2095,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     topic.subsections.forEach((s) => s.linkedTaskId && deleteTask(s.linkedTaskId));
     setProjects((prev) => prev.filter((p) => p.id !== topic.id));
     setActiveId(null);
-  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), /* @__PURE__ */ React.createElement(LearningRoutineEditor, { topic, onChange: (next) => updateTopic(() => next) }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
+  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
     const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
     return /* @__PURE__ */ React.createElement(
       SubsectionCard,
