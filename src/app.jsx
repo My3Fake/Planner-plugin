@@ -13,6 +13,20 @@ var DAYPARTS = [
   { id: "evening", label: "\u0639\u0635\u0631" },
   { id: "night", label: "\u0634\u0628" }
 ];
+// Item-type distinction (Lane 1 backlog item — see PROGRESS.md section
+// 4.1): a task/event/routine/learning-linked axis, orthogonal to
+// quadrant/priority/progressType. Lane 3 (calendar) uses this field for
+// per-type color/icon in DayPlannerView/WeekHourlyView/AgendaView — do not
+// rename `id` values without updating that lane too. Default is "task" so
+// every pre-existing task (which has no itemType at all) behaves exactly
+// as before.
+var ITEM_TYPES = [
+  { id: "task", label: "\u062A\u0633\u06A9", icon: "clipboard", color: "#C026D3" },
+  { id: "event", label: "\u0631\u0648\u06CC\u062F\u0627\u062F", icon: "calendar", color: "#22D3EE" },
+  { id: "routine", label: "\u0631\u0648\u062A\u06CC\u0646", icon: "repeat", color: "#DB2777" },
+  { id: "learning", label: "\u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC", icon: "book", color: "#F59E0B" }
+];
+var DEFAULT_ITEM_TYPE = "task";
 var PRIORITIES = [
   { level: 1, label: "\u067E\u0627\u06CC\u06CC\u0646" },
   { level: 2, label: "\u0645\u062A\u0648\u0633\u0637" },
@@ -944,6 +958,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
   const isEdit = !!initialTask;
   const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
   const [title, setTitle] = useState(initialTask ? initialTask.title : ""), [desc, setDesc] = useState(initialTask ? initialTask.desc || "" : "");
+  const [itemType, setItemType] = useState(initialTask ? initialTask.itemType || DEFAULT_ITEM_TYPE : DEFAULT_ITEM_TYPE);
   const [quad, setQuad] = useState(initialTask ? initialTask.quad : defaults.quad), [priority, setPriority] = useState(initialTask ? initialTask.priority : defaults.priority);
   const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
   const [time, setTime] = useState(initialTask ? initialTask.time || "" : prefillTime || ""), [duration, setDuration] = useState(initialTask ? initialTask.duration : defaults.duration);
@@ -973,6 +988,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       id: isEdit ? initialTask.id : uid(),
       title: title.trim(),
       desc: desc.trim(),
+      itemType,
       quad,
       priority,
       status: isEdit ? initialTask.status : "todo",
@@ -1015,6 +1031,8 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
         className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-xs mb-4 outline-none resize-none focus:border-fuchsia-400/60"
       }
     ),
+    /* @__PURE__ */ React.createElement(FieldLabel, { icon: "grid" }, "\u0646\u0648\u0639 \u0622\u06CC\u062A\u0645"),
+    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, ITEM_TYPES.map((it) => /* @__PURE__ */ React.createElement(Chip, { key: it.id, active: itemType === it.id, color: it.color, onClick: () => setItemType(it.id) }, /* @__PURE__ */ React.createElement(Ic, { name: it.icon, size: 11 }), " ", it.label))),
     /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0631\u0628\u0639 \u0622\u06CC\u0632\u0646\u0647\u0627\u0648\u0631"),
     /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-4" }, QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: quad === q.id, color: q.color, onClick: () => setQuad(q.id) }, q.label))),
     /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0627\u0648\u0644\u0648\u06CC\u062A"),
