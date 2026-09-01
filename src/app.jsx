@@ -2183,6 +2183,78 @@ function formatDateKeyFa(key) {
   if (!y || !m || !d) return key;
   return Jalali.formatJalali(new Date(y, m - 1, d), { weekday: false });
 }
+// --- Learning system v2: multi-level tree helpers (spec item 25 --
+// arbitrary-depth nesting, e.g. Language -> Reading -> a specific book ->
+// a specific chapter -> a specific section, not capped at two levels).
+// A node from the OLD flat model (a plain subsection with no `children`)
+// is just a leaf in this tree -- fully backward compatible, no migration
+// needed for existing data. Every function below is a pure, immutable
+// tree operation (returns new arrays/objects, never mutates the input),
+// matching the rest of the app's setState-based update pattern.
+function findNodeById(nodes, id) {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    if (n.children && n.children.length) {
+      const found = findNodeById(n.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+function updateNodeById(nodes, id, updater) {
+  return nodes.map((n) => {
+    if (n.id === id) return updater(n);
+    if (n.children && n.children.length) {
+      return { ...n, children: updateNodeById(n.children, id, updater) };
+    }
+    return n;
+  });
+}
+function removeNodeById(nodes, id) {
+  return nodes.filter((n) => n.id !== id).map((n) => n.children && n.children.length ? { ...n, children: removeNodeById(n.children, id) } : n);
+}
+function addChildToNode(nodes, parentId, childNode) {
+  return nodes.map((n) => {
+    if (n.id === parentId) return { ...n, children: [...(n.children || []), childNode] };
+    if (n.children && n.children.length) {
+      return { ...n, children: addChildToNode(n.children, parentId, childNode) };
+    }
+    return n;
+  });
+}
+function flattenTree(nodes) {
+  const out = [];
+  (nodes || []).forEach((n) => {
+    out.push(n);
+    if (n.children && n.children.length) out.push(...flattenTree(n.children));
+  });
+  return out;
+}
+// The {recurrence, recurrenceWeekdays} that should be passed as the
+// "topic" argument to the EXISTING isTrackDueOn/computeTrackBalance/
+// computeTrackStreak/computeTrackSurplusInfo/computeTodayStillOwed for the
+// node whose id is targetId -- i.e. its DIRECT PARENT's own effective
+// recurrence, resolved all the way up to the topic root if nothing in
+// between overrides it. Deliberately does NOT fold the target node's own
+// recurrenceOverride in -- isTrackDueOn already does that internally, so
+// this only needs to resolve what the ancestor chain contributes above
+// it. This is what makes deep, multi-level recurrence inheritance work
+// (a level with no override of its own inherits from its nearest
+// overriding ancestor, not necessarily straight from the topic) without
+// changing a single line of the existing, already-tested due/balance/
+// streak/surplus functions. Verified with a 12-case standalone test
+// covering 4 levels of nesting and mixed override combinations.
+function findParentEffectiveRecurrence(nodes, targetId, inheritedFromAbove) {
+  for (const n of nodes) {
+    if (n.id === targetId) return inheritedFromAbove;
+    const ownEffective = n.recurrenceOverride ? { recurrence: n.recurrenceOverride.recurrence, recurrenceWeekdays: n.recurrenceOverride.recurrenceWeekdays } : inheritedFromAbove;
+    if (n.children && n.children.length) {
+      const found = findParentEffectiveRecurrence(n.children, targetId, ownEffective);
+      if (found) return found;
+    }
+  }
+  return null;
+}
 function isTrackDueOn(subsection, topic, d) {
   // Paused/archived tracks are never "due" — callers that need to know
   // *why* (to show a distinct label instead of a numeric balance) check
