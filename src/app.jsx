@@ -3464,6 +3464,8 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const [multiProgress, setMultiProgress] = useState({});
   const [askProgress, setAskProgress] = useState(null);
   const [progressInput, setProgressInput] = useState("");
+  const [focusRating, setFocusRating] = useState(null);
+  const [sessionNote, setSessionNote] = useState("");
   const startedAtRef = useRef(null);
   const durations = { work: settings.work, short: settings.shortBreak, long: settings.longBreak };
   const activeTasks = tasks.filter((t2) => t2.status !== "done");
@@ -3570,9 +3572,13 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       } catch (e) {
       }
     }
-    if (completed && mode === "work" && (activeTask && activeTask.progressType === "progressive" || entry.taskAllocations)) {
+    const hasProgressTargets = !!(activeTask && activeTask.progressType === "progressive") || !!entry.taskAllocations;
+    if (completed && mode === "work" && (hasProgressTargets || settings.askReviewEveryTime !== false)) {
       setAskProgress(entry);
-      if (entry.taskAllocations) setMultiProgress({});
+      setMultiProgress({});
+      setProgressInput("");
+      setFocusRating(null);
+      setSessionNote("");
     }
     let nextMode = "work";
     if (completed && mode === "work") {
@@ -3624,19 +3630,28 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     setSecondsLeft(durations[m] * 60);
     pushActiveTimer(m, false, durations[m] * 60);
   };
+  const dismissReview = () => {
+    setAskProgress(null);
+    setMultiProgress({});
+    setProgressInput("");
+    setFocusRating(null);
+    setSessionNote("");
+  };
   const submitProgress = () => {
     if (askProgress && askProgress.taskAllocations) {
       askProgress.taskAllocations.forEach((a) => {
         const n = parseFaNumber(multiProgress[a.taskId] || "");
         if (n > 0) onAddProgress(a.taskId, n);
       });
-      setMultiProgress({});
-    } else {
+    } else if (askProgress && askProgress.taskId) {
       const n = Number(progressInput);
-      if (askProgress && askProgress.taskId && n > 0) onAddProgress(askProgress.taskId, n);
+      if (n > 0) onAddProgress(askProgress.taskId, n);
     }
-    setAskProgress(null);
-    setProgressInput("");
+    if (askProgress && (focusRating || sessionNote.trim())) {
+      const noteVal = sessionNote.trim() || null;
+      setPomodoro((p) => ({ ...p, sessions: p.sessions.map((s) => s.id === askProgress.id ? { ...s, focusRating, note: noteVal } : s) }));
+    }
+    dismissReview();
   };
   const total = durations[mode] * 60;
   const pct = Math.round((total - secondsLeft) / total * 100);
@@ -3690,49 +3705,103 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     })
   );
   const taskPickerBody = multiMode ? multiPicker : singlePicker;
-  const askProgressSection = askProgress ? (askProgress.taskAllocations ? React.createElement(
-    GlassCard,
-    { className: "p-4 space-y-2" },
-    React.createElement("p", { className: "text-sm text-slate-200 mb-1" }, "\u067E\u06CC\u0634\u0631\u0641\u062A \u0647\u0631 \u06A9\u062F\u0627\u0645 \u0631\u0627 \u062C\u062F\u0627 \u062B\u0628\u062A \u06A9\u0646 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u0628\u0645\u0627\u0646):"),
-    askProgress.taskAllocations.map((a) => {
-      const tk = tasks.find((x) => x.id === a.taskId);
-      if (!tk) return null;
-      return React.createElement(
-        "div",
-        { key: a.taskId, className: "flex items-center gap-2" },
-        React.createElement("span", { className: "text-xs text-slate-400 flex-1 truncate" }, tk.title, ` \u2014 ${toFa(a.sharePct)}\u066A`),
-        React.createElement("input", {
-          type: "text",
-          inputMode: "decimal",
-          dir: "ltr",
-          value: multiProgress[a.taskId] || "",
-          onChange: (e) => setMultiProgress((p) => ({ ...p, [a.taskId]: e.target.value })),
-          placeholder: `\u0645\u0642\u062F\u0627\u0631 ${tk.progressUnit || ""}`,
-          className: "w-24 text-center bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none"
-        })
-      );
-    }),
+  const focusOptions = [[4, "\u0639\u0627\u0644\u06CC"], [3, "\u062E\u0648\u0628"], [2, "\u0645\u062A\u0648\u0633\u0637"], [1, "\u0636\u0639\u06CC\u0641"]];
+  const focusSection = React.createElement(
+    "div",
+    { className: "pt-2 mt-1 border-t border-white/10" },
+    React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u062A\u0645\u0631\u06A9\u0632 \u0627\u06CC\u0646 \u062C\u0644\u0633\u0647 \u0686\u0637\u0648\u0631 \u0628\u0648\u062F\u061F (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"),
     React.createElement(
       "div",
-      { className: "flex gap-2 pt-2" },
-      React.createElement("button", { type: "button", onClick: submitProgress, className: "flex-1 rounded-xl text-white text-sm font-bold py-2", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A \u0647\u0645\u0647"),
-      React.createElement("button", { type: "button", onClick: () => {
-        setAskProgress(null);
-        setMultiProgress({});
-      }, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")
-    )
-  ) : React.createElement(GlassCard, { className: "p-4" }, React.createElement("p", { className: "text-sm text-slate-200 mb-2" }, "\u0627\u06CC\u0646 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648 \u0686\u0642\u062F\u0631 \u0631\u0648 \xAB", activeTask?.title, "\xBB \u067E\u06CC\u0634\u0631\u0641\u062A \u06A9\u0631\u062F\u06CC\u061F"), React.createElement("form", { className: "flex gap-2", onSubmit: (e) => {
-    e.preventDefault();
-    submitProgress();
-  } }, React.createElement("input", {
-    autoFocus: true,
-    type: "number",
-    min: "0",
-    value: progressInput,
-    onChange: (e) => setProgressInput(e.target.value),
-    placeholder: `\u062A\u0639\u062F\u0627\u062F ${activeTask?.progressUnit || ""}`,
-    className: "flex-1 bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none"
-  }), React.createElement("button", { type: "submit", className: "px-5 rounded-xl text-white text-sm font-bold", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A"), React.createElement("button", { type: "button", onClick: () => setAskProgress(null), className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")))) : null;
+      { className: "flex gap-1.5 mb-2" },
+      focusOptions.map(([value, label]) => React.createElement(
+        "button",
+        {
+          key: value,
+          type: "button",
+          onClick: () => setFocusRating((r) => r === value ? null : value),
+          className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium border",
+          style: {
+            borderColor: focusRating === value ? "var(--interactive-accent)" : "var(--background-modifier-border)",
+            color: focusRating === value ? "var(--text-accent)" : "var(--text-muted)",
+            background: focusRating === value ? "var(--background-modifier-hover)" : "transparent"
+          }
+        },
+        label
+      ))
+    ),
+    React.createElement("input", {
+      type: "text",
+      value: sessionNote,
+      onChange: (e) => setSessionNote(e.target.value),
+      placeholder: "\u06CC\u0627\u062F\u062F\u0627\u0634\u062A\u06CC \u062F\u0631\u0628\u0627\u0631\u0647\u200C\u06CC \u0627\u06CC\u0646 \u062C\u0644\u0633\u0647 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)",
+      className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white text-xs outline-none"
+    })
+  );
+  let askProgressSection = null;
+  if (askProgress && askProgress.taskAllocations) {
+    askProgressSection = React.createElement(
+      GlassCard,
+      { className: "p-4 space-y-2" },
+      React.createElement("p", { className: "text-sm text-slate-200 mb-1" }, "\u067E\u06CC\u0634\u0631\u0641\u062A \u0647\u0631 \u06A9\u062F\u0627\u0645 \u0631\u0627 \u062C\u062F\u0627 \u062B\u0628\u062A \u06A9\u0646 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u0628\u0645\u0627\u0646):"),
+      askProgress.taskAllocations.map((a) => {
+        const tk = tasks.find((x) => x.id === a.taskId);
+        if (!tk) return null;
+        return React.createElement(
+          "div",
+          { key: a.taskId, className: "flex items-center gap-2" },
+          React.createElement("span", { className: "text-xs text-slate-400 flex-1 truncate" }, tk.title, ` \u2014 ${toFa(a.sharePct)}\u066A`),
+          React.createElement("input", {
+            type: "text",
+            inputMode: "decimal",
+            dir: "ltr",
+            value: multiProgress[a.taskId] || "",
+            onChange: (e) => setMultiProgress((p) => ({ ...p, [a.taskId]: e.target.value })),
+            placeholder: `\u0645\u0642\u062F\u0627\u0631 ${tk.progressUnit || ""}`,
+            className: "w-24 text-center bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none"
+          })
+        );
+      }),
+      focusSection,
+      React.createElement(
+        "div",
+        { className: "flex gap-2 pt-2" },
+        React.createElement("button", { type: "button", onClick: submitProgress, className: "flex-1 rounded-xl text-white text-sm font-bold py-2", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A \u0647\u0645\u0647"),
+        React.createElement("button", { type: "button", onClick: dismissReview, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")
+      )
+    );
+  } else if (askProgress && askProgress.taskId) {
+    askProgressSection = React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      React.createElement("p", { className: "text-sm text-slate-200 mb-2" }, "\u0627\u06CC\u0646 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648 \u0686\u0642\u062F\u0631 \u0631\u0648 \xAB", activeTask?.title, "\xBB \u067E\u06CC\u0634\u0631\u0641\u062A \u06A9\u0631\u062F\u06CC\u061F"),
+      React.createElement("form", { className: "flex gap-2", onSubmit: (e) => {
+        e.preventDefault();
+        submitProgress();
+      } }, React.createElement("input", {
+        autoFocus: true,
+        type: "number",
+        min: "0",
+        value: progressInput,
+        onChange: (e) => setProgressInput(e.target.value),
+        placeholder: `\u062A\u0639\u062F\u0627\u062F ${activeTask?.progressUnit || ""}`,
+        className: "flex-1 bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none"
+      }), React.createElement("button", { type: "submit", className: "px-5 rounded-xl text-white text-sm font-bold", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A"), React.createElement("button", { type: "button", onClick: dismissReview, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")),
+      focusSection
+    );
+  } else if (askProgress) {
+    askProgressSection = React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      React.createElement("p", { className: "text-sm text-slate-200 mb-1" }, "\u0627\u06CC\u0646 \u062C\u0644\u0633\u0647 \u0686\u0637\u0648\u0631 \u067E\u06CC\u0634 \u0631\u0641\u062A\u061F"),
+      focusSection,
+      React.createElement(
+        "div",
+        { className: "flex gap-2 pt-2" },
+        React.createElement("button", { type: "button", onClick: submitProgress, className: "flex-1 rounded-xl text-white text-sm font-bold py-2", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A"),
+        React.createElement("button", { type: "button", onClick: dismissReview, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")
+      )
+    );
+  }
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, [["work", t("pomodoro_work", "fa")], ["short", t("pomodoro_short_break", "fa")], ["long", t("pomodoro_long_break", "fa")]].map(([m, label]) => /* @__PURE__ */ React.createElement(Chip, { key: m, active: mode === m, color: m === "work" ? "#DB2777" : m === "short" ? "#22D3EE" : "#C026D3", onClick: () => switchMode(m) }, label))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-6 flex flex-col items-center" }, /* @__PURE__ */ React.createElement("svg", { width: 200, height: 200, viewBox: "0 0 200 200" }, /* @__PURE__ */ React.createElement("circle", { cx: "100", cy: "100", r, fill: "none", stroke: "var(--background-modifier-border)", strokeWidth: "12" }), /* @__PURE__ */ React.createElement(
     "circle",
     {
@@ -3762,7 +3831,8 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     "div",
     { className: "flex items-center gap-2 mt-3 flex-wrap" },
     /* @__PURE__ */ React.createElement(Chip, { active: !!settings.autoStartNext, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, autoStartNext: !p.settings.autoStartNext } })) }, "\u0634\u0631\u0648\u0639 \u062E\u0648\u062F\u06A9\u0627\u0631 \u062F\u0648\u0631 \u0628\u0639\u062F"),
-    /* @__PURE__ */ React.createElement(Chip, { active: settings.sound !== false, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, sound: p.settings.sound === false } })) }, "\u0635\u062F\u0627\u06CC \u067E\u0627\u06CC\u0627\u0646 \u062A\u0627\u06CC\u0645\u0631")
+    /* @__PURE__ */ React.createElement(Chip, { active: settings.sound !== false, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, sound: p.settings.sound === false } })) }, "\u0635\u062F\u0627\u06CC \u067E\u0627\u06CC\u0627\u0646 \u062A\u0627\u06CC\u0645\u0631"),
+    /* @__PURE__ */ React.createElement(Chip, { active: settings.askReviewEveryTime !== false, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, askReviewEveryTime: p.settings.askReviewEveryTime === false } })) }, "\u0628\u0639\u062F \u0627\u0632 \u0647\u0631 \u062C\u0644\u0633\u0647 \u062A\u0645\u0631\u06A9\u0632/\u06CC\u0627\u062F\u062F\u0627\u0634\u062A \u0628\u067E\u0631\u0633")
   )));
 }
 function PomodoroReportView({ pomodoro, tasks }) {
@@ -4338,7 +4408,7 @@ var NAV = [
   { id: "notes", labelKey: "nav_notes", icon: "check-square" }
 ];
 var DEFAULT_POMODORO = {
-  settings: { work: 25, shortBreak: 5, longBreak: 15, cyclesUntilLong: 4, autoStartNext: false, sound: true },
+  settings: { work: 25, shortBreak: 5, longBreak: 15, cyclesUntilLong: 4, autoStartNext: false, sound: true, askReviewEveryTime: true },
   sessions: []
   // { id, type: 'work'|'short'|'long', taskId, startedAt, durationMin, completedAt, interrupted, progressAdded }
 };
