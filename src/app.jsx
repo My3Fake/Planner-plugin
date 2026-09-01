@@ -384,13 +384,13 @@ function loadSettings() {
   try {
     const raw = storage.get(SETTINGS_KEY);
     if (!raw) {
-      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, customItemTypes: [] };
     } else {
       const parsed = JSON.parse(raw);
-      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance) };
+      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance), customItemTypes: Array.isArray(parsed.customItemTypes) ? parsed.customItemTypes : [] };
     }
   } catch (e) {
-    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, customItemTypes: [] };
   }
   applyQuadrantColors(result.appearance.quadrantColors);
   return result;
@@ -954,11 +954,17 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress }
     }
   ))));
 }
-function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }) {
+function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, customItemTypes, prefillTime }) {
   const isEdit = !!initialTask;
   const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
   const [title, setTitle] = useState(initialTask ? initialTask.title : ""), [desc, setDesc] = useState(initialTask ? initialTask.desc || "" : "");
   const [itemType, setItemType] = useState(initialTask ? initialTask.itemType || DEFAULT_ITEM_TYPE : DEFAULT_ITEM_TYPE);
+  // Merge the 4 built-in types with whatever the user defined in Settings
+  // (custom task types, spec item 8 — see PROGRESS.md Lane 1). Custom ones
+  // are plain {id, label, icon, color} objects, same shape as ITEM_TYPES,
+  // so the rest of this component (Chip rendering, the submitted itemType
+  // value) doesn't need to know the difference.
+  const allItemTypes = useMemo(() => ITEM_TYPES.concat(customItemTypes || []), [customItemTypes]);
   const [quad, setQuad] = useState(initialTask ? initialTask.quad : defaults.quad), [priority, setPriority] = useState(initialTask ? initialTask.priority : defaults.priority);
   const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
   const [time, setTime] = useState(initialTask ? initialTask.time || "" : prefillTime || ""), [duration, setDuration] = useState(initialTask ? initialTask.duration : defaults.duration);
@@ -1032,7 +1038,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       }
     ),
     /* @__PURE__ */ React.createElement(FieldLabel, { icon: "grid" }, "\u0646\u0648\u0639 \u0622\u06CC\u062A\u0645"),
-    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, ITEM_TYPES.map((it) => /* @__PURE__ */ React.createElement(Chip, { key: it.id, active: itemType === it.id, color: it.color, onClick: () => setItemType(it.id) }, /* @__PURE__ */ React.createElement(Ic, { name: it.icon, size: 11 }), " ", it.label))),
+    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, allItemTypes.map((it) => /* @__PURE__ */ React.createElement(Chip, { key: it.id, active: itemType === it.id, color: it.color, onClick: () => setItemType(it.id) }, /* @__PURE__ */ React.createElement(Ic, { name: it.icon, size: 11 }), " ", it.label))),
     /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0631\u0628\u0639 \u0622\u06CC\u0632\u0646\u0647\u0627\u0648\u0631"),
     /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-4" }, QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: quad === q.id, color: q.color, onClick: () => setQuad(q.id) }, q.label))),
     /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0627\u0648\u0644\u0648\u06CC\u062A"),
@@ -4673,7 +4679,7 @@ function LifeFlowApp() {
       setShowAdd(false);
       setEditingTask(null);
       setPrefillTime(null);
-    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, prefillTime }),
+    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, customItemTypes: settings.customItemTypes, prefillTime }),
     searchOpen && /* @__PURE__ */ React.createElement(
       GlobalSearchModal,
       {
