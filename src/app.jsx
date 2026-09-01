@@ -3452,11 +3452,25 @@ function computeEqualShares(n) {
   const remainder = 100 - base * n;
   return Array.from({ length: n }, (_, i) => base + (i < remainder ? 1 : 0));
 }
+function deriveInitialTimer(pomodoro, settings) {
+  const at = pomodoro.activeTimer;
+  const durations = { work: settings.work, short: settings.shortBreak, long: settings.longBreak };
+  if (!at || typeof at.mode !== "string" || !(at.mode in durations)) {
+    return { mode: "work", secondsLeft: settings.work * 60, running: false };
+  }
+  let secondsLeft = at.secondsLeftAtAnchor;
+  if (at.running && at.anchorAt) {
+    const elapsedSec = Math.floor((Date.now() - new Date(at.anchorAt).getTime()) / 1e3);
+    secondsLeft = Math.max(0, at.secondsLeftAtAnchor - elapsedSec);
+  }
+  return { mode: at.mode, secondsLeft, running: !!at.running };
+}
 function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings, onFocusChange }) {
   const { settings } = pomodoro;
-  const [mode, setMode] = useState("work");
-  const [secondsLeft, setSecondsLeft] = useState(settings.work * 60);
-  const [running, setRunning] = useState(false);
+  const initialTimer = deriveInitialTimer(pomodoro, settings);
+  const [mode, setMode] = useState(initialTimer.mode);
+  const [secondsLeft, setSecondsLeft] = useState(initialTimer.secondsLeft);
+  const [running, setRunning] = useState(initialTimer.running);
   const [cycle, setCycle] = useState(0);
   const [taskId, setTaskId] = useState("");
   const [multiMode, setMultiMode] = useState(false);
@@ -3466,8 +3480,10 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const [progressInput, setProgressInput] = useState("");
   const [focusRating, setFocusRating] = useState(null);
   const [sessionNote, setSessionNote] = useState("");
-  const startedAtRef = useRef(null);
   const durations = { work: settings.work, short: settings.shortBreak, long: settings.longBreak };
+  const startedAtRef = useRef(
+    initialTimer.running ? new Date(Date.now() - (durations[initialTimer.mode] * 60 - initialTimer.secondsLeft) * 1e3).toISOString() : null
+  );
   const activeTasks = tasks.filter((t2) => t2.status !== "done");
   const progressiveActiveTasks = activeTasks.filter((t2) => t2.progressType === "progressive");
   const activeTask = tasks.find((t2) => t2.id === taskId);
@@ -3505,10 +3521,13 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     runningRef.current = running;
   }, [mode, secondsLeft, running]);
   useEffect(() => {
-    // Mount: a freshly-mounted timer widget always starts at running=false
-    // (see the useState(false) above), so pushing false here is always
-    // correct, not a placeholder.
-    pushActiveTimer(modeRef.current, false, secondsLeftRef.current);
+    // Mount: since state is now hydrated from the persisted activeTimer
+    // (see deriveInitialTimer/item 36) rather than always starting fresh,
+    // running can legitimately be true here (the user left an active timer
+    // and came back) — push the real hydrated value, not a hardcoded false,
+    // or we'd immediately stomp the correct snapshot back to "not running"
+    // the instant this view remounts.
+    pushActiveTimer(modeRef.current, runningRef.current, secondsLeftRef.current);
     return () => {
       // Unmount (e.g. user switches to a different nav tab): MUST reflect
       // whatever the timer's actual running state was at that moment, not
