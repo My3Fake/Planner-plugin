@@ -165,6 +165,67 @@ function groupTaskList(tasks, groupBy) {
   });
   return groups;
 }
+// --- Lane 8 part 2 (spec items 134-136): quick-add text parsing --------
+// Parses a single free-text line into task fields for the QuickAddBar
+// below. Deliberately TIME-of-day only, not a real calendar date: the
+// task model has no date field (only `time`, a same-day HH:MM used for
+// daypart/planner positioning - see isTaskDueOn above), so words like
+// "\u0641\u0631\u062F\u0627" (tomorrow) or a weekday name are NOT recognized/
+// consumed here. Silently pretending to schedule "tomorrow" while the
+// model can only represent same-day time would be worse than not
+// supporting it at all (same reasoning as the quadrant/subsection note
+// above, and documented again in the section 4.9 log).
+// Recognizes, in this order (each match is stripped from the title):
+//   #\u0628\u0631\u0686\u0633\u0628        -> tag (first match only - Task.tag is a single string)
+//   !\u0628\u0627\u0644\u0627 / !3      -> priority, either a PRIORITIES label word or a 1-4 digit
+//   \u0633\u0627\u0639\u062A 5 \u0639\u0635\u0631 / \u0633\u0627\u0639\u062A 14:30 -> time (HH:MM) + daypart if a
+//                     \u0635\u0628\u062D/\u0638\u0647\u0631/\u0639\u0635\u0631/\u0634\u0628 word follows
+//   14:30           -> bare time, tried only if the above didn't match
+//   \u0639\u0635\u0631 (alone)      -> daypart only, tried only if no time was found
+var PERSIAN_DIGIT_MAP = { "\u06F0": "0", "\u06F1": "1", "\u06F2": "2", "\u06F3": "3", "\u06F4": "4", "\u06F5": "5", "\u06F6": "6", "\u06F7": "7", "\u06F8": "8", "\u06F9": "9" };
+function normalizePersianDigits(s) {
+  return String(s || "").replace(/[\u06F0-\u06F9]/g, (d) => PERSIAN_DIGIT_MAP[d]);
+}
+var PRIORITY_WORD_TO_LEVEL = { "\u067E\u0627\u06CC\u06CC\u0646": 1, "\u0645\u062A\u0648\u0633\u0637": 2, "\u0628\u0627\u0644\u0627": 3, "\u0628\u062D\u0631\u0627\u0646\u06CC": 4 };
+var DAYPART_WORD_TO_ID = { "\u0635\u0628\u062D": "morning", "\u0638\u0647\u0631": "noon", "\u0639\u0635\u0631": "evening", "\u0634\u0628": "night" };
+function parseQuickAddInput(raw) {
+  let text = normalizePersianDigits(raw);
+  let tag = "", priority = null, time = null, daypart = null;
+  text = text.replace(/#([\p{L}\p{N}_-]+)/u, (m, g1) => {
+    tag = g1;
+    return " ";
+  });
+  text = text.replace(/!([\p{L}0-9]+)/u, (m, g1) => {
+    if (PRIORITY_WORD_TO_LEVEL[g1] != null) priority = PRIORITY_WORD_TO_LEVEL[g1];
+    else if (/^[1-4]$/.test(g1)) priority = Number(g1);
+    return " ";
+  });
+  text = text.replace(/\u0633\u0627\u0639\u062A\s*(\d{1,2})(?::(\d{2}))?\s*(\u0635\u0628\u062D|\u0638\u0647\u0631|\u0639\u0635\u0631|\u0634\u0628)?/u, (m, h, mm, part) => {
+    let hour = Number(h) % 24;
+    if ((part === "\u0639\u0635\u0631" || part === "\u0634\u0628") && hour < 12) hour += 12;
+    time = `${String(hour).padStart(2, "0")}:${mm || "00"}`;
+    if (part) daypart = DAYPART_WORD_TO_ID[part];
+    return " ";
+  });
+  if (!time) {
+    text = text.replace(/\b(\d{1,2}):(\d{2})\b/, (m, h, mm) => {
+      time = `${h.padStart(2, "0")}:${mm}`;
+      return " ";
+    });
+  }
+  if (!time) {
+    for (const word of Object.keys(DAYPART_WORD_TO_ID)) {
+      const re = new RegExp("(^|\\s)" + word + "(\\s|$)", "u");
+      if (re.test(text)) {
+        daypart = DAYPART_WORD_TO_ID[word];
+        text = text.replace(re, " ");
+        break;
+      }
+    }
+  }
+  return { title: text.replace(/\s+/g, " ").trim(), tag, priority, time, daypart };
+}
+// --- end Lane 8 part 2 helpers ------------------------------------------
 // --- end Lane 8 helpers -------------------------------------------------
 var BOOK_STATUSES = [
   { id: "want", label: "\u0645\u06CC\u200C\u062E\u0648\u0627\u0645 \u0628\u062E\u0648\u0646\u0645", color: "#6B7280" },
@@ -663,6 +724,35 @@ function GlobalSearchModal({ onClose, onNavigate, tasks, books, videos, podcasts
     ...exercises.filter((e) => match(e.name)).map((e) => ({ id: "e" + e.id, label: e.name, sub: "\u062A\u0645\u0631\u06CC\u0646", tab: "fitness", icon: "dumbbell", color: "#DB2777" })),
     ...projects.filter((p) => match(p.title)).map((p) => ({ id: "pr" + p.id, label: p.title, sub: "\u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC", tab: "learning", icon: "graduation-cap", color: "#C026D3" }))
   ];
+  // Lane 8 (items 134/137): keyboard-driven navigation of results, and
+  // Escape-to-close - GlobalSearchModal is a plain fixed-overlay div (not
+  // routed through the ModalShell/Obsidian-Modal wrapper, which already
+  // gets Escape/click-outside for free - see the big comment on
+  // ModalShell above), so both have to be handled explicitly here.
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+  const selectResult = (r) => {
+    if (!r) return;
+    onNavigate(r.tab);
+    onClose();
+  };
+  const onInputKeyDown = (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (results.length) setSelectedIndex((i) => (i + 1) % results.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (results.length) setSelectedIndex((i) => (i - 1 + results.length) % results.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      selectResult(results[selectedIndex]);
+    }
+  };
   return /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col", onClick: onClose }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto w-full px-4 pt-8", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1 flex items-center gap-2 bg-white/[0.06] border border-white/10 rounded-xl px-3 py-2.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 16, className: "text-slate-400 shrink-0" }), /* @__PURE__ */ React.createElement(
     "input",
     {
@@ -670,16 +760,15 @@ function GlobalSearchModal({ onClose, onNavigate, tasks, books, videos, podcasts
       autoFocus: true,
       value: q,
       onChange: (e) => setQ(e.target.value),
+      onKeyDown: onInputKeyDown,
       placeholder: "\u062C\u0633\u062A\u062C\u0648\u06CC \u0633\u0631\u0627\u0633\u0631\u06CC \u2014 \u062A\u0633\u06A9\u060C \u06A9\u062A\u0627\u0628\u060C \u0648\u06CC\u062F\u06CC\u0648\u060C \u062A\u0645\u0631\u06CC\u0646...",
       className: "flex-1 bg-transparent text-white text-sm outline-none placeholder:text-slate-500"
     }
-  )), /* @__PURE__ */ React.createElement("button", { onClick: onClose, className: "text-slate-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 22 }))), /* @__PURE__ */ React.createElement("div", { className: "space-y-2 overflow-y-auto max-h-[70vh]" }, query.length > 0 && results.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-6" }, "\u0646\u062A\u06CC\u062C\u0647\u200C\u0627\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F"), results.map((r) => {
+  )), /* @__PURE__ */ React.createElement("button", { onClick: onClose, className: "text-slate-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 22 }))), /* @__PURE__ */ React.createElement("div", { className: "space-y-2 overflow-y-auto max-h-[70vh]" }, query.length > 0 && results.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-6" }, "\u0646\u062A\u06CC\u062C\u0647\u200C\u0627\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F"), results.map((r, idx) => {
     const glyph = r.icon;
-    return /* @__PURE__ */ React.createElement("button", { key: r.id, onClick: () => {
-      onNavigate(r.tab);
-      onClose();
-    }, className: "w-full flex items-center gap-3 bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2.5 text-right" }, /* @__PURE__ */ React.createElement("div", { className: "w-8 h-8 rounded-lg flex items-center justify-center shrink-0", style: { background: `${r.color}22` } }, /* @__PURE__ */ React.createElement(Ic, { name: glyph, size: 14 })), /* @__PURE__ */ React.createElement("div", { className: "min-w-0 flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-100 truncate" }, r.label), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, r.sub)));
-  }))));
+    const active = idx === selectedIndex;
+    return /* @__PURE__ */ React.createElement("button", { key: r.id, onMouseEnter: () => setSelectedIndex(idx), onClick: () => selectResult(r), className: `w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-right border ${active ? "bg-white/[0.09] border-fuchsia-400/40" : "bg-white/[0.04] border-white/[0.07]"}` }, /* @__PURE__ */ React.createElement("div", { className: "w-8 h-8 rounded-lg flex items-center justify-center shrink-0", style: { background: `${r.color}22` } }, /* @__PURE__ */ React.createElement(Ic, { name: glyph, size: 14 })), /* @__PURE__ */ React.createElement("div", { className: "min-w-0 flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-100 truncate" }, r.label), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, r.sub)));
+  })), results.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-600 text-center mt-3" }, "\u2191\u2193 \u067E\u06CC\u0645\u0627\u06CC\u0634 \xB7 Enter \u0627\u0646\u062A\u062E\u0627\u0628 \xB7 Esc \u0628\u0633\u062A\u0646")));
 }
 var ICON_PATHS = {
   plus: "M12 5v14M5 12h14",
@@ -874,6 +963,62 @@ function TaskFilterBar({ filters, setFilters, sortBy, setSortBy, groupBy, setGro
   );
 }
 // --- end Lane 8 UI --------------------------------------------------
+// --- Lane 8 part 2 (spec items 134-135): quick-add bar ------------------
+function QuickAddBar({ onAdd, taskDefaults }) {
+  const [value, setValue] = useState("");
+  const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
+  const submit = () => {
+    const parsed = parseQuickAddInput(value);
+    if (!parsed.title) return;
+    onAdd({
+      id: uid(),
+      title: parsed.title,
+      desc: "",
+      quad: defaults.quad,
+      priority: parsed.priority != null ? parsed.priority : defaults.priority,
+      status: "todo",
+      completedDate: null,
+      daypart: parsed.daypart || defaults.daypart,
+      tag: parsed.tag || "",
+      time: parsed.time || null,
+      duration: defaults.duration,
+      recurrence: "none",
+      reminder: false,
+      subtasks: [],
+      progressType: "binary",
+      progressLog: []
+    });
+    setValue("");
+  };
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "flex items-center gap-2 mb-3" },
+    /* @__PURE__ */ React.createElement("input", {
+      type: "text",
+      value,
+      onChange: (e) => setValue(e.target.value),
+      onKeyDown: (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          submit();
+        }
+      },
+      placeholder: "\u0627\u0641\u0632\u0648\u062F\u0646 \u0633\u0631\u06CC\u0639 \u2014 \u0645\u062B\u0644\u0627\u064B: \u062E\u0631\u06CC\u062F \u0646\u0627\u0646 \u0633\u0627\u0639\u062A \u06F5 \u0639\u0635\u0631 #\u062E\u0627\u0646\u0647 !\u0645\u062A\u0648\u0633\u0637",
+      className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-500"
+    }),
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: submit,
+        disabled: !value.trim(),
+        className: "mod-cta rounded-xl px-4 py-2.5 text-sm font-bold disabled:opacity-40 shrink-0"
+      },
+      "\u0627\u0641\u0632\u0648\u062F\u0646"
+    )
+  );
+}
+// --- end Lane 8 part 2 UI ------------------------------------------------
 function ToggleSwitch({ on, onClick, disabled }) {
   return /* @__PURE__ */ React.createElement(
     "button",
@@ -4715,6 +4860,34 @@ function LifeFlowApp() {
   };
   const [searchOpen, setSearchOpen] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  // Lane 8 (item 134): app-wide keyboard shortcuts. Deliberately narrow in
+  // scope for this slice - just the two entry points into task creation/
+  // search that already exist as buttons (setSearchOpen/setShowAdd) - not
+  // a general-purpose shortcut framework, and NOT touching modal close/
+  // exit behavior (that overlaps the urgent window-exit bug that's
+  // explicitly Lane 5's territory, not this lane's).
+  useEffect(() => {
+    const isTypingTarget = (el) => {
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+    };
+    const onKeyDown = (e) => {
+      const withModifier = e.ctrlKey || e.metaKey;
+      if (withModifier && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      if (isTypingTarget(e.target) || withModifier || e.altKey) return;
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        setShowAdd(true);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
   const streak = 7;
   const urgentImportant = useMemo(() => tasks.filter((t2) => t2.quad === "q1" && t2.status !== "done" && isTaskDueOn(t2, now)), [tasks, now]);
   const todaysPlan = useMemo(() => tasks.filter((t2) => isTaskDueOn(t2, now)), [tasks, now]);
@@ -4805,7 +4978,7 @@ function LifeFlowApp() {
         t(n.labelKey, lang)
       );
     })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "mod-cta mt-6 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 }), " ", t("add_task", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 15 }), " ", t("backup_manager", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 15 }), " ", t("settings", lang)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex items-center gap-1.5 px-2 text-pink-400 text-sm font-bold" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), " ", streak, " \u0631\u0648\u0632 \u0627\u0633\u062A\u0631\u06CC\u06A9")),
-    /* @__PURE__ */ React.createElement("div", { className: "max-w-md lg:max-w-none w-full lg:flex-1 mx-auto px-4 lg:px-10 pt-8 lg:pt-8 pb-28 lg:pb-14 relative z-10" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-6" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-xl font-extrabold tracking-tight lg:hidden" }, lang === "fa" ? "\u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645" : "LifeFlow"), /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mt-0.5" }, getPersianDateLabel(now))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setSearchOpen(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: t("backup_manager", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: t("settings", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 bg-white/[0.05] border border-white/10 rounded-full px-3 py-1.5 lg:hidden" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), /* @__PURE__ */ React.createElement("span", { className: "text-sm font-bold text-pink-400" }, streak)))), /* @__PURE__ */ React.createElement(PageTransition, { pageKey: tab }, tab === "dashboard" && /* @__PURE__ */ React.createElement("div", { className: "lg:grid lg:grid-cols-3 lg:gap-6 lg:items-start space-y-5 lg:space-y-0" }, /* @__PURE__ */ React.createElement("div", { className: "lg:col-span-2 space-y-5" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-5 flex flex-col items-center" }, /* @__PURE__ */ React.createElement(DayArc, { tasks: todaysPlan, lang })), /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clipboard", label: "\u062A\u0633\u06A9 \u0627\u0645\u0631\u0648\u0632", value: `${todayDone}/${tasks.length}`, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "book-open", label: "\u0645\u0637\u0627\u0644\u0639\u0647", value: "\u06F4\u06F5 \u062F", color: "#22D3EE" })), /* @__PURE__ */ React.createElement("div", { className: "hidden lg:block" }, /* @__PURE__ */ React.createElement(WeeklyOverviewChart, { goals, tasks })), urgentImportant.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full bg-[#C026D3]" }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-rose-300" }, t("urgent_important", lang))), urgentImportant.map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-200" }, t("todays_plan", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setTab("tasks"), className: "text-[11px] text-fuchsia-300 flex items-center gap-0.5" }, t("see_all", lang), " ", /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 13 }))), tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_yet", lang)), tasks.length > 0 && todaysPlan.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_today", lang)), todaysPlan.slice(0, 4).map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress })))), /* @__PURE__ */ React.createElement("div", { className: "space-y-5" }, /* @__PURE__ */ React.createElement(JournalCard, { journal, setJournal }), /* @__PURE__ */ React.createElement(GamificationCard, { stats, streak }), /* @__PURE__ */ React.createElement(AiSummaryCard, { stats, streak, lang, onOpenSettings: () => setShowSettings(true) }))), tab === "tasks" && /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1" }, [["list", "\u0644\u06CC\u0633\u062A", "clipboard"], ["matrix", "\u0645\u0627\u062A\u0631\u06CC\u0633", "grid"], ["kanban", "\u06A9\u0627\u0646\u0628\u0627\u0646", "columns"], ["timeline", "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC", "clock"]].filter(([id]) => id !== "matrix" || settings.features?.showMatrix !== false).map(([id, label, Icon]) => /* @__PURE__ */ React.createElement(
+    /* @__PURE__ */ React.createElement("div", { className: "max-w-md lg:max-w-none w-full lg:flex-1 mx-auto px-4 lg:px-10 pt-8 lg:pt-8 pb-28 lg:pb-14 relative z-10" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-6" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-xl font-extrabold tracking-tight lg:hidden" }, lang === "fa" ? "\u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645" : "LifeFlow"), /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mt-0.5" }, getPersianDateLabel(now))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setSearchOpen(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: "\u062C\u0633\u062A\u062C\u0648\u06CC \u0633\u0631\u0627\u0633\u0631\u06CC (Ctrl+K)" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: t("backup_manager", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: t("settings", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 bg-white/[0.05] border border-white/10 rounded-full px-3 py-1.5 lg:hidden" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), /* @__PURE__ */ React.createElement("span", { className: "text-sm font-bold text-pink-400" }, streak)))), /* @__PURE__ */ React.createElement(PageTransition, { pageKey: tab }, tab === "dashboard" && /* @__PURE__ */ React.createElement("div", { className: "lg:grid lg:grid-cols-3 lg:gap-6 lg:items-start space-y-5 lg:space-y-0" }, /* @__PURE__ */ React.createElement("div", { className: "lg:col-span-2 space-y-5" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-5 flex flex-col items-center" }, /* @__PURE__ */ React.createElement(DayArc, { tasks: todaysPlan, lang })), /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clipboard", label: "\u062A\u0633\u06A9 \u0627\u0645\u0631\u0648\u0632", value: `${todayDone}/${tasks.length}`, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "book-open", label: "\u0645\u0637\u0627\u0644\u0639\u0647", value: "\u06F4\u06F5 \u062F", color: "#22D3EE" })), /* @__PURE__ */ React.createElement("div", { className: "hidden lg:block" }, /* @__PURE__ */ React.createElement(WeeklyOverviewChart, { goals, tasks })), urgentImportant.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full bg-[#C026D3]" }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-rose-300" }, t("urgent_important", lang))), urgentImportant.map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-200" }, t("todays_plan", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setTab("tasks"), className: "text-[11px] text-fuchsia-300 flex items-center gap-0.5" }, t("see_all", lang), " ", /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 13 }))), tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_yet", lang)), tasks.length > 0 && todaysPlan.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_today", lang)), todaysPlan.slice(0, 4).map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress })))), /* @__PURE__ */ React.createElement("div", { className: "space-y-5" }, /* @__PURE__ */ React.createElement(JournalCard, { journal, setJournal }), /* @__PURE__ */ React.createElement(GamificationCard, { stats, streak }), /* @__PURE__ */ React.createElement(AiSummaryCard, { stats, streak, lang, onOpenSettings: () => setShowSettings(true) }))), tab === "tasks" && /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(QuickAddBar, { onAdd: saveTask, taskDefaults: settings.taskDefaults }), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1" }, [["list", "\u0644\u06CC\u0633\u062A", "clipboard"], ["matrix", "\u0645\u0627\u062A\u0631\u06CC\u0633", "grid"], ["kanban", "\u06A9\u0627\u0646\u0628\u0627\u0646", "columns"], ["timeline", "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC", "clock"]].filter(([id]) => id !== "matrix" || settings.features?.showMatrix !== false).map(([id, label, Icon]) => /* @__PURE__ */ React.createElement(
       "button",
       {
         key: id,
