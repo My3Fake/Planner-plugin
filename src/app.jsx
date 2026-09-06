@@ -319,7 +319,7 @@ var DEFAULT_FEATURES = {
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
-var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, quadrantColors: DEFAULT_QUADRANT_COLORS };
+var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", quadrantColors: DEFAULT_QUADRANT_COLORS };
 // Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
 // settings-tab.ts is plain TS, not part of this React tree) — same
 // low-divergence-risk duplication already used for QUADRANTS/PRIORITIES/
@@ -3796,6 +3796,16 @@ var CAL_SLOT_OPTIONS = [15, 30, 60];
 var CAL_ZOOM_MIN = 0.55;
 var CAL_ZOOM_MAX = 2.2;
 var CAL_ZOOM_STEP = 0.15;
+// Item 20 (نمایش فشرده و متنوع تسک‌ها): 3 practical levels rather than the
+// 5 literal examples in the spec (full card / compact card / small bar /
+// rounded rect / tiny element) - "full" and "compact" already map to the
+// existing two visual styles (Day view's title+time block vs Week view's
+// title-only block), and "minimal" is the new tiny/bar-only addition. This
+// only affects *scheduled* task blocks in the hourly-grid views (Day/
+// threeDay/Week-hourly) - the same views CalendarZoomControls already
+// targets for item 23. List/Kanban/Matrix/Agenda already have their own
+// fixed, appropriately-sized row styles and are out of scope here.
+var CAL_TASK_DETAIL_OPTIONS = ["full", "compact", "minimal"];
 function minutesToHHMM(mins) {
   return `${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`;
 }
@@ -3866,17 +3876,21 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
   );
   return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
-// Item 23 (Zoom و مقیاس زمانی): only rendered for the hourly-grid views
-// (day / threeDay / week-hourly) by CalendarViews below, since month/year/
-// agenda have no time axis to zoom. Persisted via appearance.calendarZoom /
-// appearance.calendarSlotMinutes (see DEFAULT_APPEARANCE), so the chosen
-// scale survives closing/reopening the plugin, same as every other
+// Items 23 (Zoom و مقیاس زمانی) و ۲۰ (نمایش فشرده/متنوع تسک‌ها): both live in
+// this one toolbar since they're both "how the hourly grid renders" controls
+// a user tweaks together, and both are only rendered for the hourly-grid
+// views (day / threeDay / week-hourly) by CalendarViews below, since month/
+// year/agenda have no time axis or scheduled-task blocks to affect.
+// Persisted via appearance.calendarZoom / calendarSlotMinutes /
+// calendarTaskDetail (see DEFAULT_APPEARANCE), so the chosen scale/detail
+// level survives closing/reopening the plugin, same as every other
 // appearance setting.
-function CalendarZoomControls({ zoom, slotMinutes, onZoomChange, onSlotMinutesChange }) {
+function CalendarZoomControls({ zoom, slotMinutes, taskDetail, onZoomChange, onSlotMinutesChange, onTaskDetailChange }) {
   const zoomOut = () => onZoomChange(Math.max(CAL_ZOOM_MIN, Math.round((zoom - CAL_ZOOM_STEP) * 100) / 100));
   const zoomIn = () => onZoomChange(Math.min(CAL_ZOOM_MAX, Math.round((zoom + CAL_ZOOM_STEP) * 100) / 100));
   const slotLabel = (m) => m === 60 ? "\u06F1\u0633\u0627\u0639\u062A" : `${toFa(m)}\u062F`;
-  return /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_SLOT_OPTIONS.map((m) => /* @__PURE__ */ React.createElement(
+  const detailLabel = (d) => d === "full" ? "\u06A9\u0627\u0645\u0644" : d === "compact" ? "\u0641\u0634\u0631\u062F\u0647" : "\u06A9\u0645\u06CC\u0646\u0647";
+  return /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_SLOT_OPTIONS.map((m) => /* @__PURE__ */ React.createElement(
     "button",
     {
       key: m,
@@ -3884,7 +3898,15 @@ function CalendarZoomControls({ zoom, slotMinutes, onZoomChange, onSlotMinutesCh
       className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${slotMinutes === m ? "bg-white/10 text-white" : "text-slate-400"}`
     },
     slotLabel(m)
-  ))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, /* @__PURE__ */ React.createElement(
+  ))), onTaskDetailChange && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_TASK_DETAIL_OPTIONS.map((d) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: d,
+      onClick: () => onTaskDetailChange(d),
+      className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${taskDetail === d ? "bg-white/10 text-white" : "text-slate-400"}`
+    },
+    detailLabel(d)
+  )))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, /* @__PURE__ */ React.createElement(
     "button",
     { onClick: zoomOut, disabled: zoom <= CAL_ZOOM_MIN, className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 disabled:opacity-30" },
     /* @__PURE__ */ React.createElement(Ic, { name: "minus", size: 13 })
@@ -3894,7 +3916,7 @@ function CalendarZoomControls({ zoom, slotMinutes, onZoomChange, onSlotMinutesCh
     /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
   )));
 }
-function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom = 1, slotMinutes = 30 }) {
+function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
   const unscheduled = dayTasks.filter((tsk) => !tsk.time);
   const scheduled = dayTasks.filter((tsk) => tsk.time);
@@ -4088,17 +4110,25 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     const liveTime = preview ? preview.time : tsk.time;
     const liveDur = preview ? preview.duration : tsk.duration;
     const h = Math.max(liveDur / 30 * rowH, rowH * 0.7);
+    // Item 20: "full" keeps title+time/duration (original behavior),
+    // "compact" drops the time/duration line (title only), "minimal" drops
+    // all text - just the colored bar itself, same idea as the untimed-task
+    // dots' hover-title pattern below, so the task is still identifiable on
+    // hover/tap without permanently spending pixel space on text.
+    const showTitle = taskDetail !== "minimal";
+    const showTime = taskDetail === "full";
     return /* @__PURE__ */ React.createElement(
       "div",
       {
         key: tsk.id,
         onPointerDown: (e) => startMove(e, tsk),
         onClick: () => onEdit(tsk),
-        className: "absolute right-1 rounded-lg px-2 py-1 overflow-hidden cursor-grab active:cursor-grabbing group select-none",
+        title: showTitle ? void 0 : tsk.title,
+        className: "absolute right-1 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing group select-none" + (showTitle ? " px-2 py-1" : ""),
         style: { top: topFor(liveTime), height: h, left: 46, background: `${q.color}22`, borderRight: `3px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1, userSelect: "none", touchAction: "none" }
       },
-      /* @__PURE__ */ React.createElement("p", { className: `text-[10px] font-medium truncate ${tsk.status === "done" ? "line-through" : ""}`, style: { color: q.color } }, tsk.title),
-      /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-400" }, liveTime, " \xB7 ", liveDur, "\u062F", liveDur > 60 ? ` (${Math.floor(liveDur / 60)}\u0633\u0627\u0639\u062A${liveDur % 60 ? ` ${liveDur % 60}\u062F` : ""})` : ""),
+      showTitle && /* @__PURE__ */ React.createElement("p", { className: `text-[10px] font-medium truncate ${tsk.status === "done" ? "line-through" : ""}`, style: { color: q.color } }, tsk.title),
+      showTime && /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-400" }, liveTime, " \xB7 ", liveDur, "\u062F", liveDur > 60 ? ` (${Math.floor(liveDur / 60)}\u0633\u0627\u0639\u062A${liveDur % 60 ? ` ${liveDur % 60}\u062F` : ""})` : ""),
       /* @__PURE__ */ React.createElement(
         "div",
         {
@@ -4123,7 +4153,7 @@ function WeekView({ cursor, tasks, onJumpDay }) {
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
-function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7, zoom = 1, slotMinutes = 30 }) {
+function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
   if (!Jalali) return null;
   // Same zoom mechanism as DayPlannerView (see its comment above rowH) -
   // rowH is "px per 30 real minutes", scaled by `zoom`; everything else in
@@ -4273,6 +4303,11 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
       const liveTime = preview ? preview.time : tsk.time;
       const liveDur = preview ? preview.duration : tsk.duration;
       const h = Math.max((liveDur || 30) / 30 * rowH, rowH * 0.7);
+      // Item 20: this view's columns are already narrow (title-only, no
+      // time/duration line even at "full") so "full" and "compact" render
+      // the same here - only "minimal" removes the title text for a
+      // bar-only block, matching DayPlannerView's minimal treatment.
+      const showTitle = taskDetail !== "minimal";
       return React.createElement(
         "div",
         {
@@ -4282,10 +4317,11 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
             e.stopPropagation();
             onEdit(tsk);
           },
-          className: "absolute rounded-md overflow-hidden px-1 select-none" + (onSchedule ? " cursor-grab active:cursor-grabbing" : " cursor-pointer"),
+          title: showTitle ? void 0 : tsk.title,
+          className: "absolute rounded-md overflow-hidden select-none" + (showTitle ? " px-1" : "") + (onSchedule ? " cursor-grab active:cursor-grabbing" : " cursor-pointer"),
           style: { top: topFor(liveTime), height: h, left: 1, right: 1, background: `${q.color}22`, borderRight: `2px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1, touchAction: "none" }
         },
-        React.createElement("p", { className: "text-[9px] font-medium truncate", style: { color: q.color } }, tsk.title),
+        showTitle ? React.createElement("p", { className: "text-[9px] font-medium truncate", style: { color: q.color } }, tsk.title) : null,
         onSchedule ? React.createElement(
           "div",
           {
@@ -4353,8 +4389,10 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
   const zoom = appearance?.calendarZoom ?? 1;
   const slotMinutes = appearance?.calendarSlotMinutes ?? 30;
+  const taskDetail = appearance?.calendarTaskDetail ?? "full";
   const setZoom = (z) => onChangeAppearance && onChangeAppearance({ calendarZoom: z });
   const setSlotMinutes = (m) => onChangeAppearance && onChangeAppearance({ calendarSlotMinutes: m });
+  const setTaskDetail = (d) => onChangeAppearance && onChangeAppearance({ calendarTaskDetail: d });
   // Only the hourly-grid views have a time axis worth zooming; month/year/
   // agenda render fine at any zoom level so the control would be a no-op
   // clutter there.
@@ -4388,8 +4426,8 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       ))
     )
   );
-  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom, slotMinutes }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes, taskDetail }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },

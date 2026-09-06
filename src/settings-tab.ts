@@ -51,6 +51,7 @@ interface LifeFlowSettings {
 		// React app wrote, same as any other appearance field.
 		calendarZoom?: number;
 		calendarSlotMinutes?: number;
+		calendarTaskDetail?: string;
 		quadrantColors: {
 			q1: string;
 			q2: string;
