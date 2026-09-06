@@ -4145,13 +4145,22 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
         running: isRunning,
         totalSeconds: durations[m] * 60,
         secondsLeftAtAnchor: secLeft,
-        anchorAt: isRunning ? (/* @__PURE__ */ new Date()).toISOString() : null
+        anchorAt: isRunning ? (/* @__PURE__ */ new Date()).toISOString() : null,
+        taskLabel: taskLabelRef.current
       }
     }));
   };
   const modeRef = useRef(mode);
   const secondsLeftRef = useRef(secondsLeft);
   const runningRef = useRef(running);
+  const taskLabelRef = useRef(null);
+  useEffect(() => {
+    if (multiMode && multiTaskIds.length > 0) {
+      taskLabelRef.current = multiTaskIds.length === 1 ? tasks.find((t2) => t2.id === multiTaskIds[0])?.title || null : `${toFa(multiTaskIds.length)} \u0645\u0633\u06CC\u0631`;
+    } else {
+      taskLabelRef.current = activeTask ? activeTask.title : null;
+    }
+  }, [multiMode, multiTaskIds, taskId, tasks]);
   useEffect(() => {
     modeRef.current = mode;
     secondsLeftRef.current = secondsLeft;
