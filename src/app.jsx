@@ -316,7 +316,12 @@ var DEFAULT_NOTIFICATIONS = { taskReminders: true, pomodoroEnd: true, learningDe
 var DEFAULT_TASK_DEFAULTS = { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false };
 var DEFAULT_FEATURES = {
   showMatrix: true,
-  tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
+  // Spec item #11: daypart (morning/noon/evening/night) grouping is now an
+  // optional overlay on top of the unified calendar/planning system (item
+  // #9), not the primary structure — so it defaults OFF and lives behind
+  // this toggle, surfaced as an extra sub-tab only when enabled.
+  showDayparts: false,
+  tabs: { planning: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
 var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS };
@@ -339,7 +344,18 @@ function resolveFontFamily(id) {
   }
 }
 function mergeFeatures(f) {
-  return { ...DEFAULT_FEATURES, ...(f || {}), tabs: { ...DEFAULT_FEATURES.tabs, ...((f || {}).tabs || {}) } };
+  const src = f || {};
+  const srcTabs = src.tabs || {};
+  // Migration for spec item #9 (Calendar+Planning unification): the
+  // separate "calendar" NAV tab no longer exists, folded into "planning".
+  // A user who had explicitly hidden only ONE of the two old tabs should
+  // still see the merged tab (hiding it now would be a surprise, unrequested
+  // regression) — only hide it if they'd explicitly hidden BOTH.
+  const oldPlanningHidden = srcTabs.planning === false;
+  const oldCalendarHidden = srcTabs.calendar === false;
+  const mergedTabs = { ...DEFAULT_FEATURES.tabs, ...srcTabs };
+  mergedTabs.planning = !(oldPlanningHidden && oldCalendarHidden);
+  return { ...DEFAULT_FEATURES, ...src, tabs: mergedTabs };
 }
 // quadrantColors is a nested object (like features.tabs), so it needs its
 // own one-level-deeper merge too — a flat { ...DEFAULT_APPEARANCE, ...a }
@@ -2923,18 +2939,30 @@ function ReportChartsSection({ tasks, projects, pomodoro }) {
   );
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, quadCard, minutesCard, learningCard);
 }
-function PlanningHub({ planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress }) {
-  const [sub, setSub] = useState("plan");
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["plan", "\u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0648\u0632\u0627\u0646\u0647"], ["goals", "\u0627\u0647\u062F\u0627\u0641", "trending-up"], ["report", "\u06AF\u0632\u0627\u0631\u0634 \u0631\u0648\u0632\u0627\u0646\u0647", "check"], ["charts", "\u0646\u0645\u0648\u062F\u0627\u0631\u0647\u0627", "trending-up"]] }), sub === "plan" && /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, DAYPARTS.map((dp) => /* @__PURE__ */ React.createElement(
-    DaypartSection,
-    {
-      key: dp.id,
-      id: dp.id,
-      label: dp.label,
-      groups: planning[dp.id] || [],
-      onChange: (groups) => setPlanning((p) => ({ ...p, [dp.id]: groups }))
-    }
-  ))), sub === "goals" && /* @__PURE__ */ React.createElement(GoalsView, { goals, setGoals }), sub === "report" && /* @__PURE__ */ React.createElement(DailyReportView, { projects: projects || [], tasks: tasks || [], pomodoro, onAddProgress }), sub === "charts" && /* @__PURE__ */ React.createElement(ReportChartsSection, { tasks: tasks || [], projects: projects || [], pomodoro }));
+function PlanningHub({ planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress, onToggle, onSchedule, onDelete, onEdit, onCreateAt, showDayparts }) {
+  const [sub, setSub] = useState("calendar");
+  const subTabOptions = [["calendar", "\u062A\u0642\u0648\u06CC\u0645", "calendar"]];
+  if (showDayparts) subTabOptions.push(["plan", "\u0628\u062E\u0634‌\u0647\u0627\u06CC \u0631\u0648\u0632"]);
+  subTabOptions.push(["goals", "\u0627\u0647\u062F\u0627\u0641", "trending-up"], ["report", "\u06AF\u0632\u0627\u0631\u0634 \u0631\u0648\u0632\u0627\u0646\u0647", "check"], ["charts", "\u0646\u0645\u0648\u062F\u0627\u0631\u0647\u0627", "trending-up"]);
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "space-y-4" },
+    /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: subTabOptions }),
+    sub === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt }),
+    sub === "plan" && showDayparts && /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, DAYPARTS.map((dp) => /* @__PURE__ */ React.createElement(
+      DaypartSection,
+      {
+        key: dp.id,
+        id: dp.id,
+        label: dp.label,
+        groups: planning[dp.id] || [],
+        onChange: (groups) => setPlanning((p) => ({ ...p, [dp.id]: groups }))
+      }
+    ))),
+    sub === "goals" && /* @__PURE__ */ React.createElement(GoalsView, { goals, setGoals }),
+    sub === "report" && /* @__PURE__ */ React.createElement(DailyReportView, { projects: projects || [], tasks: tasks || [], pomodoro, onAddProgress }),
+    sub === "charts" && /* @__PURE__ */ React.createElement(ReportChartsSection, { tasks: tasks || [], projects: projects || [], pomodoro })
+  );
 }
 function WeeklyOverviewChart({ goals, tasks }) {
   const days = lastNDays(7);
@@ -4348,7 +4376,6 @@ var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
   { id: "tasks", labelKey: "nav_tasks", icon: "clipboard" },
   { id: "planning", labelKey: "nav_planning", icon: "calendar" },
-  { id: "calendar", labelKey: "nav_calendar", icon: "grid" },
   { id: "study", labelKey: "nav_study", icon: "book-open" },
   { id: "fitness", labelKey: "nav_fitness", icon: "dumbbell" },
   { id: "learning", labelKey: "nav_learning", icon: "graduation-cap" },
@@ -4651,7 +4678,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onCreateAt: openAddAt, showDayparts: settings.features?.showDayparts === true }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
@@ -4669,7 +4696,7 @@ function LifeFlowApp() {
       const active = tab === n.id;
       return /* @__PURE__ */ React.createElement("button", { key: n.id, onClick: () => setTab(n.id), className: "relative z-[1] flex flex-col items-center gap-1 px-2 py-1.5 rounded-xl flex-1 transition-transform active:scale-95" }, /* @__PURE__ */ React.createElement(Ic, { name: n.icon, size: 18, color: active ? "#EAB4F2" : "#64748b" }), /* @__PURE__ */ React.createElement("span", { className: "text-[9px]", style: { color: active ? "#EAB4F2" : "#64748b" } }, t(n.labelKey, lang)));
     })))),
-    (showAdd || editingTask) && (showGlobalFab || tab === "calendar" || tab === "pomodoro") && /* @__PURE__ */ React.createElement(AddTaskModal, { onClose: () => {
+    (showAdd || editingTask) && (showGlobalFab || tab === "planning" || tab === "pomodoro") && /* @__PURE__ */ React.createElement(AddTaskModal, { onClose: () => {
       setShowAdd(false);
       setEditingTask(null);
       setPrefillTime(null);

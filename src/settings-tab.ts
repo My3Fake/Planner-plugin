@@ -20,9 +20,12 @@ interface LifeFlowSettings {
 	};
 	features: {
 		showMatrix: boolean;
+		// Spec item #11: dayparts (morning/noon/evening/night grouping) are now
+		// an optional overlay on the unified calendar/planning system (item #9),
+		// default OFF.
+		showDayparts: boolean;
 		tabs: {
 			planning: boolean;
-			calendar: boolean;
 			study: boolean;
 			fitness: boolean;
 			learning: boolean;
@@ -70,7 +73,8 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 	notifications: { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false, dndDuringFocus: true },
 	features: {
 		showMatrix: true,
-		tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true },
+		showDayparts: false,
+		tabs: { planning: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true },
 	},
 	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false },
 	reports: { folderName: "LifeFlow Reports" },
@@ -86,7 +90,6 @@ const LANGUAGE_OPTIONS: Record<string, string> = {
 
 const TAB_LABELS: Record<string, string> = {
 	planning: "برنامه‌ریزی",
-	calendar: "تقویم",
 	study: "مطالعه",
 	fitness: "تناسب اندام",
 	learning: "یادگیری",
@@ -152,6 +155,17 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 		if (!raw) return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 		try {
 			const parsed = JSON.parse(raw);
+			const parsedTabs = (parsed.features || {}).tabs || {};
+			// Migration for spec item #9 (Calendar+Planning unification): the
+			// separate "calendar" tab no longer exists, folded into "planning".
+			// Only treat the merged tab as hidden if the user had explicitly
+			// hidden BOTH old tabs — hiding it now for someone who'd only hidden
+			// one of the two would be a surprise, unrequested regression. Mirrors
+			// the identical migration in app.jsx's mergeFeatures().
+			const oldPlanningHidden = parsedTabs.planning === false;
+			const oldCalendarHidden = parsedTabs.calendar === false;
+			const mergedTabs = { ...DEFAULT_SETTINGS.features.tabs, ...parsedTabs };
+			mergedTabs.planning = !(oldPlanningHidden && oldCalendarHidden);
 			return {
 				...DEFAULT_SETTINGS,
 				...parsed,
@@ -159,7 +173,7 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 				features: {
 					...DEFAULT_SETTINGS.features,
 					...(parsed.features || {}),
-					tabs: { ...DEFAULT_SETTINGS.features.tabs, ...((parsed.features || {}).tabs || {}) },
+					tabs: mergedTabs,
 				},
 				taskDefaults: { ...DEFAULT_SETTINGS.taskDefaults, ...(parsed.taskDefaults || {}) },
 				reports: { ...DEFAULT_SETTINGS.reports, ...(parsed.reports || {}) },
@@ -298,6 +312,18 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 				toggle.onChange((value) => {
 					const next = this.readSettings();
 					next.features.showMatrix = value;
+					this.writeSettings(next);
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("نمایش بخش‌های صبح/ظهر/عصر/شب")
+			.setDesc("یک زیرتبِ اختیاری در «برنامه‌ریزی» برای دسته‌بندی روز به بخش‌های زمانی (غیر از تقویم ساعتی)")
+			.addToggle((toggle) => {
+				toggle.setValue(settings.features.showDayparts);
+				toggle.onChange((value) => {
+					const next = this.readSettings();
+					next.features.showDayparts = value;
 					this.writeSettings(next);
 				});
 			});
