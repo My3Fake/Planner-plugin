@@ -192,30 +192,75 @@ function runTimeBasedRules(tasks, rules, now) {
   });
   return changed ? next : tasks;
 }
-function playPomodoroChime(kind) {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const notes = kind === "work" ? [880, 1108.73] : [659.25, 987.77];
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      const start = ctx.currentTime + i * 0.14;
-      gain.gain.setValueAtTime(1e-4, start);
-      gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(1e-4, start + 0.32);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(start);
-      osc.stop(start + 0.34);
-    });
-    setTimeout(() => ctx.close().catch(() => {
-    }), 900);
-  } catch (e) {
+function playPomodoroChime(kind, opts = {}) {
+  const volume = Math.max(0, Math.min(1, opts.volume ?? 0.7));
+  const playCount = opts.repeatUntilDismissed ? Infinity : Math.max(1, opts.playCount || 1);
+  let stopped = false;
+  let timeoutId = null;
+  if (opts.customUrl) {
+    let audio = null;
+    let playedCount = 0;
+    const playOnce = () => {
+      if (stopped) return;
+      try {
+        audio = new Audio(opts.customUrl);
+        audio.volume = volume;
+        audio.addEventListener("ended", () => {
+          playedCount += 1;
+          if (!stopped && playedCount < playCount) timeoutId = setTimeout(playOnce, 250);
+        });
+        audio.play().catch(() => {
+        });
+      } catch (e) {
+      }
+    };
+    playOnce();
+    return { stop: () => {
+      stopped = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+      }
+    } };
   }
+  let ctx = null;
+  let playedCount = 0;
+  const playOnce = () => {
+    if (stopped) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      ctx = new Ctx();
+      const notes = kind === "work" ? [880, 1108.73] : [659.25, 987.77];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = ctx.currentTime + i * 0.14;
+        gain.gain.setValueAtTime(1e-4, start);
+        gain.gain.exponentialRampToValueAtTime(Math.max(1e-4, 0.18 * volume * 2), start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(1e-4, start + 0.32);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.34);
+      });
+      setTimeout(() => ctx?.close().catch(() => {
+      }), 900);
+    } catch (e) {
+    }
+    playedCount += 1;
+    if (!stopped && playedCount < playCount) timeoutId = setTimeout(playOnce, 1200);
+  };
+  playOnce();
+  return { stop: () => {
+    stopped = true;
+    if (timeoutId) clearTimeout(timeoutId);
+    if (ctx) ctx.close().catch(() => {
+    });
+  } };
 }
 function parseYouTubeId(url) {
   const patterns = [
@@ -4075,6 +4120,7 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const startedAtRef = useRef(
     initialTimer.running ? new Date(Date.now() - (durations[initialTimer.mode] * 60 - initialTimer.secondsLeft) * 1e3).toISOString() : null
   );
+  const chimeHandleRef = useRef(null);
   const activeTasks = tasks.filter((t2) => t2.status !== "done");
   const progressiveActiveTasks = activeTasks.filter((t2) => t2.progressType === "progressive");
   const activeTask = tasks.find((t2) => t2.id === taskId);
@@ -4131,6 +4177,10 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       // defeating the feature it was implementing. Caught while reviewing
       // this commit, not by a test; see PROGRESS.md Lane 4 notes.
       pushActiveTimer(modeRef.current, runningRef.current, secondsLeftRef.current);
+      if (chimeHandleRef.current) {
+        chimeHandleRef.current.stop();
+        chimeHandleRef.current = null;
+      }
     };
   }, []);
   // Report "actively running a work session" up to LifeFlowApp so it can
@@ -4175,7 +4225,14 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const finishSession = (completed) => {
     setRunning(false);
     const entry = logSession(completed);
-    if (completed && settings.sound !== false) playPomodoroChime(mode);
+    if (completed && settings.sound !== false) {
+      chimeHandleRef.current = playPomodoroChime(mode, {
+        volume: settings.alarmVolume,
+        customUrl: settings.alarmCustomUrl,
+        playCount: settings.alarmPlayCount,
+        repeatUntilDismissed: !!settings.alarmRepeatUntilDismissed
+      });
+    }
     if (completed && typeof Notification !== "undefined" && Notification.permission === "granted" && notifSettings && notifSettings.pomodoroEnd !== false) {
       try {
         new Notification(mode === "work" ? "\u23F0 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648 \u062A\u0645\u0627\u0645 \u0634\u062F" : "\u23F0 \u0627\u0633\u062A\u0631\u0627\u062D\u062A \u062A\u0645\u0627\u0645 \u0634\u062F", { body: mode === "work" ? "\u0648\u0642\u062A \u0627\u0633\u062A\u0631\u0627\u062D\u062A\u0647" : "\u0628\u0631\u06AF\u0631\u062F \u0633\u0631 \u06A9\u0627\u0631" });
@@ -4240,7 +4297,30 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     setSecondsLeft(durations[m] * 60);
     pushActiveTimer(m, false, durations[m] * 60);
   };
+  const handleAudioUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmCustomUrl: reader.result } }));
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+  const testChime = () => {
+    if (chimeHandleRef.current) chimeHandleRef.current.stop();
+    chimeHandleRef.current = playPomodoroChime(mode, {
+      volume: settings.alarmVolume,
+      customUrl: settings.alarmCustomUrl,
+      playCount: 1,
+      repeatUntilDismissed: false
+    });
+  };
   const dismissReview = () => {
+    if (chimeHandleRef.current) {
+      chimeHandleRef.current.stop();
+      chimeHandleRef.current = null;
+    }
     setAskProgress(null);
     setMultiProgress({});
     setProgressInput("");
@@ -4443,7 +4523,21 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     /* @__PURE__ */ React.createElement(Chip, { active: !!settings.autoStartNext, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, autoStartNext: !p.settings.autoStartNext } })) }, "\u0634\u0631\u0648\u0639 \u062E\u0648\u062F\u06A9\u0627\u0631 \u062F\u0648\u0631 \u0628\u0639\u062F"),
     /* @__PURE__ */ React.createElement(Chip, { active: settings.sound !== false, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, sound: p.settings.sound === false } })) }, "\u0635\u062F\u0627\u06CC \u067E\u0627\u06CC\u0627\u0646 \u062A\u0627\u06CC\u0645\u0631"),
     /* @__PURE__ */ React.createElement(Chip, { active: settings.askReviewEveryTime !== false, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, askReviewEveryTime: p.settings.askReviewEveryTime === false } })) }, "\u0628\u0639\u062F \u0627\u0632 \u0647\u0631 \u062C\u0644\u0633\u0647 \u062A\u0645\u0631\u06A9\u0632/\u06CC\u0627\u062F\u062F\u0627\u0634\u062A \u0628\u067E\u0631\u0633")
-  )));
+  )), settings.sound !== false && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, "\u0635\u062F\u0627 \u0648 \u0622\u0644\u0627\u0631\u0645"), /* @__PURE__ */ React.createElement("div", { className: "mb-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, "\u0634\u062F\u062A \u0635\u062F\u0627"), /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500" }, toFa(Math.round((settings.alarmVolume ?? 0.7) * 100)), "\u066A")), /* @__PURE__ */ React.createElement("input", {
+    type: "range",
+    min: "0",
+    max: "100",
+    value: Math.round((settings.alarmVolume ?? 0.7) * 100),
+    onChange: (e) => setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmVolume: Number(e.target.value) / 100 } })),
+    className: "w-full"
+  })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-3 flex-wrap" }, /* @__PURE__ */ React.createElement(Chip, { active: !!settings.alarmRepeatUntilDismissed, color: "#DB2777", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmRepeatUntilDismissed: !p.settings.alarmRepeatUntilDismissed } })) }, "\u0622\u0644\u0627\u0631\u0645 \u062A\u0627 \u062A\u0623\u06CC\u06CC\u062F \u0645\u0646 \u0627\u062F\u0627\u0645\u0647 \u06CC\u0627\u0628\u062F"), !settings.alarmRepeatUntilDismissed && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500" }, "\u062A\u0639\u062F\u0627\u062F \u062A\u06A9\u0631\u0627\u0631"), /* @__PURE__ */ React.createElement("input", {
+    type: "number",
+    min: "1",
+    max: "10",
+    value: settings.alarmPlayCount ?? 1,
+    onChange: (e) => setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmPlayCount: Math.max(1, Math.min(10, Number(e.target.value) || 1)) } })),
+    className: "w-16 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none"
+  }))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("label", { className: "px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/10 text-slate-300 text-xs cursor-pointer" }, settings.alarmCustomUrl ? "\u062A\u0639\u0648\u06CC\u0636 \u0635\u062F\u0627\u06CC \u062F\u0644\u062E\u0648\u0627\u0647" : "\u0635\u062F\u0627\u06CC \u062F\u0644\u062E\u0648\u0627\u0647", /* @__PURE__ */ React.createElement("input", { type: "file", accept: "audio/*", onChange: handleAudioUpload, className: "hidden" })), settings.alarmCustomUrl && /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmCustomUrl: "" } })), className: "px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/10 text-slate-400 text-xs" }, "\u0628\u0627\u0632\u06AF\u0634\u062A \u0628\u0647 \u0635\u062F\u0627\u06CC \u067E\u06CC\u0634\u200C\u0641\u0631\u0636"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: testChime, className: "px-3 py-1.5 rounded-lg text-white text-xs font-medium", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u067E\u062E\u0634 \u0622\u0632\u0645\u0627\u06CC\u0634\u06CC"))));
 }
 function PomodoroReportView({ pomodoro, tasks }) {
   const stats = pomodoroStatsFor(pomodoro.sessions, 7);
@@ -5414,7 +5508,7 @@ var NAV = [
   { id: "notes", labelKey: "nav_notes", icon: "check-square" }
 ];
 var DEFAULT_POMODORO = {
-  settings: { work: 25, shortBreak: 5, longBreak: 15, cyclesUntilLong: 4, autoStartNext: false, sound: true, askReviewEveryTime: true },
+  settings: { work: 25, shortBreak: 5, longBreak: 15, cyclesUntilLong: 4, autoStartNext: false, sound: true, askReviewEveryTime: true, alarmVolume: 0.7, alarmPlayCount: 1, alarmRepeatUntilDismissed: false, alarmCustomUrl: "" },
   sessions: []
   // { id, type: 'work'|'short'|'long', taskId, startedAt, durationMin, completedAt, interrupted, progressAdded }
 };
