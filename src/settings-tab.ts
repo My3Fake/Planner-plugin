@@ -40,6 +40,18 @@ interface LifeFlowSettings {
 	reports: {
 		folderName: string;
 	};
+	// Lane 7 (زمان‌بندی هوشمند و ظرفیت، PROGRESS.md بندهای ۷۷/۷۸/۸۰-۸۲): بازه‌های
+	// ساعات کاری که مجموعشان ظرفیتِ روزانه را می‌سازد (بند ۷۸: چند بازه در یک
+	// روز). یک مجموعه‌ی واحد برای همه‌ی روزهای هفته — نسخه‌ی v1، بدون تفکیکِ
+	// روزهای هفته. Mirrors app.jsx's DEFAULT_SCHEDULING exactly (kept separate
+	// since this file is plain TS, not part of the React tree — same
+	// low-divergence-risk duplication already used for QUADRANTS/PRIORITIES).
+	scheduling: {
+		workingHours: {
+			enabled: boolean;
+			periods: Array<{ id: string; start: string; end: string }>;
+		};
+	};
 	appearance: {
 		fontFamily: string;
 		density: string;
@@ -64,6 +76,10 @@ interface AiConfig {
 // reference the same object without repeating the 4 hex values twice.
 const DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
 
+// Mirrors app.jsx's DEFAULT_WORKING_HOURS_PERIODS exactly (same 09:00–17:00
+// single-period default, chosen as a common generic working day).
+const DEFAULT_WORKING_HOURS_PERIODS = [{ id: "default-1", start: "09:00", end: "17:00" }];
+
 const DEFAULT_SETTINGS: LifeFlowSettings = {
 	theme: "dark",
 	language: "fa",
@@ -74,8 +90,16 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 	},
 	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false },
 	reports: { folderName: "LifeFlow Reports" },
+	scheduling: { workingHours: { enabled: true, periods: DEFAULT_WORKING_HOURS_PERIODS } },
 	appearance: { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS },
 };
+
+// Tiny local id generator for new working-hour periods — settings-tab.ts is
+// plain TS with no dependency on app.jsx's `uid()`, so it gets its own
+// (same reasoning as every other small duplicated helper in this file).
+function newPeriodId(): string {
+	return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
 
 const LANGUAGE_OPTIONS: Record<string, string> = {
 	fa: "فارسی",
@@ -163,6 +187,14 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 				},
 				taskDefaults: { ...DEFAULT_SETTINGS.taskDefaults, ...(parsed.taskDefaults || {}) },
 				reports: { ...DEFAULT_SETTINGS.reports, ...(parsed.reports || {}) },
+				scheduling: {
+					...DEFAULT_SETTINGS.scheduling,
+					...(parsed.scheduling || {}),
+					workingHours: {
+						...DEFAULT_SETTINGS.scheduling.workingHours,
+						...((parsed.scheduling || {}).workingHours || {}),
+					},
+				},
 				appearance: {
 					...DEFAULT_SETTINGS.appearance,
 					...(parsed.appearance || {}),
@@ -426,6 +458,73 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					this.writeSettings(next);
 				});
 			});
+
+		// ---------------------------------------------------------------
+		containerEl.createEl("h3", { text: "زمان‌بندی هوشمند و ظرفیت" });
+		containerEl.createEl("p", {
+			text: "بازه‌های ساعات کاری زیر مجموعاً «ظرفیت» هر روز را می‌سازند — مثلاً صبح ۹ تا ۱۳ به‌علاوه‌ی عصر ۱۵ تا ۱۹ یعنی ظرفیت ۸ ساعت. این ظرفیت در نمای «برنامه‌ریزی روزانه»ی تقویم، کنار مجموع زمانِ زمان‌بندی‌شده‌ی همان روز نشان داده می‌شود و در صورت بیش‌برنامه‌ریزی هشدار می‌دهد. در هر ردیف، ورودیِ اول ساعتِ شروع و ورودیِ دوم ساعتِ پایانِ همان بازه است. فعلاً همین یک مجموعه‌ی بازه برای همه‌ی روزهای هفته یکسان اعمال می‌شود.",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("لحاظ‌کردن ساعات کاری در محاسبه‌ی ظرفیت")
+			.setDesc("خاموش‌کردن این گزینه فقط نمایشِ ظرفیت/هشدارِ بیش‌برنامه‌ریزی را در تقویم مخفی می‌کند؛ خودِ بازه‌ها پاک نمی‌شوند.")
+			.addToggle((toggle) => {
+				toggle.setValue(settings.scheduling.workingHours.enabled);
+				toggle.onChange((value) => {
+					const next = this.readSettings();
+					next.scheduling.workingHours.enabled = value;
+					this.writeSettings(next);
+				});
+			});
+
+		settings.scheduling.workingHours.periods.forEach((period, idx) => {
+			const canRemove = settings.scheduling.workingHours.periods.length > 1;
+			new Setting(containerEl)
+				.setName(`بازه‌ی کاری ${idx + 1}`)
+				.addText((text) => {
+					text.inputEl.type = "time";
+					text.setValue(period.start);
+					text.onChange((value) => {
+						const next = this.readSettings();
+						const p = next.scheduling.workingHours.periods.find((x) => x.id === period.id);
+						if (p) p.start = value;
+						this.writeSettings(next);
+					});
+				})
+				.addText((text) => {
+					text.inputEl.type = "time";
+					text.setValue(period.end);
+					text.onChange((value) => {
+						const next = this.readSettings();
+						const p = next.scheduling.workingHours.periods.find((x) => x.id === period.id);
+						if (p) p.end = value;
+						this.writeSettings(next);
+					});
+				})
+				.addExtraButton((btn) => {
+					btn.setIcon("trash-2");
+					btn.setTooltip(canRemove ? "حذف این بازه" : "حداقل یک بازه لازم است");
+					btn.setDisabled(!canRemove);
+					btn.onClick(() => {
+						if (!canRemove) return;
+						const next = this.readSettings();
+						next.scheduling.workingHours.periods = next.scheduling.workingHours.periods.filter((x) => x.id !== period.id);
+						this.writeSettings(next);
+						this.display();
+					});
+				});
+		});
+
+		new Setting(containerEl).addButton((btn) => {
+			btn.setButtonText("+ افزودن بازه‌ی کاری");
+			btn.onClick(() => {
+				const next = this.readSettings();
+				next.scheduling.workingHours.periods.push({ id: newPeriodId(), start: "09:00", end: "17:00" });
+				this.writeSettings(next);
+				this.display();
+			});
+		});
 
 		// ---------------------------------------------------------------
 		containerEl.createEl("h3", { text: "خلاصه‌سازی با هوش مصنوعی" });

@@ -320,6 +320,20 @@ var DEFAULT_FEATURES = {
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
 var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS };
+// Lane 7 (زمان‌بندی هوشمند و ظرفیت، بندهای ۷۲–۸۸ در PROGRESS.md): پایه‌ی
+// داده‌ایِ «ساعات کاری» — یک یا چند بازه‌ی زمانی که مجموعشان ظرفیت روزانه
+// را می‌سازد (بند ۷۸: چند بازه کاری در یک روز). فعلاً یک مجموعه‌ی واحد
+// برای همه‌ی روزهای هفته (بدون تفاوتِ آخرهفته/روزهای کاری) — ساده‌ترین
+// نسخه‌ی قابل‌استفاده؛ اگر نیاز به تنظیمِ جداگانه به‌ازای هر روز هفته شد،
+// این شکل به‌راحتی قابل‌گسترش است بدون شکستن داده‌ی موجود (هر روز می‌تواند
+// در آینده override اختیاری خودش را روی همین ساختار پایه اضافه کند).
+// Mirrors settings-tab.ts's DEFAULT_SETTINGS.scheduling exactly (kept
+// separate since settings-tab.ts is plain TS, not part of this React tree
+// — same low-divergence-risk duplication already used for QUADRANTS etc.).
+var DEFAULT_WORKING_HOURS_PERIODS = [{ id: "default-1", start: "09:00", end: "17:00" }];
+var DEFAULT_SCHEDULING = {
+  workingHours: { enabled: true, periods: DEFAULT_WORKING_HOURS_PERIODS }
+};
 // Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
 // settings-tab.ts is plain TS, not part of this React tree) — same
 // low-divergence-risk duplication already used for QUADRANTS/PRIORITIES/
@@ -350,6 +364,16 @@ function mergeFeatures(f) {
 function mergeAppearance(a) {
   return { ...DEFAULT_APPEARANCE, ...(a || {}), quadrantColors: { ...DEFAULT_QUADRANT_COLORS, ...((a || {}).quadrantColors || {}) } };
 }
+// workingHours.periods is an array, so — like features.tabs/appearance.quadrantColors
+// above — it needs its own nested merge: a flat spread would let a saved
+// `scheduling` object with no `workingHours` key at all (e.g. from before
+// this Lane 7 feature existed) silently end up with `workingHours: undefined`
+// instead of falling back to the default. periods itself is taken wholesale
+// from the saved value when present (not merged item-by-item) since it's a
+// user-edited list, not a fixed set of named keys like quadrantColors.
+function mergeScheduling(s) {
+  return { ...DEFAULT_SCHEDULING, ...(s || {}), workingHours: { ...DEFAULT_SCHEDULING.workingHours, ...((s || {}).workingHours || {}) } };
+}
 // Mutates the shared QUADRANTS array's `color` fields in place so every one
 // of its many existing read sites (QUADRANTS.find/.map, scattered across
 // the whole file — the matrix, task rows, kanban, day/week planners,
@@ -370,13 +394,13 @@ function loadSettings() {
   try {
     const raw = storage.get(SETTINGS_KEY);
     if (!raw) {
-      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING };
     } else {
       const parsed = JSON.parse(raw);
-      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance) };
+      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance), scheduling: mergeScheduling(parsed.scheduling) };
     }
   } catch (e) {
-    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING };
   }
   applyQuadrantColors(result.appearance.quadrantColors);
   return result;
@@ -3786,6 +3810,53 @@ function timeToMinutes(hhmm) {
   const [h, m] = (hhmm || "00:00").split(":").map(Number);
   return h * 60 + m;
 }
+// --- Lane 7 (زمان‌بندی هوشمند و ظرفیت) — PROGRESS.md بندهای ۷۸، ۸۰-۸۲ ---
+// خروجی مثال‌های خودِ مشخصات ("۵ ساعت و ۴۰ دقیقه") را عیناً می‌سازد.
+function formatDurationFa(mins) {
+  const total = Math.max(0, Math.round(mins || 0));
+  const h = Math.floor(total / 60), r = total % 60;
+  if (h <= 0) return `${r} \u062F\u0642\u06CC\u0642\u0647`;
+  if (r === 0) return `${h} \u0633\u0627\u0639\u062A`;
+  return `${h} \u0633\u0627\u0639\u062A \u0648 ${r} \u062F\u0642\u06CC\u0642\u0647`;
+}
+// بند ۷۸ (چند بازه‌ی کاری در یک روز): ظرفیت = مجموع طول بازه‌ها. بازه‌های
+// نامعتبر/صفر/معکوس (پایان <= شروع — مثلاً هنگام ویرایش نیمه‌کاره در
+// تنظیمات) بی‌صدا نادیده گرفته می‌شوند تا یک ورودی موقتاً ناقص کل محاسبه‌ی
+// ظرفیت را خراب نکند.
+function workingHoursCapacityMinutes(scheduling) {
+  const periods = scheduling && scheduling.workingHours && scheduling.workingHours.periods || [];
+  return periods.reduce((sum, p) => {
+    const start = timeToMinutes(p.start), end = timeToMinutes(p.end);
+    return end > start ? sum + (end - start) : sum;
+  }, 0);
+}
+// بندهای ۸۰ (نمایش مجموع زمان برنامه‌ریزی‌شده) و ۸۱-۸۲ (نمایش ظرفیت روز +
+// هشدار بیش‌برنامه‌ریزی). عمداً کامپوننتی جدا و خوداتکاست (فقط دو عدد و
+// یک پرچمِ enabled می‌گیرد) تا هم در DayPlannerView و هم بعداً در
+// نماهای دیگر تقویم (WeekHourlyView و مشابه — قلمروِ لِین‌های ۳/۶، این
+// جلسه لمس نشدند) با کمترین تغییر قابل‌استفاده‌ی مجدد باشد. اگر کاربر
+// ساعات کاری را غیرفعال کرده باشد (`workingHours.enabled === false`)
+// چیزی رندر نمی‌شود — نه خط ظرفیت، نه هشدار — چون بدون ظرفیتِ تعریف‌شده
+// «بیش‌برنامه‌ریزی» بی‌معنی است.
+function DayCapacitySummary({ scheduledMinutes, scheduling }) {
+  const enabled = !scheduling || !scheduling.workingHours || scheduling.workingHours.enabled !== false;
+  if (!enabled) return null;
+  const capacityMinutes = workingHoursCapacityMinutes(scheduling);
+  const over = capacityMinutes > 0 && scheduledMinutes > capacityMinutes;
+  return /* @__PURE__ */ React.createElement(
+    GlassCard,
+    { className: "p-3 flex items-center justify-between gap-2 flex-wrap" },
+    /* @__PURE__ */ React.createElement(
+      "span",
+      { className: "text-[11px] text-slate-400" },
+      "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC\u200C\u0634\u062F\u0647: ",
+      /* @__PURE__ */ React.createElement("b", { style: { color: over ? "#F87171" : "var(--text-normal)" } }, formatDurationFa(scheduledMinutes)),
+      capacityMinutes > 0 && " \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A ",
+      capacityMinutes > 0 && /* @__PURE__ */ React.createElement("b", { style: { color: "var(--text-normal)" } }, formatDurationFa(capacityMinutes))
+    ),
+    over && /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold shrink-0", style: { color: "#F87171" } }, "\u26A0\uFE0F \u0628\u06CC\u0634 \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A")
+  );
+}
 function AgendaView({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }) {
   if (!Jalali) return null;
   const today = /* @__PURE__ */ new Date();
@@ -3849,10 +3920,15 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
   );
   return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
-function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }) {
+function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
   const unscheduled = dayTasks.filter((tsk) => !tsk.time);
   const scheduled = dayTasks.filter((tsk) => tsk.time);
+  // بند ۸۰ (Lane 7): «زمان‌بندی‌شده» طبق تعریفِ همین ویو یعنی تسک‌هایی که
+  // ساعت مشخص دارند (بالا، `scheduled`) — نه هر تسکِ بدون‌تکرارِ due-هرروز؛
+  // این‌طوری تسک‌های شناور بدون ساعت (که isTaskDueOn برای آن‌ها همیشه true
+  // برمی‌گرداند) عدد ظرفیت را کاذب زیاد نمی‌کنند.
+  const scheduledMinutes = scheduled.reduce((s, tsk) => s + (tsk.duration || 0), 0);
   const rowH = 26;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
   const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
@@ -4007,7 +4083,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const createAt = (mins) => {
     if (onCreateAt) onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling }), unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
     const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
     return /* @__PURE__ */ React.createElement(
       "div",
@@ -4290,7 +4366,7 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
-function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt }) {
+function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, scheduling }) {
   const [view, setView] = useState("day");
   const [weekSubView, setWeekSubView] = useState("cards");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
@@ -4324,7 +4400,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     )
   );
   const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3 }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3 }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
@@ -4633,7 +4709,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
