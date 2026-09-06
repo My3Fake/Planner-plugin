@@ -2074,8 +2074,10 @@ function LearningProgressEntry({ task, subsection, topic, onAddProgress }) {
     React.createElement(LearningProgressLogList, { log: task.progressLog, unit: subsection.unit })
   );
 }
-function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteSubsection, onAddProgress, onTogglePause, onToggleArchive, onDuplicate, onExtendGoal }) {
+function SubsectionCard({ subsection, topic, tasks, onUpdateSubsection, onDeleteSubsection, onAddProgress, onTogglePause, onToggleArchive, onDuplicate, onExtendGoal, onAddChild, depth = 0 }) {
+  const task = tasks.find((tk) => tk.id === subsection.linkedTaskId);
   const [editing, setEditing] = useState(false);
+  const [childrenOpen, setChildrenOpen] = useState(false);
   const [unit, setUnit] = useState(subsection.unit);
   const [target, setTarget] = useState(subsection.target);
   const [quota, setQuota] = useState(subsection.quotaPerPeriod ?? 1);
@@ -2102,7 +2104,9 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   };
 
   const cadenceLabel = !ov
-    ? "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"
+    ? depth === 0
+      ? "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"
+      : "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0633\u0637\u062D \u0628\u0627\u0644\u0627"
     : ov.recurrence === "daily"
     ? "\u0647\u0631\u0631\u0648\u0632"
     : ((ov.recurrenceWeekdays || []).map((id) => WEEKDAYS.find((w) => w.id === id)).filter(Boolean).map((w) => w.label).join("\u060C ") || "\u0631\u0648\u0632\u0647\u0627\u06CC \u062E\u0627\u0635");
@@ -2147,9 +2151,10 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
     React.createElement(
       "div",
       { className: "flex items-center gap-2 shrink-0" },
-      onDuplicate && iconBtn("copy", onDuplicate, "hover:text-cyan-300", "\u06A9\u067E\u06CC \u0645\u0633\u06CC\u0631"),
-      onTogglePause && !subsection.archived && iconBtn(subsection.paused ? "play" : "pause", onTogglePause, subsection.paused ? "hover:text-cyan-300" : "hover:text-amber-300", subsection.paused ? "\u0627\u0632\u0633\u0631\u06AF\u06CC\u0631\u06CC" : "\u062A\u0648\u0642\u0641 \u0645\u0648\u0642\u062A"),
-      onToggleArchive && iconBtn("folder", onToggleArchive, subsection.archived ? "text-cyan-400" : "hover:text-cyan-300", subsection.archived ? "\u062E\u0627\u0631\u062C \u06A9\u0631\u062F\u0646 \u0627\u0632 \u0622\u0631\u0634\u06CC\u0648" : "\u0622\u0631\u0634\u06CC\u0648 \u06A9\u0631\u062F\u0646"),
+      onDuplicate && iconBtn("copy", () => onDuplicate(subsection), "hover:text-cyan-300", "\u06A9\u067E\u06CC \u0645\u0633\u06CC\u0631"),
+      onAddChild && iconBtn("plus", () => onAddChild(subsection), "hover:text-emerald-300", "\u0627\u0641\u0632\u0648\u062F\u0646 \u0632\u06CC\u0631\u0645\u062C\u0645\u0648\u0639\u0647 (\u0644\u0627\u06CC\u0647\u200C\u06CC \u062C\u062F\u06CC\u062F)"),
+      onTogglePause && !subsection.archived && iconBtn(subsection.paused ? "play" : "pause", () => onTogglePause(subsection), subsection.paused ? "hover:text-cyan-300" : "hover:text-amber-300", subsection.paused ? "\u0627\u0632\u0633\u0631\u06AF\u06CC\u0631\u06CC" : "\u062A\u0648\u0642\u0641 \u0645\u0648\u0642\u062A"),
+      onToggleArchive && iconBtn("folder", () => onToggleArchive(subsection), subsection.archived ? "text-cyan-400" : "hover:text-cyan-300", subsection.archived ? "\u062E\u0627\u0631\u062C \u06A9\u0631\u062F\u0646 \u0627\u0632 \u0622\u0631\u0634\u06CC\u0648" : "\u0622\u0631\u0634\u06CC\u0648 \u06A9\u0631\u062F\u0646"),
       iconBtn("edit", () => setEditing((v) => !v), "hover:text-fuchsia-300", "\u0648\u06CC\u0631\u0627\u06CC\u0634"),
       iconBtn("trash", () => onDeleteSubsection(subsection.id), "text-rose-400/70 hover:text-rose-400", "\u062D\u0630\u0641")
     )
@@ -2183,7 +2188,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
     "div",
     { className: "flex items-center justify-between gap-2 mb-1.5 px-2.5 py-1.5 rounded-lg", style: { background: "rgba(34,211,238,0.1)", border: "1px solid rgba(34,211,238,0.25)" } },
     React.createElement("span", { className: "text-[11px] font-bold", style: { color: "#22D3EE" } }, "\u{1F389} \u0647\u062F\u0641 \u062A\u06A9\u0645\u06CC\u0644 \u0634\u062F!"),
-    onExtendGoal && React.createElement("button", { type: "button", onClick: onExtendGoal, title: "\u0628\u0631\u0627\u06CC \u0645\u0633\u06CC\u0631\u0647\u0627\u06CC \u067E\u06CC\u0648\u0633\u062A\u0647/\u062A\u06A9\u0631\u0627\u0631\u06CC (\u0645\u062B\u0644\u0627\u064B \u0645\u0631\u0648\u0631) \u06A9\u0647 \u0647\u0631\u06AF\u0632 «\u062A\u0645\u0627\u0645» \u0646\u0645\u06CC\u200C\u0634\u0648\u0646\u062F", className: "text-[10px] px-2 py-1 rounded-lg font-medium", style: { background: "rgba(34,211,238,0.18)", color: "#22D3EE" } }, "\u0627\u062F\u0627\u0645\u0647/\u0627\u0641\u0632\u0627\u06CC\u0634 \u0647\u062F\u0641")
+    onExtendGoal && React.createElement("button", { type: "button", onClick: () => onExtendGoal(subsection, task), title: "\u0628\u0631\u0627\u06CC \u0645\u0633\u06CC\u0631\u0647\u0627\u06CC \u067E\u06CC\u0648\u0633\u062A\u0647/\u062A\u06A9\u0631\u0627\u0631\u06CC (\u0645\u062B\u0644\u0627\u064B \u0645\u0631\u0648\u0631) \u06A9\u0647 \u0647\u0631\u06AF\u0632 «\u062A\u0645\u0627\u0645» \u0646\u0645\u06CC\u200C\u0634\u0648\u0646\u062F", className: "text-[10px] px-2 py-1 rounded-lg font-medium", style: { background: "rgba(34,211,238,0.18)", color: "#22D3EE" } }, "\u0627\u062F\u0627\u0645\u0647/\u0627\u0641\u0632\u0627\u06CC\u0634 \u0647\u062F\u0641")
   ) : null;
 
   const cadenceModes = [
@@ -2249,7 +2254,41 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
 
   const body = editing ? editForm : task ? React.createElement(React.Fragment, null, completionBanner, React.createElement(LearningProgressEntry, { task, subsection, topic, onAddProgress })) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
 
-  return React.createElement(GlassCard, { className: "p-3.5", style: subsection.color ? { borderRight: `3px solid ${subsection.color}` } : void 0 }, header, subtitle, colorPickerRow, notesDisplay, heatmapToggle, heatmap, body);
+  // Spec item 25 (multi-level tree): render `subsection.children` (if any)
+  // recursively as more SubsectionCards, indented, collapsed by default so
+  // a deep tree doesn't overwhelm the view. Each child gets THIS node's own
+  // effective recurrence as its "topic" (its own override if it has one,
+  // else whatever this node itself inherited) — see findParentEffective
+  // Recurrence's doc comment for why that's what makes multi-level
+  // inheritance resolve correctly without changing isTrackDueOn itself.
+  const childCount = (subsection.children || []).length;
+  const ownEffectiveRecurrence = subsection.recurrenceOverride ? { recurrence: subsection.recurrenceOverride.recurrence, recurrenceWeekdays: subsection.recurrenceOverride.recurrenceWeekdays } : topic;
+  const childrenToggle = childCount > 0 ? React.createElement(
+    "button",
+    { type: "button", onClick: () => setChildrenOpen((v) => !v), className: "text-[10px] mt-2", style: { color: "var(--text-accent)" } },
+    `${childrenOpen ? "\u25BE" : "\u25B8"} ${toFa(childCount)} \u0632\u06CC\u0631\u0645\u062C\u0645\u0648\u0639\u0647`
+  ) : null;
+  const childrenList = childrenOpen && childCount > 0 ? React.createElement(
+    "div",
+    { className: "mt-2 space-y-2", style: { borderRight: "2px solid var(--background-modifier-border)", paddingRight: "10px", marginRight: "2px" } },
+    subsection.children.map((child) => React.createElement(SubsectionCard, {
+      key: child.id,
+      subsection: child,
+      topic: ownEffectiveRecurrence,
+      tasks,
+      onUpdateSubsection,
+      onDeleteSubsection,
+      onAddProgress,
+      onTogglePause,
+      onToggleArchive,
+      onDuplicate,
+      onExtendGoal,
+      onAddChild,
+      depth: depth + 1
+    }))
+  ) : null;
+
+  return React.createElement(GlassCard, { className: "p-3.5", style: subsection.color ? { borderRight: `3px solid ${subsection.color}` } : void 0 }, header, subtitle, colorPickerRow, notesDisplay, heatmapToggle, heatmap, body, childrenToggle, childrenList);
 }
 
 function AddSubsectionForm({ onAdd }) {
@@ -2330,20 +2369,59 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       progressTarget: 10,
       progressCurrent: 0
     });
-    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "", color: null }] }));
+    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "", color: null, children: [] }] }));
+  };
+  // Spec item 25 (multi-level tree): adds a new leaf directly under an
+  // EXISTING node (any depth), not just under the topic root. Quick-add
+  // pattern deliberately, not a modal: the new node gets a placeholder
+  // title and opens straight into edit mode conceptually by being visible
+  // right where the user was already looking (inside the now-auto-
+  // expanded parent) — they rename/configure it via the same pencil icon
+  // every other node already has, no separate "new sub-item" form needed.
+  const addChildSubsection = (parentNode) => {
+    if (!topic) return;
+    const newTaskId = uid();
+    const parentRecurrence = findParentEffectiveRecurrence(topic.subsections, parentNode.id, { recurrence: topic.recurrence, recurrenceWeekdays: topic.recurrenceWeekdays }) || { recurrence: topic.recurrence, recurrenceWeekdays: topic.recurrenceWeekdays };
+    const ownParentRecurrence = parentNode.recurrenceOverride ? { recurrence: parentNode.recurrenceOverride.recurrence, recurrenceWeekdays: parentNode.recurrenceOverride.recurrenceWeekdays } : parentRecurrence;
+    const title = "\u0632\u06CC\u0631\u0645\u062C\u0645\u0648\u0639\u0647\u200C\u06CC \u062C\u062F\u06CC\u062F";
+    saveTask({
+      id: newTaskId,
+      title: `${parentNode.title} \u2014 ${title}`,
+      desc: "",
+      quad: "q2",
+      priority: 2,
+      status: "todo",
+      completedDate: null,
+      daypart: "morning",
+      tag: "\u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC",
+      time: null,
+      duration: 45,
+      recurrence: ownParentRecurrence.recurrence || "daily",
+      reminder: false,
+      recurrenceWeekdays: ownParentRecurrence.recurrence === "weekly" ? ownParentRecurrence.recurrenceWeekdays && ownParentRecurrence.recurrenceWeekdays.length ? ownParentRecurrence.recurrenceWeekdays : [(/* @__PURE__ */ new Date()).getDay()] : void 0,
+      subtasks: [],
+      progressType: "progressive",
+      progressUnit: "\u0648\u0627\u062D\u062F",
+      progressTarget: 10,
+      progressCurrent: 0,
+      progressLog: []
+    });
+    const newChild = { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "", color: null, children: [] };
+    updateTopic((p) => ({ ...p, subsections: addChildToNode(p.subsections, parentNode.id, newChild) }));
   };
   const updateSubsection = (id, patch) => {
     if (!topic) return;
-    const sec = topic.subsections.find((s) => s.id === id);
+    const sec = findNodeById(topic.subsections, id);
     if (!sec) return;
-    updateTopic((p) => ({ ...p, subsections: p.subsections.map((s) => s.id === id ? { ...s, ...patch } : s) }));
+    updateTopic((p) => ({ ...p, subsections: updateNodeById(p.subsections, id, (s) => ({ ...s, ...patch })) }));
     const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
     if (!linkedTask) return;
     const taskPatch = { ...linkedTask, progressUnit: patch.unit ?? linkedTask.progressUnit, progressTarget: patch.target ?? linkedTask.progressTarget };
     if (patch.recurrenceOverride !== void 0) {
       const ov = patch.recurrenceOverride;
-      taskPatch.recurrence = ov ? ov.recurrence : topic.recurrence || "daily";
-      taskPatch.recurrenceWeekdays = ov && ov.recurrence === "weekly" ? ov.recurrenceWeekdays || [] : topic.recurrence === "weekly" ? topic.recurrenceWeekdays : void 0;
+      const parentRecurrence = findParentEffectiveRecurrence(topic.subsections, id, { recurrence: topic.recurrence, recurrenceWeekdays: topic.recurrenceWeekdays }) || { recurrence: topic.recurrence, recurrenceWeekdays: topic.recurrenceWeekdays };
+      taskPatch.recurrence = ov ? ov.recurrence : parentRecurrence.recurrence || "daily";
+      taskPatch.recurrenceWeekdays = ov && ov.recurrence === "weekly" ? ov.recurrenceWeekdays || [] : parentRecurrence.recurrence === "weekly" ? parentRecurrence.recurrenceWeekdays : void 0;
     }
     saveTask(taskPatch);
   };
@@ -2365,24 +2443,40 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
   // (those are a per-task, Tasks-tab-only detail for monthly/yearly, per
   // LearningRoutineEditor's own hint text, and must not be clobbered back
   // to a default here).
+  // Generalized for the v2 tree (spec item 25): walks every node at every
+  // depth (flattenTree), not just top-level subsections, since a deeply
+  // nested leaf with no override anywhere in its ancestor chain also
+  // needs its linked task re-synced when the topic root's routine changes.
+  // A node that itself has an override is always skipped (unaffected by
+  // definition); a node whose *ancestor* has an override already got its
+  // effective recurrence from that ancestor, not the topic, so re-running
+  // findParentEffectiveRecurrence per node (rather than a single pass with
+  // one inherited value) is what keeps that correct at any depth.
   const updateTopicRoutine = (nextTopic) => {
     updateTopic(() => nextTopic);
-    nextTopic.subsections.forEach((sec) => {
-      if (sec.recurrenceOverride) return;
+    const rootChain = { recurrence: nextTopic.recurrence, recurrenceWeekdays: nextTopic.recurrenceWeekdays };
+    flattenTree(nextTopic.subsections).forEach((sec) => {
+      if (sec.recurrenceOverride || !sec.linkedTaskId) return;
       const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
       if (!linkedTask) return;
+      const parentRecurrence = findParentEffectiveRecurrence(nextTopic.subsections, sec.id, rootChain) || rootChain;
       saveTask({
         ...linkedTask,
-        recurrence: nextTopic.recurrence || "daily",
-        recurrenceWeekdays: nextTopic.recurrence === "weekly" ? nextTopic.recurrenceWeekdays : void 0
+        recurrence: parentRecurrence.recurrence || "daily",
+        recurrenceWeekdays: parentRecurrence.recurrence === "weekly" ? parentRecurrence.recurrenceWeekdays : void 0
       });
     });
   };
   const deleteSubsection = (id) => {
     if (!topic) return;
-    const sec = topic.subsections.find((s) => s.id === id);
-    updateTopic((p) => ({ ...p, subsections: p.subsections.filter((s) => s.id !== id) }));
-    if (sec && sec.linkedTaskId) deleteTask(sec.linkedTaskId);
+    const sec = findNodeById(topic.subsections, id);
+    if (!sec) return;
+    // Removing a node removes its whole subtree — every descendant's
+    // linked task must go too, not just the node itself.
+    flattenTree([sec]).forEach((n) => {
+      if (n.linkedTaskId) deleteTask(n.linkedTaskId);
+    });
+    updateTopic((p) => ({ ...p, subsections: removeNodeById(p.subsections, id) }));
   };
   // Pausing hides a track from due/balance calculations (isTrackDueOn
   // returns false while `paused`); resuming shifts `createdDate` forward by
@@ -2463,10 +2557,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     });
     updateTopic((p) => ({
       ...p,
-      subsections: [
-        ...p.subsections,
-        { ...sec, id: uid(), title: `${sec.title} (\u06A9\u067E\u06CC)`, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null }
-      ]
+      subsections: duplicateNodeAsSibling(p.subsections, sec.id, (orig) => ({ ...orig, id: uid(), title: `${orig.title} (\u06A9\u067E\u06CC)`, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, children: [] })).nodes
     }));
   };
   if (!topic) {
@@ -2547,21 +2638,21 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     setProjects((prev) => prev.filter((p) => p.id !== topic.id));
     setActiveId(null);
   }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), topicColorPickerRow, /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: topic.color || "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
-    const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
     return /* @__PURE__ */ React.createElement(
       SubsectionCard,
       {
         key: sec.id,
         subsection: sec,
         topic,
-        task: linkedTask,
+        tasks,
         onUpdateSubsection: updateSubsection,
         onDeleteSubsection: deleteSubsection,
         onAddProgress,
-        onTogglePause: () => togglePause(sec),
-        onToggleArchive: () => toggleArchive(sec),
-        onDuplicate: () => duplicateSubsection(sec),
-        onExtendGoal: () => extendGoal(sec, linkedTask)
+        onTogglePause: togglePause,
+        onToggleArchive: toggleArchive,
+        onDuplicate: duplicateSubsection,
+        onExtendGoal: extendGoal,
+        onAddChild: addChildSubsection
       }
     );
   })), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
@@ -2680,6 +2771,32 @@ function flattenTree(nodes) {
     if (n.children && n.children.length) out.push(...flattenTree(n.children));
   });
   return out;
+}
+// Inserts a clone of the node whose id is `id` right after it, in whatever
+// array actually contains it (top-level `subsections` or a nested
+// `children` array) — used by duplicateSubsection so "copy" produces a
+// sibling next to the original at any depth, not always appended to the
+// tree's root. cloneFn receives the found node and must return the new
+// node (including its own fresh id).
+function duplicateNodeAsSibling(nodes, id, cloneFn) {
+  const idx = nodes.findIndex((n) => n.id === id);
+  if (idx !== -1) {
+    const next = nodes.slice();
+    next.splice(idx + 1, 0, cloneFn(nodes[idx]));
+    return { found: true, nodes: next };
+  }
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (n.children && n.children.length) {
+      const result = duplicateNodeAsSibling(n.children, id, cloneFn);
+      if (result.found) {
+        const next = nodes.slice();
+        next[i] = { ...n, children: result.nodes };
+        return { found: true, nodes: next };
+      }
+    }
+  }
+  return { found: false, nodes };
 }
 // The {recurrence, recurrenceWeekdays} that should be passed as the
 // "topic" argument to the EXISTING isTrackDueOn/computeTrackBalance/
