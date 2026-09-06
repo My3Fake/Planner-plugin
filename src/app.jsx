@@ -76,6 +76,96 @@ function recurrenceLabel(task) {
   if (task.recurrence === "odd") return "\u0631\u0648\u0632\u0647\u0627\u06CC \u0641\u0631\u062F (\u0634\u0645\u0633\u06CC)";
   return null;
 }
+// --- Lane 8 (task productivity layer, spec items 61-67) ---------------
+// Filter/sort/group helpers for the task LIST view. Kept as small pure
+// functions (no React, no hooks) so they can be unit-tested directly with
+// plain Node, same convention as isTaskDueOn above.
+//
+// Design notes (see PROGRESS.md section 4.8 for the full log entry):
+// - "type" filter reads `task.itemType`, defaulting to "task" for any
+//   task that predates the field. Lane 1's `ITEM_TYPES` constant lives on
+//   the not-yet-merged `feature/task-item-type` branch, so this file
+//   intentionally does NOT import it — the dropdown options are built
+//   dynamically from whatever itemType values actually exist in the
+//   user's data (see getTaskFilterOptions), with TASK_TYPE_FALLBACK_LABELS
+//   only used to give the 4 known built-in ids a friendly label. Once
+//   Lane 1 merges, this keeps working unchanged; custom item-type ids
+//   just show their raw id as the label until then.
+// - Spec item 65 ("filter by subsection") has no dedicated field in the
+//   current task model (no project/subsection concept exists yet for
+//   plain tasks). For this first slice it's mapped onto the existing
+//   Eisenhower quadrant (`task.quad`), labeled "\u0631\u0628\u0639" in the
+//   UI (not "\u0632\u06CC\u0631\u0628\u062E\u0634") to stay honest about what it
+//   actually filters on. Revisit if/when a real project/subsection field
+//   is added to the task model.
+var TASK_TYPE_FALLBACK_LABELS = { task: "\u062A\u0633\u06A9", event: "\u0631\u0648\u06CC\u062F\u0627\u062F", routine: "\u0631\u0648\u062A\u06CC\u0646", learning: "\u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC" };
+function taskTypeLabel(itemType) {
+  return TASK_TYPE_FALLBACK_LABELS[itemType] || itemType || TASK_TYPE_FALLBACK_LABELS.task;
+}
+var TASK_SORT_OPTIONS = [
+  { id: "default", label: "\u067E\u06CC\u0634\u200C\u0641\u0631\u0636" },
+  { id: "priority", label: "\u0627\u0648\u0644\u0648\u06CC\u062A (\u0628\u0627\u0644\u0627 \u0628\u0647 \u067E\u0627\u06CC\u06CC\u0646)" },
+  { id: "type", label: "\u0646\u0648\u0639" },
+  { id: "tag", label: "\u0628\u0631\u0686\u0633\u0628 (\u0627\u0644\u0641\u0628\u0627)" },
+  { id: "quad", label: "\u0631\u0628\u0639" }
+];
+var TASK_GROUP_OPTIONS = [
+  { id: "none", label: "\u0628\u062F\u0648\u0646 \u06AF\u0631\u0648\u0647\u200C\u0628\u0646\u062F\u06CC" },
+  { id: "type", label: "\u0646\u0648\u0639" },
+  { id: "priority", label: "\u0627\u0648\u0644\u0648\u06CC\u062A" },
+  { id: "quad", label: "\u0631\u0628\u0639" },
+  { id: "tag", label: "\u0628\u0631\u0686\u0633\u0628" }
+];
+var DEFAULT_TASK_FILTERS = { scope: "all", priority: "all", type: "all", quad: "all", tag: "all" };
+function isTaskFilterActive(filters) {
+  return Object.keys(DEFAULT_TASK_FILTERS).some((k) => filters[k] !== DEFAULT_TASK_FILTERS[k]);
+}
+function getTaskFilterOptions(tasks) {
+  const types = [], tags = [];
+  (tasks || []).forEach((t2) => {
+    const it = t2.itemType || "task";
+    if (!types.includes(it)) types.push(it);
+    const tg = (t2.tag || "").trim();
+    if (tg && !tags.includes(tg)) tags.push(tg);
+  });
+  return { types, tags };
+}
+function taskMatchesFilters(task, filters, refDate) {
+  if (filters.scope === "today" && !isTaskDueOn(task, refDate)) return false;
+  if (filters.priority !== "all" && String(task.priority) !== String(filters.priority)) return false;
+  if (filters.type !== "all" && (task.itemType || "task") !== filters.type) return false;
+  if (filters.quad !== "all" && task.quad !== filters.quad) return false;
+  if (filters.tag !== "all" && (task.tag || "").trim() !== filters.tag) return false;
+  return true;
+}
+function filterTaskList(tasks, filters, refDate) {
+  return (tasks || []).filter((t2) => taskMatchesFilters(t2, filters, refDate));
+}
+function sortTaskList(tasks, sortBy) {
+  const arr = (tasks || []).slice();
+  if (sortBy === "priority") arr.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  else if (sortBy === "type") arr.sort((a, b) => taskTypeLabel(a.itemType).localeCompare(taskTypeLabel(b.itemType), "fa"));
+  else if (sortBy === "tag") arr.sort((a, b) => (a.tag || "").localeCompare(b.tag || "", "fa"));
+  else if (sortBy === "quad") arr.sort((a, b) => (a.quad || "").localeCompare(b.quad || ""));
+  return arr;
+}
+function groupTaskList(tasks, groupBy) {
+  if (groupBy === "none") return null;
+  const keyFn = groupBy === "type" ? (t2) => t2.itemType || "task" : groupBy === "priority" ? (t2) => String(t2.priority) : groupBy === "quad" ? (t2) => t2.quad || "" : (t2) => (t2.tag || "").trim() || "__no_tag__";
+  const labelFn = groupBy === "type" ? (k) => taskTypeLabel(k) : groupBy === "priority" ? (k) => (PRIORITIES.find((p) => String(p.level) === k) || {}).label || k : groupBy === "quad" ? (k) => (QUADRANTS.find((q) => q.id === k) || {}).label || k : (k) => k === "__no_tag__" ? "\u0628\u062F\u0648\u0646 \u0628\u0631\u0686\u0633\u0628" : k;
+  const groups = [];
+  (tasks || []).forEach((t2) => {
+    const key = keyFn(t2);
+    let g = groups.find((g2) => g2.key === key);
+    if (!g) {
+      g = { key, label: labelFn(key), items: [] };
+      groups.push(g);
+    }
+    g.items.push(t2);
+  });
+  return groups;
+}
+// --- end Lane 8 helpers -------------------------------------------------
 var BOOK_STATUSES = [
   { id: "want", label: "\u0645\u06CC\u200C\u062E\u0648\u0627\u0645 \u0628\u062E\u0648\u0646\u0645", color: "#6B7280" },
   { id: "reading", label: "\u062F\u0631 \u062D\u0627\u0644 \u0645\u0637\u0627\u0644\u0639\u0647", color: "#22D3EE" },
@@ -703,6 +793,87 @@ function Chip({ active, onClick, children, color }) {
     children
   );
 }
+// --- Lane 8 (task productivity layer, spec items 61-67) ---------------
+function FilterSelect({ label, value, onChange, options }) {
+  return /* @__PURE__ */ React.createElement(
+    "label",
+    { className: "flex flex-col gap-1 text-[10px] text-slate-500 shrink-0" },
+    label,
+    /* @__PURE__ */ React.createElement(
+      "select",
+      {
+        value,
+        onChange: (e) => onChange(e.target.value),
+        className: "bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 outline-none max-w-[9.5rem]"
+      },
+      options.map((o) => /* @__PURE__ */ React.createElement("option", { key: o.value, value: o.value, className: "bg-[#120814]" }, o.label))
+    )
+  );
+}
+function TaskFilterBar({ filters, setFilters, sortBy, setSortBy, groupBy, setGroupBy, tasks }) {
+  const { types, tags } = useMemo(() => getTaskFilterOptions(tasks), [tasks]);
+  const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
+  const active = isTaskFilterActive(filters);
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "flex flex-wrap items-end gap-2 mb-3 pb-3 border-b border-white/[0.06]" },
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0632\u0645\u0627\u0646",
+      value: filters.scope,
+      onChange: (v) => setFilter("scope", v),
+      options: [
+        { value: "all", label: "\u0647\u0645\u0647" },
+        { value: "today", label: "\u0627\u0645\u0631\u0648\u0632" }
+      ]
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0627\u0648\u0644\u0648\u06CC\u062A",
+      value: filters.priority,
+      onChange: (v) => setFilter("priority", v),
+      options: [{ value: "all", label: "\u0647\u0645\u0647 \u0627\u0648\u0644\u0648\u06CC\u062A\u200C\u0647\u0627" }].concat(PRIORITIES.map((p) => ({ value: String(p.level), label: p.label })))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0646\u0648\u0639",
+      value: filters.type,
+      onChange: (v) => setFilter("type", v),
+      options: [{ value: "all", label: "\u0647\u0645\u0647 \u0627\u0646\u0648\u0627\u0639" }].concat(types.map((tp) => ({ value: tp, label: taskTypeLabel(tp) })))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0631\u0628\u0639",
+      value: filters.quad,
+      onChange: (v) => setFilter("quad", v),
+      options: [{ value: "all", label: "\u0647\u0645\u0647 \u0631\u0628\u0639\u200C\u0647\u0627" }].concat(QUADRANTS.map((q) => ({ value: q.id, label: q.label })))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0628\u0631\u0686\u0633\u0628",
+      value: filters.tag,
+      onChange: (v) => setFilter("tag", v),
+      options: [{ value: "all", label: "\u0647\u0645\u0647 \u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627" }].concat(tags.map((tg) => ({ value: tg, label: tg })))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0645\u0631\u062A\u0628\u200C\u0633\u0627\u0632\u06CC",
+      value: sortBy,
+      onChange: setSortBy,
+      options: TASK_SORT_OPTIONS.map((o) => ({ value: o.id, label: o.label }))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u06AF\u0631\u0648\u0647\u200C\u0628\u0646\u062F\u06CC",
+      value: groupBy,
+      onChange: setGroupBy,
+      options: TASK_GROUP_OPTIONS.map((o) => ({ value: o.id, label: o.label }))
+    }),
+    active && /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setFilters(DEFAULT_TASK_FILTERS),
+        className: "text-[10px] text-fuchsia-300 mb-1.5 hover:underline shrink-0"
+      },
+      "\u067E\u0627\u06A9 \u06A9\u0631\u062F\u0646 \u0641\u06CC\u0644\u062A\u0631\u0647\u0627"
+    )
+  );
+}
+// --- end Lane 8 UI --------------------------------------------------
 function ToggleSwitch({ on, onClick, disabled }) {
   return /* @__PURE__ */ React.createElement(
     "button",
@@ -4548,6 +4719,18 @@ function LifeFlowApp() {
   const urgentImportant = useMemo(() => tasks.filter((t2) => t2.quad === "q1" && t2.status !== "done" && isTaskDueOn(t2, now)), [tasks, now]);
   const todaysPlan = useMemo(() => tasks.filter((t2) => isTaskDueOn(t2, now)), [tasks, now]);
   const todayDone = todaysPlan.filter((t2) => t2.status === "done").length;
+  // Lane 8 (spec items 61-67): filter/sort/group state for the task LIST
+  // view only (matrix/kanban/timeline are out of scope for this slice —
+  // see PROGRESS.md 4.8). Kept as plain component state rather than in
+  // `settings` since it's view-session UX, not a persisted preference.
+  const [taskFilters, setTaskFilters] = useState(DEFAULT_TASK_FILTERS);
+  const [taskSort, setTaskSort] = useState("default");
+  const [taskGroup, setTaskGroup] = useState("none");
+  const filteredSortedTasks = useMemo(
+    () => sortTaskList(filterTaskList(tasks, taskFilters, now), taskSort),
+    [tasks, taskFilters, taskSort, now]
+  );
+  const taskGroups = useMemo(() => groupTaskList(filteredSortedTasks, taskGroup), [filteredSortedTasks, taskGroup]);
   const showGlobalFab = tab === "dashboard" || tab === "tasks";
   const stats = useMemo(() => computeStats({ tasks, books, videos, podcasts, exercises, projects }), [tasks, books, videos, podcasts, exercises, projects]);
   const exportData = () => {
@@ -4633,7 +4816,28 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"),
+      tasks.length > 0 && /* @__PURE__ */ React.createElement(TaskFilterBar, {
+        filters: taskFilters,
+        setFilters: setTaskFilters,
+        sortBy: taskSort,
+        setSortBy: setTaskSort,
+        groupBy: taskGroup,
+        setGroupBy: setTaskGroup,
+        tasks
+      }),
+      tasks.length > 0 && filteredSortedTasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0628\u0627 \u0627\u06CC\u0646 \u0641\u06CC\u0644\u062A\u0631\u0647\u0627 \u062A\u0633\u06A9\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F"),
+      !taskGroups && filteredSortedTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress })),
+      taskGroups && taskGroups.map((g) => /* @__PURE__ */ React.createElement(
+        "div",
+        { key: g.key, className: "mb-3 last:mb-0" },
+        /* @__PURE__ */ React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-1.5 px-0.5" }, g.label, " ", /* @__PURE__ */ React.createElement("span", { className: "text-slate-600 font-normal" }, "(", g.items.length, ")")),
+        g.items.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))
+      ))
+    ), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
