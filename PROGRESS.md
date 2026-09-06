@@ -159,6 +159,7 @@ git merge origin/main   # یا: git rebase origin/main
 | `calendarZoom` | `settings.appearance` | ضریب Zoom نمای ساعتیِ تقویم (پیش‌فرض ۱، بازه‌ی ۰.۵۵ تا ۲.۲) | ۶ | لاگ ۴.۸ |
 | `calendarSlotMinutes` | `settings.appearance` | مقیاس زمانیِ خطوطِ شبکه‌ی تقویم — ۱۵/۳۰/۶۰ دقیقه (پیش‌فرض ۳۰) | ۶ | لاگ ۴.۸ |
 | `calendarTaskDetail` | `settings.appearance` | سطح جزئیاتِ نمایشِ کارت‌های تسک در تقویم — `full`/`compact`/`minimal` (پیش‌فرض `full`) — بند ۲۰ | ۶ | لاگ ۴.۸ |
+| `exerciseTypeColors` | `settings.appearance` | رنگِ هر نوع فعالیتِ ورزشی (قدرتی/کششی/کاردیو/دویدن)، هم‌الگو با `quadrantColors` — بند ۲۲ (اولین زیربخش) | ۶ | لاگ ۴.۸ (در حال کار) |
 | `calendarId` | `Task` | تقویمِ مستقلی که تسک به آن تعلق دارد؛ نبودِ این فیلد یعنی تقویمِ پیش‌فرض (`getTaskCalendarId` این فال‌بک را می‌دهد، نیازی به مهاجرتِ داده نیست) | ۹ | لاگ ۴.۱۰ |
 | `calendars` (state جدید، نه فیلدِ روی شیءِ موجود) | `LifeFlowApp` (سطحِ ریشه، هم‌ردیفِ `tasks`/`books`/...) | آرایه‌ی تقویم‌های مستقل: `{id, name, color, visible}[]` | ۹ | لاگ ۴.۱۰ |
 
