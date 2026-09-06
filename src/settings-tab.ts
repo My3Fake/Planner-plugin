@@ -43,6 +43,14 @@ interface LifeFlowSettings {
 	appearance: {
 		fontFamily: string;
 		density: string;
+		// Lane 6 / item 23 (calendar zoom + time scale). No native-tab control
+		// for these yet — the zoom/slot buttons live directly in the calendar
+		// view (CalendarZoomControls in app.jsx), right where they're used.
+		// Optional here only so this interface doesn't need to know their
+		// defaults; readSettings()'s spread already round-trips whatever the
+		// React app wrote, same as any other appearance field.
+		calendarZoom?: number;
+		calendarSlotMinutes?: number;
 		quadrantColors: {
 			q1: string;
 			q2: string;

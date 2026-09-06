@@ -319,7 +319,7 @@ var DEFAULT_FEATURES = {
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
-var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS };
+var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, quadrantColors: DEFAULT_QUADRANT_COLORS };
 // Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
 // settings-tab.ts is plain TS, not part of this React tree) — same
 // low-divergence-risk duplication already used for QUADRANTS/PRIORITIES/
@@ -593,6 +593,7 @@ function GlobalSearchModal({ onClose, onNavigate, tasks, books, videos, podcasts
 }
 var ICON_PATHS = {
   plus: "M12 5v14M5 12h14",
+  minus: "M5 12h14",
   x: "M6 6l12 12M18 6L6 18",
   check: "M5 12.5l4.5 4.5L19 7",
   "check-square": "M9 12l2 2 4-4 M5 5h14v14H5Z",
@@ -3778,7 +3779,23 @@ function PomodoroHub({ pomodoro, setPomodoro, tasks, onAddProgress, onToggle, la
   const [sub, setSub] = useState("timer");
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["timer", t("pomodoro_timer", lang), "clock"], ["report", t("pomodoro_report", lang), "trending-up"]] }), sub === "timer" && /* @__PURE__ */ React.createElement(PomodoroTimerView, { pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings, onFocusChange }), sub === "report" && /* @__PURE__ */ React.createElement(PomodoroReportView, { pomodoro, tasks }));
 }
-var CAL_HOURS = Array.from({ length: 36 }, (_, i) => 6 * 60 + i * 30);
+// Lane 6 / Task 23 (Zoom + time scale): the visible planning window is always
+// 06:00-24:00 (1080 minutes), regardless of how finely it's divided. Slot
+// duration (15/30/60 min) only controls how many gridlines/click-targets are
+// drawn - it's purely visual granularity. Actual scheduling still snaps to 5
+// minutes (see startMove/startResize/minutesFromClientY below), independent
+// of the chosen slot size, so switching slot size never loses precision on
+// existing task times.
+var CAL_TOTAL_MINUTES = 1080;
+function calSlots(slotMinutes) {
+  const count = CAL_TOTAL_MINUTES / slotMinutes;
+  return Array.from({ length: count }, (_, i) => 360 + i * slotMinutes);
+}
+var CAL_HOURS = calSlots(30);
+var CAL_SLOT_OPTIONS = [15, 30, 60];
+var CAL_ZOOM_MIN = 0.55;
+var CAL_ZOOM_MAX = 2.2;
+var CAL_ZOOM_STEP = 0.15;
 function minutesToHHMM(mins) {
   return `${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`;
 }
@@ -3849,12 +3866,47 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
   );
   return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
-function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }) {
+// Item 23 (Zoom و مقیاس زمانی): only rendered for the hourly-grid views
+// (day / threeDay / week-hourly) by CalendarViews below, since month/year/
+// agenda have no time axis to zoom. Persisted via appearance.calendarZoom /
+// appearance.calendarSlotMinutes (see DEFAULT_APPEARANCE), so the chosen
+// scale survives closing/reopening the plugin, same as every other
+// appearance setting.
+function CalendarZoomControls({ zoom, slotMinutes, onZoomChange, onSlotMinutesChange }) {
+  const zoomOut = () => onZoomChange(Math.max(CAL_ZOOM_MIN, Math.round((zoom - CAL_ZOOM_STEP) * 100) / 100));
+  const zoomIn = () => onZoomChange(Math.min(CAL_ZOOM_MAX, Math.round((zoom + CAL_ZOOM_STEP) * 100) / 100));
+  const slotLabel = (m) => m === 60 ? "\u06F1\u0633\u0627\u0639\u062A" : `${toFa(m)}\u062F`;
+  return /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_SLOT_OPTIONS.map((m) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: m,
+      onClick: () => onSlotMinutesChange(m),
+      className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${slotMinutes === m ? "bg-white/10 text-white" : "text-slate-400"}`
+    },
+    slotLabel(m)
+  ))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, /* @__PURE__ */ React.createElement(
+    "button",
+    { onClick: zoomOut, disabled: zoom <= CAL_ZOOM_MIN, className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 disabled:opacity-30" },
+    /* @__PURE__ */ React.createElement(Ic, { name: "minus", size: 13 })
+  ), /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-400 w-9 text-center" }, toFa(Math.round(zoom * 100)), "\u066A"), /* @__PURE__ */ React.createElement(
+    "button",
+    { onClick: zoomIn, disabled: zoom >= CAL_ZOOM_MAX, className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 disabled:opacity-30" },
+    /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
+  )));
+}
+function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom = 1, slotMinutes = 30 }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
   const unscheduled = dayTasks.filter((tsk) => !tsk.time);
   const scheduled = dayTasks.filter((tsk) => tsk.time);
-  const rowH = 26;
+  // rowH is "pixels per 30 real minutes" - scaling it by `zoom` is the whole
+  // zoom mechanism. topFor/minutesFromClientY/drag deltas below were already
+  // written purely in terms of rowH, so they automatically respect zoom with
+  // no other changes. slotMinutes only changes the *visual* grid below (see
+  // gridRows), never this positioning math.
+  const rowH = 26 * zoom;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
+  const gridRows = calSlots(slotMinutes);
+  const gridRowH = slotMinutes / 30 * rowH;
   const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(/* @__PURE__ */ new Date()), 6e4);
@@ -4020,13 +4072,13 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
       },
       tsk.title
     );
-  }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0648\u0633\u0637 \u0628\u0644\u0648\u06A9 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062C\u0627\u0628\u0647\u200C\u062C\u0627\u06CC\u06CC\u061B \u0644\u0628\u0647\u200C\u06CC \u067E\u0627\u06CC\u06CC\u0646\u0634 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062A\u063A\u06CC\u06CC\u0631 \u0645\u062F\u062A \u2014 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC \u0628\u0632\u0646 \u062A\u0627 \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u0627\u0632\u0647 \u0628\u0633\u0627\u0632\u06CC"), /* @__PURE__ */ React.createElement("div", { ref: gridRef, className: "relative", style: { height: CAL_HOURS.length * rowH } }, CAL_HOURS.map((mins) => /* @__PURE__ */ React.createElement(
+  }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0648\u0633\u0637 \u0628\u0644\u0648\u06A9 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062C\u0627\u0628\u0647\u200C\u062C\u0627\u06CC\u06CC\u061B \u0644\u0628\u0647\u200C\u06CC \u067E\u0627\u06CC\u06CC\u0646\u0634 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062A\u063A\u06CC\u06CC\u0631 \u0645\u062F\u062A \u2014 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC \u0628\u0632\u0646 \u062A\u0627 \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u0627\u0632\u0647 \u0628\u0633\u0627\u0632\u06CC"), /* @__PURE__ */ React.createElement("div", { ref: gridRef, className: "relative", style: { height: CAL_TOTAL_MINUTES / 30 * rowH } }, gridRows.map((mins) => /* @__PURE__ */ React.createElement(
     "div",
     {
       key: mins,
       onClick: () => createAt(mins),
       className: "absolute left-0 right-0 flex items-start gap-2 cursor-pointer",
-      style: { top: topFor(minutesToHHMM(mins)), height: rowH }
+      style: { top: topFor(minutesToHHMM(mins)), height: gridRowH }
     },
     mins % 60 === 0 && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 w-9 shrink-0" }, pad2(mins / 60), ":\u06F0\u06F0"),
     /* @__PURE__ */ React.createElement("div", { className: "flex-1 border-t border-white/[0.04]", style: { marginRight: mins % 60 === 0 ? 0 : 44 } })
@@ -4071,10 +4123,15 @@ function WeekView({ cursor, tasks, onJumpDay }) {
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
-function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7 }) {
+function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7, zoom = 1, slotMinutes = 30 }) {
   if (!Jalali) return null;
-  const rowH = 22;
+  // Same zoom mechanism as DayPlannerView (see its comment above rowH) -
+  // rowH is "px per 30 real minutes", scaled by `zoom`; everything else in
+  // this view is already written purely in terms of rowH.
+  const rowH = 22 * zoom;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
+  const gridRows = calSlots(slotMinutes);
+  const gridRowH = slotMinutes / 30 * rowH;
   const start = dayCount === 7 ? Jalali.jalaliStartOfWeek(cursor) : cursor;
   const days = Array.from({ length: dayCount }, (_, i) => Jalali.addDays(start, i));
   const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
@@ -4162,14 +4219,14 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
   };
   const nowMins = now.getHours() * 60 + now.getMinutes();
   const nowInRange = nowMins >= 360 && nowMins <= 1410;
-  const gridHeight = CAL_HOURS.length * rowH;
+  const gridHeight = CAL_TOTAL_MINUTES / 30 * rowH;
   const headerHeight = 34;
   const untimedHeight = 16;
 
   const hourLabels = React.createElement(
     "div",
     { className: "relative w-8 shrink-0", style: { height: gridHeight, marginTop: headerHeight + untimedHeight } },
-    CAL_HOURS.filter((mins) => mins % 60 === 0).map((mins) => React.createElement(
+    gridRows.filter((mins) => mins % 60 === 0).map((mins) => React.createElement(
       "span",
       { key: mins, className: "absolute text-[9px] text-slate-500", style: { top: topFor(minutesToHHMM(mins)) - 5 } },
       pad2(mins / 60), ":\u06F0\u06F0"
@@ -4204,11 +4261,11 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
       }),
       untimedTasks.length > 5 ? React.createElement("span", { className: "text-[9px]", style: { color: "var(--text-faint)" } }, "+", untimedTasks.length - 5) : null
     );
-    const rows = CAL_HOURS.map((mins) => React.createElement("div", {
+    const rows = gridRows.map((mins) => React.createElement("div", {
       key: mins,
       onClick: () => onCreateAt && onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins)))),
       className: "absolute left-0 right-0 border-t border-white/[0.04] cursor-pointer",
-      style: { top: topFor(minutesToHHMM(mins)), height: rowH }
+      style: { top: topFor(minutesToHHMM(mins)), height: gridRowH }
     }));
     const blocks = dayTasks.map((tsk) => {
       const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
@@ -4290,10 +4347,18 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
-function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt }) {
+function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, appearance, onChangeAppearance }) {
   const [view, setView] = useState("day");
   const [weekSubView, setWeekSubView] = useState("cards");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
+  const zoom = appearance?.calendarZoom ?? 1;
+  const slotMinutes = appearance?.calendarSlotMinutes ?? 30;
+  const setZoom = (z) => onChangeAppearance && onChangeAppearance({ calendarZoom: z });
+  const setSlotMinutes = (m) => onChangeAppearance && onChangeAppearance({ calendarSlotMinutes: m });
+  // Only the hourly-grid views have a time axis worth zooming; month/year/
+  // agenda render fine at any zoom level so the control would be a no-op
+  // clutter there.
+  const showZoomControls = view === "day" || view === "threeDay" || view === "week" && weekSubView === "hourly";
   const step = (dir) => {
     if (!Jalali) return;
     if (view === "day") setCursor((c) => Jalali.addDays(c, dir));
@@ -4323,8 +4388,8 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       ))
     )
   );
-  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3 }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom, slotMinutes }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
@@ -4633,7 +4698,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), tasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
