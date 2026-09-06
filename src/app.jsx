@@ -84,6 +84,20 @@ var BOOK_STATUSES = [
 var dayColor = (id) => ({ morning: "#67E8F9", noon: "#22D3EE", evening: "#C026D3", night: "#DB2777" })[id];
 var dayGlow = (id) => ({ morning: "rgba(103,232,249,.6)", noon: "rgba(34,211,238,.6)", evening: "rgba(192,38,211,.6)", night: "rgba(219,39,119,.6)" })[id];
 var uid = () => Date.now() + Math.random();
+// --- Lane 9: independent multi-calendar system (بند ۹۴) ---------------
+// A "calendar" here is just a named, colored bucket that a task can belong
+// to (tasks.calendarId). Everyone's existing tasks predate this concept, so
+// a task with no calendarId is treated as belonging to DEFAULT_CALENDAR_ID
+// (see getTaskCalendarId) rather than requiring a data migration — nothing
+// that already exists needs to change shape for this feature to work.
+var DEFAULT_CALENDAR_ID = "default";
+var CALENDAR_COLOR_PRESETS = ["#C026D3", "#22D3EE", "#F59E0B", "#10B981", "#DB2777", "#3B82F6", "#8B5CF6", "#EF4444"];
+var DEFAULT_CALENDARS = [
+  { id: DEFAULT_CALENDAR_ID, name: "پیش‌فرض", color: CALENDAR_COLOR_PRESETS[0], visible: true }
+];
+function getTaskCalendarId(task) {
+  return task && task.calendarId || DEFAULT_CALENDAR_ID;
+}
 function playPomodoroChime(kind) {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -632,7 +646,11 @@ var ICON_PATHS = {
   cloud: "M7 18a4.2 4.2 0 0 1-.6-8.36A5.5 5.5 0 0 1 16.9 8.2 4.3 4.3 0 0 1 16.3 18H7Z",
   copy: "M8 8V5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-3",
   upload: "M12 21V9M7 13l5-5 5 5M5 4h14",
-  settings: "M10.5 3h3l.5 2.2a7 7 0 0 1 2 1.15l2.15-.75 1.5 2.6-1.7 1.5a7 7 0 0 1 0 2.3l1.7 1.5-1.5 2.6-2.15-.75a7 7 0 0 1-2 1.15L13.5 21h-3l-.5-2.2a7 7 0 0 1-2-1.15l-2.15.75-1.5-2.6 1.7-1.5a7 7 0 0 1 0-2.3l-1.7-1.5 1.5-2.6 2.15.75a7 7 0 0 1 2-1.15Z M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"
+  settings: "M10.5 3h3l.5 2.2a7 7 0 0 1 2 1.15l2.15-.75 1.5 2.6-1.7 1.5a7 7 0 0 1 0 2.3l1.7 1.5-1.5 2.6-2.15-.75a7 7 0 0 1-2 1.15L13.5 21h-3l-.5-2.2a7 7 0 0 1-2-1.15l-2.15.75-1.5-2.6 1.7-1.5a7 7 0 0 1 0-2.3l-1.7-1.5 1.5-2.6 2.15.75a7 7 0 0 1 2-1.15Z M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z",
+  // Lane 9 (multi-calendar/automation): used for the "manage calendars"
+  // entry points and anywhere we need to represent "more than one
+  // independent calendar stacked together" rather than a single calendar.
+  layers: "M12 3 2 8l10 5 10-5-10-5ZM2 16l10 5 10-5M2 12l10 5 10-5"
 };
 var ICON_EXTRA = {
   clipboard: /* @__PURE__ */ React.createElement("rect", { x: "5", y: "6", width: "14", height: "15", rx: "2" }),
@@ -940,9 +958,14 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress }
     }
   ))));
 }
-function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }) {
+function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, calendars }) {
   const isEdit = !!initialTask;
   const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
+  // Lane 9 (بند ۹۴): اگر تسک قبلاً به تقویمی نسبت داده شده همان انتخاب
+  // می‌شود؛ برای تسک جدید هم اولین تقویمِ موجود (که همیشه حداقل تقویمِ
+  // پیش‌فرض است) انتخاب پیش‌فرض است.
+  const calendarList = calendars && calendars.length ? calendars : DEFAULT_CALENDARS;
+  const [calendarId, setCalendarId] = useState(isEdit ? getTaskCalendarId(initialTask) : calendarList[0].id);
   const [title, setTitle] = useState(initialTask ? initialTask.title : ""), [desc, setDesc] = useState(initialTask ? initialTask.desc || "" : "");
   const [quad, setQuad] = useState(initialTask ? initialTask.quad : defaults.quad), [priority, setPriority] = useState(initialTask ? initialTask.priority : defaults.priority);
   const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
@@ -975,6 +998,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       desc: desc.trim(),
       quad,
       priority,
+      calendarId,
       status: isEdit ? initialTask.status : "todo",
       completedDate: isEdit ? initialTask.completedDate : null,
       daypart,
@@ -1021,6 +1045,8 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
     /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4" }, PRIORITIES.map((p) => /* @__PURE__ */ React.createElement(Chip, { key: p.level, active: priority === p.level, color: "#DB2777", onClick: () => setPriority(p.level) }, p.label))),
     /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0632\u0645\u0627\u0646 \u0631\u0648\u0632"),
     /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4" }, DAYPARTS.map((d) => /* @__PURE__ */ React.createElement(Chip, { key: d.id, active: daypart === d.id, onClick: () => setDaypart(d.id) }, d.label))),
+    calendarList.length > 1 && /* @__PURE__ */ React.createElement(FieldLabel, null, "تقویم"),
+    calendarList.length > 1 && /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, calendarList.map((cal) => /* @__PURE__ */ React.createElement(Chip, { key: cal.id, active: calendarId === cal.id, color: cal.color, onClick: () => setCalendarId(cal.id) }, cal.name))),
     /* @__PURE__ */ React.createElement(
       "button",
       {
@@ -2965,7 +2991,7 @@ function WeeklyOverviewChart({ goals, tasks }) {
 }
 var BACKUPS_KEY = "lifeflow_backups_v1";
 var MAX_BACKUP_BYTES = 3 * 1024 * 1024;
-var BACKUP_DATA_KEYS = ["tasks", "books", "videos", "podcasts", "exercises", "projects", "planning", "goals", "journal", "pomodoro"];
+var BACKUP_DATA_KEYS = ["tasks", "books", "videos", "podcasts", "exercises", "projects", "planning", "goals", "journal", "calendars", "pomodoro"];
 function loadBackupsList() {
   try {
     const raw = storage.get(BACKUPS_KEY);
@@ -3299,6 +3325,99 @@ function SettingsModal({ onClose, settings, onChangeSettings }) {
       dir: "ltr"
     }
   ), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-600 mb-2" }, "\u0627\u06CC\u0646 \u06A9\u0644\u06CC\u062F \u0641\u0642\u0637 \u062A\u0648 localStorage \u0647\u0645\u06CC\u0646 \u0645\u0631\u0648\u0631\u06AF\u0631 \u0630\u062E\u06CC\u0631\u0647 \u0645\u06CC\u200C\u0634\u0647 \u0648 \u0628\u0647 \u0647\u06CC\u0686 \u0633\u0631\u0648\u0631\u06CC \u063A\u06CC\u0631 \u0627\u0632 \u0647\u0645\u0648\u0646 \u0627\u0631\u0627\u0626\u0647\u200C\u062F\u0647\u0646\u062F\u0647 \u0627\u0631\u0633\u0627\u0644 \u0646\u0645\u06CC\u200C\u0634\u0647."));
+}
+// Lane 9 (بند ۹۴): مدیریت تقویم‌های مستقل — افزودن/تغییرنام/رنگ/حذف/نمایش-مخفی.
+// همیشه حداقل یک تقویم باقی می‌ماند (دکمه‌ی حذف روی آخرین مورد غیرفعال است)
+// چون هر تسکی باید بتواند به یک تقویم معتبر اشاره کند.
+function CalendarManagerModal({ onClose, calendars, onAdd, onRename, onRecolor, onToggleVisible, onDelete }) {
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState(CALENDAR_COLOR_PRESETS[calendars.length % CALENDAR_COLOR_PRESETS.length]);
+  const submitNew = () => {
+    const name = newName.trim();
+    if (!name) return;
+    onAdd({ id: uid(), name, color: newColor, visible: true });
+    setNewName("");
+    setNewColor(CALENDAR_COLOR_PRESETS[(calendars.length + 1) % CALENDAR_COLOR_PRESETS.length]);
+  };
+  return /* @__PURE__ */ React.createElement(
+    ModalShell,
+    { title: "مدیریت تقویم‌ها", onClose },
+    /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-3 leading-5" }, "هر تقویم یک دسته‌ی مستقل است — مثلاً شخصی، مطالعه، ورزش یا یک پروژه — که می‌توانی کارها را به آن نسبت بدهی، رنگ جدا برایش انتخاب کنی یا موقتاً مخفی‌اش کنی. حداقل یک تقویم باید باقی بماند."),
+    /* @__PURE__ */ React.createElement("div", { className: "space-y-2 mb-4" }, calendars.map((cal) => /* @__PURE__ */ React.createElement(
+      "div",
+      { key: cal.id, className: "flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5" },
+      /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          type: "text",
+          value: cal.name,
+          onChange: (e) => onRename(cal.id, e.target.value),
+          className: "flex-1 min-w-0 bg-transparent text-white text-sm outline-none"
+        }
+      ),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 shrink-0" }, CALENDAR_COLOR_PRESETS.map((c) => /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          key: c,
+          type: "button",
+          onClick: () => onRecolor(cal.id, c),
+          "aria-label": "انتخاب رنگ تقویم",
+          className: "w-4 h-4 rounded-full shrink-0",
+          style: { background: c, boxShadow: cal.color === c ? "0 0 0 2px rgba(255,255,255,.8)" : "none" }
+        }
+      ))),
+      /* @__PURE__ */ React.createElement(ToggleSwitch, { on: cal.visible !== false, onClick: () => onToggleVisible(cal.id) }),
+      /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => onDelete(cal.id),
+          disabled: calendars.length <= 1,
+          className: "shrink-0 opacity-70 hover:opacity-100 disabled:opacity-20",
+          "aria-label": "حذف تقویم"
+        },
+        /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })
+      )
+    ))),
+    /* @__PURE__ */ React.createElement(FieldLabel, null, "افزودن تقویم جدید"),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2" }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "text",
+        value: newName,
+        onChange: (e) => setNewName(e.target.value),
+        onKeyDown: (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submitNew();
+          }
+        },
+        placeholder: "مثلاً مطالعه، ورزش، پروژه...",
+        className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-sm outline-none focus:border-fuchsia-400/60"
+      }
+    ), /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: submitNew,
+        disabled: !newName.trim(),
+        className: "shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border border-white/10 bg-white/[0.05] disabled:opacity-30",
+        "aria-label": "افزودن تقویم"
+      },
+      /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 })
+    )),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap" }, CALENDAR_COLOR_PRESETS.map((c) => /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: c,
+        type: "button",
+        onClick: () => setNewColor(c),
+        "aria-label": "رنگ تقویم جدید",
+        className: "w-5 h-5 rounded-full shrink-0",
+        style: { background: c, boxShadow: newColor === c ? "0 0 0 2px rgba(255,255,255,.8)" : "none" }
+      }
+    )))
+  );
 }
 var NOTE_COLORS = ["#C026D3", "#22D3EE", "#F59E0B", "#10B981", "#DB2777", "#3B82F6"];
 function NewListModal({ onClose, onCreate }) {
@@ -4426,6 +4545,17 @@ function LifeFlowApp() {
   const [goals, setGoals] = useState(savedData.goals || { targetHours: 2, log: {} });
   const [journal, setJournal] = useState(savedData.journal || []);
   const [noteLists, setNoteLists] = useState(savedData.noteLists || []);
+  const [calendars, setCalendars] = useState(savedData.calendars && savedData.calendars.length ? savedData.calendars : DEFAULT_CALENDARS);
+  const addCalendar = (cal) => setCalendars((p) => [...p, cal]);
+  const renameCalendar = (id, name) => setCalendars((p) => p.map((c) => c.id === id ? { ...c, name } : c));
+  const recolorCalendar = (id, color) => setCalendars((p) => p.map((c) => c.id === id ? { ...c, color } : c));
+  const toggleCalendarVisible = (id) => setCalendars((p) => p.map((c) => c.id === id ? { ...c, visible: c.visible === false } : c));
+  const deleteCalendar = (id) => {
+    if (calendars.length <= 1) return;
+    const fallbackId = (calendars.find((c) => c.id !== id) || {}).id || DEFAULT_CALENDAR_ID;
+    setCalendars((p) => p.filter((c) => c.id !== id));
+    setTasks((p) => p.map((t2) => getTaskCalendarId(t2) === id ? { ...t2, calendarId: fallbackId } : t2));
+  };
   const [pomodoro, setPomodoro] = useState(savedData.pomodoro || DEFAULT_POMODORO);
   // Tracks whether an active pomodoro *work* session is currently running, so
   // the notification effects below can suppress other notices (DND) while
@@ -4434,7 +4564,7 @@ function LifeFlowApp() {
   // targeted callback rather than fully lifting the timer's state.
   const [focusMode, setFocusMode] = useState(false);
   useEffect(() => {
-    const fullState = { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, pomodoro };
+    const fullState = { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, pomodoro };
     try {
       storage.set(STORAGE_KEY, JSON.stringify(fullState));
     } catch (e) {
@@ -4445,7 +4575,7 @@ function LifeFlowApp() {
       } catch (e) {
       }
     }
-  }, [tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, pomodoro]);
+  }, [tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, pomodoro]);
   const toggleTask = (id) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id) return t2;
     const willBeDone = t2.status !== "done";
@@ -4562,6 +4692,7 @@ function LifeFlowApp() {
   };
   const [searchOpen, setSearchOpen] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  const [showCalendarManager, setShowCalendarManager] = useState(false);
   const streak = 7;
   const urgentImportant = useMemo(() => tasks.filter((t2) => t2.quad === "q1" && t2.status !== "done" && isTaskDueOn(t2, now)), [tasks, now]);
   const todaysPlan = useMemo(() => tasks.filter((t2) => isTaskDueOn(t2, now)), [tasks, now]);
@@ -4569,7 +4700,7 @@ function LifeFlowApp() {
   const showGlobalFab = tab === "dashboard" || tab === "tasks";
   const stats = useMemo(() => computeStats({ tasks, books, videos, podcasts, exercises, projects }), [tasks, books, videos, podcasts, exercises, projects]);
   const exportData = () => {
-    const payload = { exportedAt: (/* @__PURE__ */ new Date()).toISOString(), tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, pomodoro };
+    const payload = { exportedAt: (/* @__PURE__ */ new Date()).toISOString(), tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, pomodoro };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -4591,6 +4722,7 @@ function LifeFlowApp() {
     setGoals(data.goals || { targetHours: 2, log: {} });
     setJournal(data.journal || []);
     setNoteLists(data.noteLists || []);
+    setCalendars(data.calendars && data.calendars.length ? data.calendars : DEFAULT_CALENDARS);
     setPomodoro(data.pomodoro || DEFAULT_POMODORO);
   };
   return /* @__PURE__ */ React.createElement(
@@ -4639,8 +4771,8 @@ function LifeFlowApp() {
         " ",
         t(n.labelKey, lang)
       );
-    })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "mod-cta mt-6 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 }), " ", t("add_task", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 15 }), " ", t("backup_manager", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 15 }), " ", t("settings", lang)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex items-center gap-1.5 px-2 text-pink-400 text-sm font-bold" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), " ", streak, " \u0631\u0648\u0632 \u0627\u0633\u062A\u0631\u06CC\u06A9")),
-    /* @__PURE__ */ React.createElement("div", { className: "max-w-md lg:max-w-none w-full lg:flex-1 mx-auto px-4 lg:px-10 pt-8 lg:pt-8 pb-28 lg:pb-14 relative z-10" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-6" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-xl font-extrabold tracking-tight lg:hidden" }, lang === "fa" ? "\u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645" : "LifeFlow"), /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mt-0.5" }, getPersianDateLabel(now))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setSearchOpen(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: t("backup_manager", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: t("settings", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 bg-white/[0.05] border border-white/10 rounded-full px-3 py-1.5 lg:hidden" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), /* @__PURE__ */ React.createElement("span", { className: "text-sm font-bold text-pink-400" }, streak)))), /* @__PURE__ */ React.createElement(PageTransition, { pageKey: tab }, tab === "dashboard" && /* @__PURE__ */ React.createElement("div", { className: "lg:grid lg:grid-cols-3 lg:gap-6 lg:items-start space-y-5 lg:space-y-0" }, /* @__PURE__ */ React.createElement("div", { className: "lg:col-span-2 space-y-5" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-5 flex flex-col items-center" }, /* @__PURE__ */ React.createElement(DayArc, { tasks: todaysPlan, lang })), /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clipboard", label: "\u062A\u0633\u06A9 \u0627\u0645\u0631\u0648\u0632", value: `${todayDone}/${tasks.length}`, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "book-open", label: "\u0645\u0637\u0627\u0644\u0639\u0647", value: "\u06F4\u06F5 \u062F", color: "#22D3EE" })), /* @__PURE__ */ React.createElement("div", { className: "hidden lg:block" }, /* @__PURE__ */ React.createElement(WeeklyOverviewChart, { goals, tasks })), urgentImportant.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full bg-[#C026D3]" }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-rose-300" }, t("urgent_important", lang))), urgentImportant.map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-200" }, t("todays_plan", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setTab("tasks"), className: "text-[11px] text-fuchsia-300 flex items-center gap-0.5" }, t("see_all", lang), " ", /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 13 }))), tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_yet", lang)), tasks.length > 0 && todaysPlan.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_today", lang)), todaysPlan.slice(0, 4).map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress })))), /* @__PURE__ */ React.createElement("div", { className: "space-y-5" }, /* @__PURE__ */ React.createElement(JournalCard, { journal, setJournal }), /* @__PURE__ */ React.createElement(GamificationCard, { stats, streak }), /* @__PURE__ */ React.createElement(AiSummaryCard, { stats, streak, lang, onOpenSettings: () => setShowSettings(true) }))), tab === "tasks" && /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1" }, [["list", "\u0644\u06CC\u0633\u062A", "clipboard"], ["matrix", "\u0645\u0627\u062A\u0631\u06CC\u0633", "grid"], ["kanban", "\u06A9\u0627\u0646\u0628\u0627\u0646", "columns"], ["timeline", "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC", "clock"]].filter(([id]) => id !== "matrix" || settings.features?.showMatrix !== false).map(([id, label, Icon]) => /* @__PURE__ */ React.createElement(
+    })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "mod-cta mt-6 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 }), " ", t("add_task", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 15 }), " ", t("backup_manager", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCalendarManager(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "layers", size: 15 }), " ", "مدیریت تقویم‌ها"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 15 }), " ", t("settings", lang)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex items-center gap-1.5 px-2 text-pink-400 text-sm font-bold" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), " ", streak, " \u0631\u0648\u0632 \u0627\u0633\u062A\u0631\u06CC\u06A9")),
+    /* @__PURE__ */ React.createElement("div", { className: "max-w-md lg:max-w-none w-full lg:flex-1 mx-auto px-4 lg:px-10 pt-8 lg:pt-8 pb-28 lg:pb-14 relative z-10" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-6" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-xl font-extrabold tracking-tight lg:hidden" }, lang === "fa" ? "\u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645" : "LifeFlow"), /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mt-0.5" }, getPersianDateLabel(now))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setSearchOpen(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: t("backup_manager", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCalendarManager(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: "مدیریت تقویم‌ها" }, /* @__PURE__ */ React.createElement(Ic, { name: "layers", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: t("settings", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 bg-white/[0.05] border border-white/10 rounded-full px-3 py-1.5 lg:hidden" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), /* @__PURE__ */ React.createElement("span", { className: "text-sm font-bold text-pink-400" }, streak)))), /* @__PURE__ */ React.createElement(PageTransition, { pageKey: tab }, tab === "dashboard" && /* @__PURE__ */ React.createElement("div", { className: "lg:grid lg:grid-cols-3 lg:gap-6 lg:items-start space-y-5 lg:space-y-0" }, /* @__PURE__ */ React.createElement("div", { className: "lg:col-span-2 space-y-5" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-5 flex flex-col items-center" }, /* @__PURE__ */ React.createElement(DayArc, { tasks: todaysPlan, lang })), /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clipboard", label: "\u062A\u0633\u06A9 \u0627\u0645\u0631\u0648\u0632", value: `${todayDone}/${tasks.length}`, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "book-open", label: "\u0645\u0637\u0627\u0644\u0639\u0647", value: "\u06F4\u06F5 \u062F", color: "#22D3EE" })), /* @__PURE__ */ React.createElement("div", { className: "hidden lg:block" }, /* @__PURE__ */ React.createElement(WeeklyOverviewChart, { goals, tasks })), urgentImportant.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full bg-[#C026D3]" }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-rose-300" }, t("urgent_important", lang))), urgentImportant.map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-200" }, t("todays_plan", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setTab("tasks"), className: "text-[11px] text-fuchsia-300 flex items-center gap-0.5" }, t("see_all", lang), " ", /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 13 }))), tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_yet", lang)), tasks.length > 0 && todaysPlan.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_today", lang)), todaysPlan.slice(0, 4).map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress })))), /* @__PURE__ */ React.createElement("div", { className: "space-y-5" }, /* @__PURE__ */ React.createElement(JournalCard, { journal, setJournal }), /* @__PURE__ */ React.createElement(GamificationCard, { stats, streak }), /* @__PURE__ */ React.createElement(AiSummaryCard, { stats, streak, lang, onOpenSettings: () => setShowSettings(true) }))), tab === "tasks" && /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1" }, [["list", "\u0644\u06CC\u0633\u062A", "clipboard"], ["matrix", "\u0645\u0627\u062A\u0631\u06CC\u0633", "grid"], ["kanban", "\u06A9\u0627\u0646\u0628\u0627\u0646", "columns"], ["timeline", "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC", "clock"]].filter(([id]) => id !== "matrix" || settings.features?.showMatrix !== false).map(([id, label, Icon]) => /* @__PURE__ */ React.createElement(
       "button",
       {
         key: id,
@@ -4673,7 +4805,7 @@ function LifeFlowApp() {
       setShowAdd(false);
       setEditingTask(null);
       setPrefillTime(null);
-    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, prefillTime }),
+    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, prefillTime, calendars }),
     searchOpen && /* @__PURE__ */ React.createElement(
       GlobalSearchModal,
       {
@@ -4691,7 +4823,7 @@ function LifeFlowApp() {
       BackupModal,
       {
         onClose: () => setShowBackupModal(false),
-        currentData: { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, pomodoro },
+        currentData: { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, pomodoro },
         onRestore: restoreBackup,
         onDownload: exportData
       }
@@ -4702,6 +4834,18 @@ function LifeFlowApp() {
         onClose: () => setShowSettings(false),
         settings,
         onChangeSettings: setSettings
+      }
+    ),
+    showCalendarManager && /* @__PURE__ */ React.createElement(
+      CalendarManagerModal,
+      {
+        onClose: () => setShowCalendarManager(false),
+        calendars,
+        onAdd: addCalendar,
+        onRename: renameCalendar,
+        onRecolor: recolorCalendar,
+        onToggleVisible: toggleCalendarVisible,
+        onDelete: deleteCalendar
       }
     )
   );
