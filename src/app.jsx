@@ -3912,6 +3912,61 @@ function DayCapacitySummary({ scheduledMinutes, scheduling }) {
     over && /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold shrink-0", style: { color: "#F87171" } }, "\u26A0\uFE0F \u0628\u06CC\u0634 \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A")
   );
 }
+// بند ۸۳ (لِین ۷): «توازن کار بین روزهای هفته». نسخه‌ی v1 عمداً فقط
+// اطلاع‌رسانی است، نه اتوماتیک — سیستم هیچ تسکی را جابه‌جا نمی‌کند، فقط
+// نشان می‌دهد کدام روزها نسبت به بقیه سنگین‌ترند تا کاربر خودش دستی
+// جابه‌جا کند. توازنِ خودکارِ واقعی (جابه‌جاییِ تسک‌ها) طبیعتاً بخشی از
+// موتورِ زمان‌بندیِ خودکار (بندهای ۷۲-۷۶) است که هنوز شروع نشده.
+// عمداً یک کامپوننتِ کاملاً مستقل/جدا (نه چیزی افزوده‌شده داخلِ
+// DayPlannerView/WeekHourlyView که همین الان بینِ سه لِین مشترک است) —
+// فقط از یک دکمه‌ی تکی در CalendarViews صدا زده می‌شود، برای کمینه‌کردنِ
+// ریسکِ برخورد.
+function WeeklyLoadModal({ cursor, tasks, scheduling, onClose }) {
+  const capacityMinutes = workingHoursCapacityMinutes(scheduling);
+  const weekStart = Jalali ? Jalali.jalaliStartOfWeek(cursor) : cursor;
+  const days = Array.from({ length: 7 }, (_, i) => Jalali ? Jalali.addDays(weekStart, i) : cursor);
+  const rows = days.map((d) => {
+    const scheduledMinutes = tasks.filter((tsk) => isTaskDueOn(tsk, d) && tsk.time).reduce((s, tsk) => s + (tsk.duration || 0), 0);
+    return {
+      date: d,
+      // WEEKDAY_SHORT_FA is indexed by Date.getDay() (همان قراردادِ خودِ
+      // jalali.js، نه ترتیبِ نمایشِ ستون‌ها) — دیدنِ formatJalali برای تأیید.
+      label: Jalali ? Jalali.WEEKDAY_SHORT_FA[d.getDay()] : "",
+      minutes: scheduledMinutes,
+      over: capacityMinutes > 0 && scheduledMinutes > capacityMinutes
+    };
+  });
+  const overDays = rows.filter((r) => r.over);
+  const chartData = rows.map((r) => ({ day: r.label, minutes: r.minutes }));
+  const closeFooter = /* @__PURE__ */ React.createElement(
+    "button",
+    { type: "button", onClick: onClose, className: "mod-cta rounded-xl py-3 font-bold text-sm w-full" },
+    "\u0628\u0633\u062A\u0646"
+  );
+  return ModalShell(
+    {
+      title: "\u0628\u0627\u0631 \u06A9\u0627\u0631\u06CC \u0647\u0641\u062A\u0647",
+      onClose,
+      footer: closeFooter
+    },
+    /* @__PURE__ */ React.createElement(
+      "p",
+      { className: "text-[11px] text-slate-400 mb-3" },
+      capacityMinutes > 0 ? `\u0645\u0642\u0627\u06CC\u0633\u0647\u0654 \u0647\u0631 \u0631\u0648\u0632 \u0646\u0633\u0628\u062A \u0628\u0647 \u0638\u0631\u0641\u06CC\u062A\u06CC \u0627\u0633\u062A \u06A9\u0647 \u062F\u0631 \u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u062A\u0639\u0631\u06CC\u0641 \u06A9\u0631\u062F\u0647\u200C\u0627\u06CC\u062F (${formatDurationFa(capacityMinutes)} \u062F\u0631 \u0631\u0648\u0632).` : "\u0628\u0631\u0627\u06CC \u0645\u0642\u0627\u06CC\u0633\u0647 \u0628\u0627 \u06CC\u06A9 \u0638\u0631\u0641\u06CC\u062A \u062B\u0627\u0628\u062A، \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC \u0631\u0627 \u0627\u0632 \u0628\u062E\u0634 \u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u0641\u0639\u0627\u0644 \u06A9\u0646\u06CC\u062F — \u0641\u0639\u0644\u0627\u064B \u0641\u0642\u0637 \u0628\u0627\u0631ِ \u0646\u0633\u0628\u06CC \u0631\u0648\u0632\u0647\u0627 \u0646\u0633\u0628\u062A \u0628\u0647 \u0647\u0645 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F."
+    ),
+    /* @__PURE__ */ React.createElement(SimpleBarChart, { data: chartData, xKey: "day", yKey: "minutes", color: "#22D3EE", height: 130 }),
+    overDays.length > 0 && /* @__PURE__ */ React.createElement(
+      "div",
+      { className: "mt-2 p-3 rounded-xl", style: { background: "rgba(248,113,113,.1)", border: "1px solid rgba(248,113,113,.25)" } },
+      /* @__PURE__ */ React.createElement(
+        "p",
+        { className: "text-[11px] font-bold", style: { color: "#F87171" } },
+        "\u26A0\uFE0F \u0631\u0648\u0632\u0647\u0627\u06CC \u0628\u06CC\u0634\u200C\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0634\u062F\u0647: ",
+        overDays.map((r) => `${r.label} (${formatDurationFa(r.minutes)})`).join("\u060C ")
+      )
+    )
+  );
+}
 function AgendaView({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }) {
   if (!Jalali) return null;
   const today = /* @__PURE__ */ new Date();
@@ -4425,6 +4480,10 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   const [view, setView] = useState("day");
   const [weekSubView, setWeekSubView] = useState("cards");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
+  // بند ۸۳ (لِین ۷): «بار کاری هفته» — دکمه‌ی تکی که یک مودالِ مستقل و
+  // اطلاع‌رسانیِ‌محضِ WeeklyLoadModal را باز می‌کند؛ عمداً هیچ نمای موجودِ
+  // تقویم (DayPlannerView/WeekHourlyView/...) را تغییر نمی‌دهد.
+  const [showWeeklyLoad, setShowWeeklyLoad] = useState(false);
   const step = (dir) => {
     if (!Jalali) return;
     if (view === "day") setCursor((c) => Jalali.addDays(c, dir));
@@ -4455,7 +4514,20 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     )
   );
   const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3 }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  const weeklyLoadButton = /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "flex justify-end" },
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setShowWeeklyLoad(true),
+        className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5"
+      },
+      "\u{1F4CA} \u0628\u0627\u0631 \u06A9\u0627\u0631\u06CC \u0647\u0641\u062A\u0647"
+    )
+  );
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), weeklyLoadButton, view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3 }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }), showWeeklyLoad && /* @__PURE__ */ React.createElement(WeeklyLoadModal, { cursor, tasks, scheduling, onClose: () => setShowWeeklyLoad(false) }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
