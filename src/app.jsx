@@ -343,8 +343,28 @@ var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", quadra
 // separate since settings-tab.ts is plain TS, not part of this React tree
 // — same low-divergence-risk duplication already used for QUADRANTS etc.).
 var DEFAULT_WORKING_HOURS_PERIODS = [{ id: "default-1", start: "09:00", end: "17:00" }];
+// بندهای ۸۴-۸۸ (لِین ۷، جلسه‌ی ۳): چهار مفهومِ مستقلِ دیگرِ همین خوشه —
+// عمداً همه زیرِ یک ثابتِ `DEFAULT_SCHEDULING` واحد نگه داشته شدند (نه
+// چهار ثابتِ پراکنده) چون همه از یک تنظیماتِ کاربریِ واحد («زمان‌بندی
+// هوشمند و ظرفیت») می‌آیند و در `mergeScheduling` یک‌جا merge می‌شوند:
+//  - focusTime: دقیقاً هم‌شکلِ workingHours (بازه‌های زمانی) — بندِ ۸۴.
+//    پیش‌فرض خاموش/خالی چون برخلافِ ساعاتِ کاری، «زمانِ تمرکز» یک مفهومِ
+//    opt-in است، نه چیزی که همه بخواهند از روزِ اول داشته باشند.
+//  - focusGoals: دو عددِ ساده (دقیقه) — بندهای ۸۵/۸۶. صفر یعنی «هدفی
+//    تنظیم نشده» (نه «هدفِ صفردقیقه‌ای»)، مصرف‌کننده باید این را چک کند.
+//  - noMeetingWeekdays: آرایه‌ای از اعدادِ ۰-۶ هم‌قراردادِ `Date.getDay()`
+//    (۰=یکشنبه در جاوااسکریپت) — بندِ ۸۷. پیش‌فرض خالی.
+//  - bufferMinutes: یک عددِ سراسریِ ساده — بندِ ۸۸. پیش‌فرض صفر (بدونِ
+//    زمانِ حائل). نسخه‌ی v1: یک مقدارِ ثابتِ سراسری، نه قابلِ‌تنظیم به‌ازای
+//    هر فعالیت — چون اِعمالِ واقعیِ حائل (درجِ خودکار در برنامه) بخشی از
+//    موتورِ زمان‌بندیِ خودکار (بندهای ۷۲-۷۶) است که هنوز شروع نشده؛ فعلاً
+//    فقط مقدارِ خواسته‌شده ذخیره می‌شود.
 var DEFAULT_SCHEDULING = {
-  workingHours: { enabled: true, periods: DEFAULT_WORKING_HOURS_PERIODS }
+  workingHours: { enabled: true, periods: DEFAULT_WORKING_HOURS_PERIODS },
+  focusTime: { enabled: false, periods: [] },
+  focusGoals: { dailyMinutes: 0, weeklyMinutes: 0 },
+  noMeetingWeekdays: [],
+  bufferMinutes: 0
 };
 // Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
 // settings-tab.ts is plain TS, not part of this React tree) — same
@@ -384,7 +404,14 @@ function mergeAppearance(a) {
 // from the saved value when present (not merged item-by-item) since it's a
 // user-edited list, not a fixed set of named keys like quadrantColors.
 function mergeScheduling(s) {
-  return { ...DEFAULT_SCHEDULING, ...(s || {}), workingHours: { ...DEFAULT_SCHEDULING.workingHours, ...((s || {}).workingHours || {}) } };
+  const src = s || {};
+  return {
+    ...DEFAULT_SCHEDULING,
+    ...src,
+    workingHours: { ...DEFAULT_SCHEDULING.workingHours, ...(src.workingHours || {}) },
+    focusTime: { ...DEFAULT_SCHEDULING.focusTime, ...(src.focusTime || {}) },
+    focusGoals: { ...DEFAULT_SCHEDULING.focusGoals, ...(src.focusGoals || {}) }
+  };
 }
 // Mutates the shared QUADRANTS array's `color` fields in place so every one
 // of its many existing read sites (QUADRANTS.find/.map, scattered across

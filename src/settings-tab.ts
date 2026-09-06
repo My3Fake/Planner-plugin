@@ -40,7 +40,7 @@ interface LifeFlowSettings {
 	reports: {
 		folderName: string;
 	};
-	// Lane 7 (زمان‌بندی هوشمند و ظرفیت، PROGRESS.md بندهای ۷۷/۷۸/۸۰-۸۲): بازه‌های
+	// Lane 7 (زمان‌بندی هوشمند و ظرفیت، PROGRESS.md بندهای ۷۷/۷۸/۸۰-۸۸): بازه‌های
 	// ساعات کاری که مجموعشان ظرفیتِ روزانه را می‌سازد (بند ۷۸: چند بازه در یک
 	// روز). یک مجموعه‌ی واحد برای همه‌ی روزهای هفته — نسخه‌ی v1، بدون تفکیکِ
 	// روزهای هفته. Mirrors app.jsx's DEFAULT_SCHEDULING exactly (kept separate
@@ -51,6 +51,23 @@ interface LifeFlowSettings {
 			enabled: boolean;
 			periods: Array<{ id: string; start: string; end: string }>;
 		};
+		// بندِ ۸۴: دقیقاً هم‌شکلِ workingHours — بازه‌هایی از روز به‌عنوانِ
+		// زمانِ تمرکز؛ opt-in (پیش‌فرض خاموش/خالی).
+		focusTime: {
+			enabled: boolean;
+			periods: Array<{ id: string; start: string; end: string }>;
+		};
+		// بندهای ۸۵/۸۶: هدفِ روزانه/هفتگیِ تمرکز به دقیقه؛ ۰ یعنی «هدفی
+		// تنظیم نشده»، نه «هدفِ صفردقیقه‌ای».
+		focusGoals: {
+			dailyMinutes: number;
+			weeklyMinutes: number;
+		};
+		// بندِ ۸۷: اعدادِ ۰-۶ هم‌قراردادِ JS Date.getDay() (۰=یکشنبه).
+		noMeetingWeekdays: number[];
+		// بندِ ۸۸: یک عددِ سراسریِ ساده (v1) — اِعمالِ واقعیِ آن (درجِ خودکار
+		// در برنامه) بخشی از موتورِ زمان‌بندیِ خودکارِ آینده است.
+		bufferMinutes: number;
 	};
 	appearance: {
 		fontFamily: string;
@@ -90,7 +107,13 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 	},
 	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false },
 	reports: { folderName: "LifeFlow Reports" },
-	scheduling: { workingHours: { enabled: true, periods: DEFAULT_WORKING_HOURS_PERIODS } },
+	scheduling: {
+		workingHours: { enabled: true, periods: DEFAULT_WORKING_HOURS_PERIODS },
+		focusTime: { enabled: false, periods: [] },
+		focusGoals: { dailyMinutes: 0, weeklyMinutes: 0 },
+		noMeetingWeekdays: [],
+		bufferMinutes: 0,
+	},
 	appearance: { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS },
 };
 
@@ -193,6 +216,14 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					workingHours: {
 						...DEFAULT_SETTINGS.scheduling.workingHours,
 						...((parsed.scheduling || {}).workingHours || {}),
+					},
+					focusTime: {
+						...DEFAULT_SETTINGS.scheduling.focusTime,
+						...((parsed.scheduling || {}).focusTime || {}),
+					},
+					focusGoals: {
+						...DEFAULT_SETTINGS.scheduling.focusGoals,
+						...((parsed.scheduling || {}).focusGoals || {}),
 					},
 				},
 				appearance: {
@@ -523,6 +554,150 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 				next.scheduling.workingHours.periods.push({ id: newPeriodId(), start: "09:00", end: "17:00" });
 				this.writeSettings(next);
 				this.display();
+			});
+		});
+
+		// --- بند ۸۴: Focus Time — دقیقاً هم‌ساختارِ ساعاتِ کاری بالا، فقط
+		// روی زیرشاخه‌ی دیگری از scheduling می‌نویسد (opt-in، پیش‌فرض خاموش).
+		containerEl.createEl("h4", { text: "زمان تمرکز (Focus Time)" });
+		containerEl.createEl("p", {
+			text: "بازه‌هایی از روز که می‌خواهید به‌عنوان زمانِ تمرکزِ محافظت‌شده علامت بخورند (مثلاً صبح‌های زود). فعلاً فقط تعریف می‌شوند؛ جلوگیریِ خودکار از زمان‌بندیِ کارهای دیگر در این بازه‌ها بخشی از موتورِ زمان‌بندیِ خودکارِ آینده خواهد بود.",
+			cls: "setting-item-description",
+		});
+		new Setting(containerEl).setName("فعال‌کردن زمان تمرکز").addToggle((toggle) => {
+			toggle.setValue(settings.scheduling.focusTime.enabled);
+			toggle.onChange((value) => {
+				const next = this.readSettings();
+				next.scheduling.focusTime.enabled = value;
+				this.writeSettings(next);
+			});
+		});
+		settings.scheduling.focusTime.periods.forEach((period, idx) => {
+			const canRemove = true;
+			new Setting(containerEl)
+				.setName(`بازه‌ی تمرکز ${idx + 1}`)
+				.addText((text) => {
+					text.inputEl.type = "time";
+					text.setValue(period.start);
+					text.onChange((value) => {
+						const next = this.readSettings();
+						const p = next.scheduling.focusTime.periods.find((x) => x.id === period.id);
+						if (p) p.start = value;
+						this.writeSettings(next);
+					});
+				})
+				.addText((text) => {
+					text.inputEl.type = "time";
+					text.setValue(period.end);
+					text.onChange((value) => {
+						const next = this.readSettings();
+						const p = next.scheduling.focusTime.periods.find((x) => x.id === period.id);
+						if (p) p.end = value;
+						this.writeSettings(next);
+					});
+				})
+				.addExtraButton((btn) => {
+					btn.setIcon("trash-2");
+					btn.setTooltip("حذف این بازه");
+					btn.setDisabled(!canRemove);
+					btn.onClick(() => {
+						const next = this.readSettings();
+						next.scheduling.focusTime.periods = next.scheduling.focusTime.periods.filter((x) => x.id !== period.id);
+						this.writeSettings(next);
+						this.display();
+					});
+				});
+		});
+		new Setting(containerEl).addButton((btn) => {
+			btn.setButtonText("+ افزودن بازه‌ی تمرکز");
+			btn.onClick(() => {
+				const next = this.readSettings();
+				next.scheduling.focusTime.periods.push({ id: newPeriodId(), start: "07:00", end: "09:00" });
+				this.writeSettings(next);
+				this.display();
+			});
+		});
+
+		// --- بندهای ۸۵/۸۶: هدف روزانه/هفتگیِ تمرکز (به دقیقه). صفر یعنی
+		// «بدون هدف» — این‌جا فقط ذخیره می‌شود؛ محاسبه‌ی پیشرفتِ واقعی از
+		// روی جلساتِ پومودورو (قلمروِ لِین ۴) در جلسه‌ای دیگر انجام می‌شود
+		// تا با کارِ فعالِ آن لِین برخورد نکند.
+		containerEl.createEl("h4", { text: "هدف تمرکز روزانه و هفتگی" });
+		containerEl.createEl("p", {
+			text: "هدفِ دقیقه‌ای برای زمانِ تمرکز (مثلاً زمانِ کاریِ پومودورو). صفر یعنی هدفی تنظیم نشده.",
+			cls: "setting-item-description",
+		});
+		new Setting(containerEl).setName("هدف روزانه (دقیقه)").addText((text) => {
+			text.inputEl.type = "number";
+			text.inputEl.min = "0";
+			text.inputEl.step = "5";
+			text.setValue(String(settings.scheduling.focusGoals.dailyMinutes));
+			text.onChange((value) => {
+				const next = this.readSettings();
+				next.scheduling.focusGoals.dailyMinutes = Math.max(0, Number(value) || 0);
+				this.writeSettings(next);
+			});
+		});
+		new Setting(containerEl).setName("هدف هفتگی (دقیقه)").addText((text) => {
+			text.inputEl.type = "number";
+			text.inputEl.min = "0";
+			text.inputEl.step = "5";
+			text.setValue(String(settings.scheduling.focusGoals.weeklyMinutes));
+			text.onChange((value) => {
+				const next = this.readSettings();
+				next.scheduling.focusGoals.weeklyMinutes = Math.max(0, Number(value) || 0);
+				this.writeSettings(next);
+			});
+		});
+
+		// --- بند ۸۷: روز بدون جلسه — انتخابِ روزهای هفته که نباید در آن‌ها
+		// جلسه/کارِ زمان‌بندی‌شده گذاشته شود. id ها دقیقاً هم‌قراردادِ
+		// app.jsx's WEEKDAYS (id = Date.getDay()، ترتیبِ نمایش از شنبه).
+		containerEl.createEl("h4", { text: "روز بدون جلسه" });
+		containerEl.createEl("p", {
+			text: "روزهایی از هفته که ترجیح می‌دهید در آن‌ها جلسه یا کارِ زمان‌بندی‌شده نداشته باشید.",
+			cls: "setting-item-description",
+		});
+		const WEEKDAY_LABELS_FA: Array<{ id: number; label: string }> = [
+			{ id: 6, label: "شنبه" },
+			{ id: 0, label: "یکشنبه" },
+			{ id: 1, label: "دوشنبه" },
+			{ id: 2, label: "سه‌شنبه" },
+			{ id: 3, label: "چهارشنبه" },
+			{ id: 4, label: "پنج‌شنبه" },
+			{ id: 5, label: "جمعه" },
+		];
+		WEEKDAY_LABELS_FA.forEach(({ id, label }) => {
+			new Setting(containerEl).setName(label).addToggle((toggle) => {
+				toggle.setValue(settings.scheduling.noMeetingWeekdays.includes(id));
+				toggle.onChange((value) => {
+					const next = this.readSettings();
+					const set = new Set(next.scheduling.noMeetingWeekdays);
+					if (value) set.add(id);
+					else set.delete(id);
+					next.scheduling.noMeetingWeekdays = Array.from(set).sort();
+					this.writeSettings(next);
+				});
+			});
+		});
+
+		// --- بند ۸۸: زمان حائل — نسخه‌ی v1، فقط یک عددِ سراسری ذخیره
+		// می‌شود؛ درجِ خودکارِ آن در برنامه موکول به موتورِ زمان‌بندیِ
+		// خودکارِ آینده است.
+		containerEl.createEl("h4", { text: "زمان حائل" });
+		containerEl.createEl("p", {
+			text: "چند دقیقه فاصله‌ی خالی قبل و بعد از فعالیت‌های زمان‌بندی‌شده در نظر گرفته شود (فعلاً فقط ذخیره می‌شود؛ اِعمالِ خودکارِ آن به‌زودی).",
+			cls: "setting-item-description",
+		});
+		new Setting(containerEl).setName("زمان حائل (دقیقه)").addText((text) => {
+			text.inputEl.type = "number";
+			text.inputEl.min = "0";
+			text.inputEl.step = "5";
+			text.setValue(String(settings.scheduling.bufferMinutes));
+			text.onChange((value) => {
+				const next = this.readSettings();
+				next.scheduling.bufferMinutes = Math.max(0, Number(value) || 0);
+				this.writeSettings(next);
 			});
 		});
 
