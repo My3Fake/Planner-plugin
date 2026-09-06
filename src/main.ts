@@ -62,8 +62,24 @@ class LifeFlowReactModal extends Modal {
 	 * redundant time in that direction. */
 	onExternalClose: (() => void) | null = null;
 
+	/** Deliberately does NOT call this.contentEl.empty(). ModalShell portals
+	 * its React tree straight into contentEl (see app.jsx); React tracks
+	 * those DOM nodes itself and cleans them up on its own terms when the
+	 * owning component unmounts (triggered by onExternalClose below setting
+	 * React state). Calling contentEl.empty() here ripped those DOM nodes
+	 * out from under React *before* React got to unmount its portal on its
+	 * own schedule — so when React's cleanup ran moments later and tried to
+	 * remove child nodes it still believed existed, the DOM operation
+	 * failed with an uncaught exception during React's commit phase, which
+	 * (with no error boundary around LifeFlowApp) tore down the *entire*
+	 * plugin view, not just the modal — exactly the "closing a window
+	 * breaks the whole page" bug reported in the spec (item 4). Each modal
+	 * is a fresh instance (openReactModal always does `new
+	 * LifeFlowReactModal`), and Obsidian's own Modal.close() already
+	 * removes the whole modal DOM subtree from the document, so there is no
+	 * leftover DOM to manually clean up here — the instance is simply
+	 * garbage-collected once nothing references it. */
 	onClose() {
-		this.contentEl.empty();
 		if (this.onExternalClose) this.onExternalClose();
 	}
 }
