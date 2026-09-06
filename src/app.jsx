@@ -705,6 +705,38 @@ function Chip({ active, onClick, children, color }) {
     children
   );
 }
+// Item 22 (رنگ‌بندی گسترده) - shared palette + picker for *per-instance*
+// custom colors (subtask/subsection/learning-topic), as opposed to the
+// per-*type* palettes above (quadrant/exercise-type) which mutate one
+// shared default for every item of that type. Here each individual
+// instance just stores its own optional hex string directly on its own
+// data object (subtask.color / subsection.color / topic.color); null means
+// "no custom color, fall back to whatever default look that context
+// already had" (e.g. the parent task's quadrant color).
+var INSTANCE_COLOR_PALETTE = ["#DB2777", "#C026D3", "#22D3EE", "#F59E0B", "#10B981", "#3B82F6", "#EF4444", "#6B7280"];
+function ColorDotPicker({ value, onChange, size = 16 }) {
+  return /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap" }, /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      type: "button",
+      onClick: () => onChange(null),
+      title: "\u0628\u062F\u0648\u0646 \u0631\u0646\u06AF \u0627\u062E\u062A\u0635\u0627\u0635\u06CC",
+      className: "rounded-full shrink-0 flex items-center justify-center",
+      style: { width: size, height: size, border: "1.5px dashed rgba(255,255,255,.35)", background: "transparent" }
+    },
+    !value && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: Math.round(size * 0.6), color: "rgba(255,255,255,.6)" })
+  ), INSTANCE_COLOR_PALETTE.map((c) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: c,
+      type: "button",
+      onClick: () => onChange(c),
+      title: c,
+      className: "rounded-full shrink-0",
+      style: { width: size, height: size, background: c, boxShadow: value === c ? "0 0 0 2px rgba(255,255,255,.9)" : "none" }
+    }
+  )));
+}
 function ToggleSwitch({ on, onClick, disabled }) {
   return /* @__PURE__ */ React.createElement(
     "button",
@@ -960,12 +992,14 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
   const toggleWeekday = (id) => setWeekdays((p) => p.includes(id) ? p.length > 1 ? p.filter((x) => x !== id) : p : [...p, id]);
   const [subtasks, setSubtasks] = useState(initialTask && initialTask.subtasks ? initialTask.subtasks : []);
   const [subInput, setSubInput] = useState("");
+  const [subtaskColorFor, setSubtaskColorFor] = useState(null);
   const addSubtask = () => {
     const title2 = subInput.trim();
     if (!title2) return;
-    setSubtasks((prev) => [...prev, { id: uid(), title: title2, done: false }]);
+    setSubtasks((prev) => [...prev, { id: uid(), title: title2, done: false, color: null }]);
     setSubInput("");
   };
+  const setSubtaskColor = (id, color) => setSubtasks((prev) => prev.map((s) => s.id === id ? { ...s, color } : s));
   const removeSubtask = (id) => setSubtasks((prev) => prev.filter((s) => s.id !== id));
   const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive");
   const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime || !isEdit && !!defaults.advancedOpenByDefault);
@@ -1118,8 +1152,19 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
         "span",
         {
           key: s.id,
-          className: "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] bg-white/[0.06] border border-white/10 text-slate-200"
+          className: "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] border text-slate-200",
+          style: s.color ? { background: `${s.color}22`, borderColor: `${s.color}55` } : { background: "rgba(255,255,255,.06)", borderColor: "rgba(255,255,255,.1)" }
         },
+        /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setSubtaskColorFor((cur) => cur === s.id ? null : s.id),
+            title: "\u0631\u0646\u06AF \u0632\u06CC\u0631\u062A\u0633\u06A9",
+            className: "w-2 h-2 rounded-full shrink-0",
+            style: { background: s.color || "rgba(255,255,255,.3)" }
+          }
+        ),
         s.title,
         /* @__PURE__ */ React.createElement(
           "button",
@@ -1132,6 +1177,14 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
           /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 11 })
         )
       ))),
+      subtaskColorFor && subtasks.find((s) => s.id === subtaskColorFor) && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-500 shrink-0" }, "\u0631\u0646\u06AF:"), /* @__PURE__ */ React.createElement(ColorDotPicker, {
+        value: subtasks.find((s) => s.id === subtaskColorFor).color,
+        onChange: (c) => {
+          setSubtaskColor(subtaskColorFor, c);
+          setSubtaskColorFor(null);
+        },
+        size: 18
+      })),
       /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2" }, /* @__PURE__ */ React.createElement(
         "input",
         {
