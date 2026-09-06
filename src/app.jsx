@@ -27,6 +27,18 @@ var ITEM_TYPES = [
   { id: "learning", label: "\u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC", icon: "book", color: "#F59E0B" }
 ];
 var DEFAULT_ITEM_TYPE = "task";
+// Every key defined in ICON_PATHS (see Ic component below) — used for the
+// optional per-task icon override (spec item 8, second half: "آیکون
+// تسک") in AddTaskModal, independent of itemType's own icon. Mirrored by
+// hand in settings-tab.ts's ICON_CHOICES for the custom-item-type picker
+// there — keep both lists in sync if a new icon is ever added to
+// ICON_PATHS.
+var ICON_CHOICES = [
+  "bell", "book", "calendar", "check", "clipboard", "clock", "cloud", "columns",
+  "copy", "download", "dumbbell", "edit", "flame", "folder", "grid", "headphones",
+  "home", "location", "lock", "moon", "pause", "play", "plus", "repeat", "search",
+  "settings", "sparkles", "sun", "sunrise", "sunset", "tag", "trash", "upload", "x"
+];
 var PRIORITIES = [
   { level: 1, label: "\u067E\u0627\u06CC\u06CC\u0646" },
   { level: 2, label: "\u0645\u062A\u0648\u0633\u0637" },
@@ -1194,7 +1206,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
       style: { borderColor: task.status === "done" ? q.color : "rgba(255,255,255,.25)", background: task.status === "done" ? q.color : "transparent" }
     },
     task.status === "done" && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm flex items-center gap-1.5 ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.icon && /* @__PURE__ */ React.createElement(Ic, { name: task.icon, size: 12, className: "shrink-0 text-slate-400" }), task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => setOpenSched((v) => !v),
@@ -1247,6 +1259,10 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   const [calendarId, setCalendarId] = useState(isEdit ? getTaskCalendarId(initialTask) : calendarList[0].id);
   const [title, setTitle] = useState(initialTask ? initialTask.title : ""), [desc, setDesc] = useState(initialTask ? initialTask.desc || "" : "");
   const [itemType, setItemType] = useState(initialTask ? initialTask.itemType || DEFAULT_ITEM_TYPE : DEFAULT_ITEM_TYPE);
+  // Optional per-task icon override (spec item 8, second half) —
+  // independent of itemType's own default icon. Empty string means "no
+  // override, use the item type's icon wherever one is shown".
+  const [icon, setIcon] = useState(initialTask ? initialTask.icon || "" : "");
   // Merge the 4 built-in types with whatever the user defined in Settings
   // (custom task types, spec item 8 — see PROGRESS.md Lane 1). Custom ones
   // are plain {id, label, icon, color} objects, same shape as ITEM_TYPES,
@@ -1281,7 +1297,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   };
   const setSubtaskColor = (id, color) => setSubtasks((prev) => prev.map((s) => s.id === id ? { ...s, color } : s));
   const removeSubtask = (id) => setSubtasks((prev) => prev.filter((s) => s.id !== id));
-  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive" || initialTask.notBefore);
+  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive" || initialTask.notBefore || initialTask.icon);
   const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime || !isEdit && !!defaults.advancedOpenByDefault);
   const submit = () => {
     if (!title.trim()) return;
@@ -1290,6 +1306,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
       title: title.trim(),
       desc: desc.trim(),
       itemType,
+      icon: icon || void 0,
       quad,
       priority,
       calendarId,
@@ -1444,6 +1461,16 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
       ))),
       /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 13 }), " \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC"), /* @__PURE__ */ React.createElement(ToggleSwitch, { on: reminder, onClick: () => setReminder((v) => !v) })),
       /* @__PURE__ */ React.createElement(TextInput, { value: tag, onChange: (e) => setTag(e.target.value), placeholder: "\u0628\u0631\u0686\u0633\u0628 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)" }),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, icon ? /* @__PURE__ */ React.createElement(Ic, { name: icon, size: 13 }) : /* @__PURE__ */ React.createElement(Ic, { name: "grid", size: 13 }), " \u0622\u06CC\u06A9\u0648\u0646 \u062A\u0633\u06A9 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"), /* @__PURE__ */ React.createElement(
+        "select",
+        {
+          value: icon,
+          onChange: (e) => setIcon(e.target.value),
+          className: "bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none"
+        },
+        /* @__PURE__ */ React.createElement("option", { value: "", className: "bg-[#120814]" }, "\u067E\u06CC\u0634\u200C\u0641\u0631\u0636 \u0647\u0645\u0627\u0646 \u0646\u0648\u0639 \u0622\u06CC\u062A\u0645"),
+        ICON_CHOICES.map((ic) => /* @__PURE__ */ React.createElement("option", { key: ic, value: ic, className: "bg-[#120814]" }, ic))
+      )),
       /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "زیرتسک‌ها (اختیاری)"),
       subtasks.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-2" }, subtasks.map((s) => /* @__PURE__ */ React.createElement(
         "span",
