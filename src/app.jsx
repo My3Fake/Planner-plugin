@@ -348,7 +348,7 @@ function mergeFeatures(f) {
 // keeping them, the same pitfall mergeFeatures already exists to avoid for
 // features.tabs.
 function mergeAppearance(a) {
-  return { ...DEFAULT_APPEARANCE, ...(a || {}), quadrantColors: { ...DEFAULT_QUADRANT_COLORS, ...((a || {}).quadrantColors || {}) } };
+  return { ...DEFAULT_APPEARANCE, ...(a || {}), quadrantColors: { ...DEFAULT_QUADRANT_COLORS, ...((a || {}).quadrantColors || {}) }, exerciseTypeColors: { ...DEFAULT_EXERCISE_TYPE_COLORS, ...((a || {}).exerciseTypeColors || {}) } };
 }
 // Mutates the shared QUADRANTS array's `color` fields in place so every one
 // of its many existing read sites (QUADRANTS.find/.map, scattered across
@@ -379,6 +379,7 @@ function loadSettings() {
     result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
   }
   applyQuadrantColors(result.appearance.quadrantColors);
+  applyExerciseTypeColors(result.appearance.exerciseTypeColors);
   return result;
 }
 function saveSettings(s) {
@@ -1432,12 +1433,28 @@ function StudyHub({ books, videos, podcasts, setBooks, setVideos, setPodcasts })
     }
   ))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full mt-2.5 rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u06A9\u062A\u0627\u0628")), sub === "videos" && /* @__PURE__ */ React.createElement("div", null, videos.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u0648\u06CC\u062F\u06CC\u0648\u06CC\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5 lg:space-y-0 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3" }, videos.map((v) => /* @__PURE__ */ React.createElement(VideoCard, { key: v.id, v, onToggleWatched: () => setVideos((p) => p.map((x) => x.id === v.id ? { ...x, watched: !x.watched } : x)), onDelete: (id) => setVideos((p) => p.filter((x) => x.id !== id)) }))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full mt-2.5 rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u0648\u06CC\u062F\u06CC\u0648")), sub === "podcasts" && /* @__PURE__ */ React.createElement("div", null, podcasts.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u067E\u0627\u062F\u06A9\u0633\u062A\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5 lg:space-y-0 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3" }, podcasts.map((p) => /* @__PURE__ */ React.createElement(PodcastCard, { key: p.id, p, onToggleListened: () => setPodcasts((prev) => prev.map((x) => x.id === p.id ? { ...x, listened: !x.listened } : x)), onDelete: (id) => setPodcasts((prev) => prev.filter((x) => x.id !== id)) }))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full mt-2.5 rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u067E\u0627\u062F\u06A9\u0633\u062A")), sub === "progress" && /* @__PURE__ */ React.createElement(StudyProgress, { books, videos, podcasts }), showAdd && sub === "books" && /* @__PURE__ */ React.createElement(AddBookModal, { onClose: () => setShowAdd(false), onAdd: (b) => setBooks((p) => [{ id: uid(), ...b }, ...p]) }), showAdd && sub === "videos" && /* @__PURE__ */ React.createElement(AddVideoModal, { onClose: () => setShowAdd(false), onAdd: (v) => setVideos((p) => [{ id: uid(), ...v }, ...p]) }), showAdd && sub === "podcasts" && /* @__PURE__ */ React.createElement(AddPodcastModal, { onClose: () => setShowAdd(false), onAdd: (pc) => setPodcasts((p) => [{ id: uid(), ...pc }, ...p]) }));
 }
+// Item 22 (رنگ‌بندی گسترده) first slice: activity-type (fitness) colors,
+// extending the exact "shared mutation point" pattern applyQuadrantColors
+// already established. Default colors reuse the palette FitnessProgress
+// already used for strength (#C026D3) / cardio (#DB2777), plus two more
+// brand-consistent colors for the other two types.
+var DEFAULT_EXERCISE_TYPE_COLORS = { "\u0642\u062F\u0631\u062A\u06CC": "#C026D3", "\u06A9\u0634\u0634\u06CC": "#F59E0B", "\u06A9\u0627\u0631\u062F\u06CC\u0648": "#DB2777", "\u062F\u0648\u06CC\u062F\u0646": "#22D3EE" };
 var EXERCISE_TYPES = [
   { id: "\u0642\u062F\u0631\u062A\u06CC", mode: "sets" },
   { id: "\u06A9\u0634\u0634\u06CC", mode: "sets" },
   { id: "\u06A9\u0627\u0631\u062F\u06CC\u0648", mode: "duration" },
   { id: "\u062F\u0648\u06CC\u062F\u0646", mode: "duration" }
 ];
+// Same reasoning/pattern as applyQuadrantColors above: mutates EXERCISE_TYPES'
+// `color` fields in place so its existing read sites (FitnessHub's exercise
+// rows, AddExerciseModal's type chips) automatically pick up a user's custom
+// colors with zero changes to those call sites.
+function applyExerciseTypeColors(overrides) {
+  EXERCISE_TYPES.forEach((t) => {
+    const custom = overrides && overrides[t.id];
+    t.color = typeof custom === "string" && /^#[0-9a-fA-F]{6}$/.test(custom) ? custom : DEFAULT_EXERCISE_TYPE_COLORS[t.id];
+  });
+}
 function FitnessProgress({ exercises }) {
   const weekData = [{ day: "\u0634", volume: 240 }, { day: "\u06CC", volume: 300 }, { day: "\u062F", volume: 180 }, { day: "\u0633", volume: 420 }, { day: "\u0686", volume: 260 }, { day: "\u067E", volume: 500 }, { day: "\u062C", volume: 320 }];
   const strengthVolume = exercises.reduce((s, e) => s + (e.mode === "sets" ? e.sets * e.reps : 0), 0);
@@ -1461,7 +1478,7 @@ function FitnessHub({ exercises, setExercises }) {
       style: { borderColor: e.done ? "#22D3EE" : "rgba(255,255,255,.25)", background: e.done ? "#22D3EE" : "transparent" }
     },
     e.done && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${e.done ? "text-slate-500 line-through" : "text-slate-100"}` }, e.name), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500" }, e.mode === "sets" ? `${e.sets}\xD7${e.reps}` : `${e.duration} \u062F\u0642\u06CC\u0642\u0647`)), /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-md bg-white/[0.05] text-slate-400" }, e.type), /* @__PURE__ */ React.createElement("button", { onClick: () => setExercises((p) => p.filter((x) => x.id !== e.id)), className: "w-6 h-6 rounded-md flex items-center justify-center text-rose-400/80 hover:bg-rose-500/10 shrink-0" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 12 }))), moodFor === e.id && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-2 mr-9" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-400" }, "\u062D\u0633 \u0628\u0639\u062F \u0627\u0632 \u062A\u0645\u0631\u06CC\u0646:"), ["\u{1F61E}", "\u{1F610}", "\u{1F642}", "\u{1F4AA}", "\u{1F525}"].map((em, i) => /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => {
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${e.done ? "text-slate-500 line-through" : "text-slate-100"}` }, e.name), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500" }, e.mode === "sets" ? `${e.sets}\xD7${e.reps}` : `${e.duration} \u062F\u0642\u06CC\u0642\u0647`)), /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-md", style: { background: `${(EXERCISE_TYPES.find((t2) => t2.id === e.type) || {}).color || "#6B7280"}18`, color: (EXERCISE_TYPES.find((t2) => t2.id === e.type) || {}).color || "#94A3B8" } }, e.type), /* @__PURE__ */ React.createElement("button", { onClick: () => setExercises((p) => p.filter((x) => x.id !== e.id)), className: "w-6 h-6 rounded-md flex items-center justify-center text-rose-400/80 hover:bg-rose-500/10 shrink-0" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 12 }))), moodFor === e.id && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-2 mr-9" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-400" }, "\u062D\u0633 \u0628\u0639\u062F \u0627\u0632 \u062A\u0645\u0631\u06CC\u0646:"), ["\u{1F61E}", "\u{1F610}", "\u{1F642}", "\u{1F4AA}", "\u{1F525}"].map((em, i) => /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => {
     setExercises((p) => p.map((x) => x.id === e.id ? { ...x, mood: i + 1 } : x));
     setMoodFor(null);
   }, className: "text-lg" }, em)))))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u062A\u0645\u0631\u06CC\u0646")), sub === "progress" && /* @__PURE__ */ React.createElement(FitnessProgress, { exercises }), showAdd && /* @__PURE__ */ React.createElement(AddExerciseModal, { onClose: () => setShowAdd(false), onAdd: (ex) => setExercises((p) => [{ id: uid(), done: false, mood: null, ...ex }, ...p]) }));
@@ -1485,7 +1502,7 @@ function AddExerciseModal({ onClose, onAdd }) {
       submitDisabled: !name.trim()
     },
     /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: name, onChange: (e) => setName(e.target.value), placeholder: "\u0646\u0627\u0645 \u062A\u0645\u0631\u06CC\u0646 \u2014 \u0645\u062B\u0644\u0627\u064B \u0628\u0627\u0631\u0641\u06CC\u06A9\u0633" }),
-    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, EXERCISE_TYPES.map((t2) => /* @__PURE__ */ React.createElement(Chip, { key: t2.id, active: type === t2.id, onClick: () => setType(t2.id) }, t2.id))),
+    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, EXERCISE_TYPES.map((t2) => /* @__PURE__ */ React.createElement(Chip, { key: t2.id, active: type === t2.id, onClick: () => setType(t2.id), color: t2.color }, t2.id))),
     mode === "sets" ? /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-2" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u062A\u0639\u062F\u0627\u062F \u0633\u062A"), /* @__PURE__ */ React.createElement("input", { type: "number", value: sets, onChange: (e) => setSets(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" })), /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u062A\u06A9\u0631\u0627\u0631 \u062F\u0631 \u0647\u0631 \u0633\u062A"), /* @__PURE__ */ React.createElement("input", { type: "number", value: reps, onChange: (e) => setReps(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" }))) : /* @__PURE__ */ React.createElement("div", { className: "mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u0645\u062F\u062A \u0632\u0645\u0627\u0646 (\u062F\u0642\u06CC\u0642\u0647)"), /* @__PURE__ */ React.createElement("input", { type: "number", value: duration, onChange: (e) => setDuration(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" }))
   );
 }
