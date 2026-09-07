@@ -3959,6 +3959,7 @@ function computeAutoSchedule(unscheduledTasks, scheduledTasks, scheduling, buffe
 function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, scheduledTasks, onApplyAutoSchedule }) {
   const enabled = !scheduling || !scheduling.workingHours || scheduling.workingHours.enabled !== false;
   const [runResult, setRunResult] = useState(null);
+  const [confirmingReschedule, setConfirmingReschedule] = useState(false);
   if (!enabled) return null;
   const capacityMinutes = workingHoursCapacityMinutes(scheduling);
   const over = capacityMinutes > 0 && scheduledMinutes > capacityMinutes;
@@ -3971,6 +3972,24 @@ function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, sc
     setRunResult(
       unplaced.length === 0 ? `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F.` : `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F\u060C ${unplaced.length} \u062A\u0633\u06A9 \u0628\u0647\u200C\u062F\u0644\u06CC\u0644 \u06A9\u0645\u0628\u0648\u062F \u0638\u0631\u0641\u06CC\u062A \u062C\u0627 \u0646\u0634\u062F.`
     );
+  };
+  // بندِ ۷۳ (برنامه‌ریزیِ مجددِ خودکار): وقتی روز already بیش‌برنامه‌ریزی
+  // شده (over===true)، «دوباره‌چینیِ کلِ روز» یعنی هر دو دسته‌ی تسکِ
+  // زمان‌بندی‌شده و نشده را یک‌جا به‌عنوانِ ورودیِ «بدونِ‌ساعت» به همان
+  // computeAutoSchedule تست‌شده بدهیم (نه یک الگوریتمِ تازه) — نتیجه:
+  // کلِ روز از نو، به‌ترتیبِ اولویت، بازچیده می‌شود. چون این کارِ
+  // مخرب‌تری از «فقط جاهای خالی را پر کن» است (زمانِ تسک‌هایی را که
+  // کاربر دستی گذاشته عوض می‌کند)، پشتِ یک تأییدِ دوقدمی گذاشته شده —
+  // فقط وقتی واقعاً لازم است (over) نمایش داده می‌شود، نه همیشه.
+  const canReschedule = over && !!onApplyAutoSchedule && (scheduledTasks && scheduledTasks.length > 0);
+  const runReschedule = () => {
+    const allDayTasks = [...(scheduledTasks || []), ...(unscheduledTasks || [])];
+    const { placements, unplaced } = computeAutoSchedule(allDayTasks, [], scheduling, (scheduling && scheduling.bufferMinutes) || 0);
+    if (placements.length > 0) onApplyAutoSchedule(placements);
+    setRunResult(
+      unplaced.length === 0 ? `\u0628\u0631\u0646\u0627\u0645\u0647‌\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F: ${placements.length} \u062A\u0633\u06A9 \u062C\u0627\u0628\u0647‌\u062C\u0627 \u0634\u062F.` : `\u0628\u0631\u0646\u0627\u0645\u0647‌\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F: ${placements.length} \u062C\u0627\u0628\u0647‌\u062C\u0627 \u0634\u062F\u060C ${unplaced.length} \u0628\u0627\u0632 \u0647\u0645 \u062C\u0627 \u0646\u0634\u062F (\u0638\u0631\u0641\u06CC\u062A \u06A9\u0627\u0641\u06CC \u0646\u06CC\u0633\u062A).`
+    );
+    setConfirmingReschedule(false);
   };
   return /* @__PURE__ */ React.createElement(
     GlassCard,
@@ -3995,6 +4014,37 @@ function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, sc
           className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 shrink-0"
         },
         "\u26A1 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062E\u0648\u062F\u06A9\u0627\u0631"
+      ),
+      canReschedule && !confirmingReschedule && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => setConfirmingReschedule(true),
+          className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 shrink-0"
+        },
+        "\u{1F504} \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F \u06A9\u0644 \u0631\u0648\u0632"
+      ),
+      canReschedule && confirmingReschedule && /* @__PURE__ */ React.createElement(
+        "span",
+        { className: "flex items-center gap-1.5 shrink-0" },
+        /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setConfirmingReschedule(false),
+            className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5"
+          },
+          "\u0627\u0646\u0635\u0631\u0627\u0641"
+        ),
+        /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: runReschedule,
+            className: "text-[11px] font-bold text-white bg-rose-500 rounded-lg px-2.5 py-1.5"
+          },
+          "\u0645\u0637\u0645\u0626\u0646\u06CC\u061F \u0633\u0627\u0639\u062A\u200C\u0647\u0627\u06CC \u062F\u0633\u062A\u06CC \u0647\u0645 \u0639\u0648\u0636 \u0645\u06CC\u200C\u0634\u0648\u0646\u062F"
+        )
       )
     ),
     runResult && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mt-2" }, runResult)
@@ -4282,7 +4332,10 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     if (onCreateAt) onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
   };
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling, unscheduledTasks: unscheduled, scheduledTasks: scheduled, onApplyAutoSchedule: (placements) => placements.forEach(({ id, time }) => {
-    const tsk = unscheduled.find((t) => t.id === id);
+    // dayTasks (نه فقط unscheduled) چون این callback هم برای بندِ ۷۲
+    // (فقط تسک‌های بدونِ‌ساعت) و هم بندِ ۷۳ (کلِ روز، شاملِ تسک‌هایی که
+    // قبلاً ساعت داشتند) صدا زده می‌شود.
+    const tsk = dayTasks.find((t) => t.id === id);
     if (tsk) onSchedule(id, time, tsk.duration);
   }) }), unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
     const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
