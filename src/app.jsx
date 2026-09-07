@@ -670,8 +670,8 @@ function Ic({ name, size = 16, className = "", style = {}, color }) {
     /* @__PURE__ */ React.createElement("path", { d: ICON_PATHS[name] || "" })
   );
 }
-function GlassCard({ children, className = "" }) {
-  return /* @__PURE__ */ React.createElement("div", { className: `glass-panel rounded-2xl overflow-hidden ${className}` }, /* @__PURE__ */ React.createElement("div", { className: "relative z-[1]" }, children));
+function GlassCard({ children, className = "", style }) {
+  return /* @__PURE__ */ React.createElement("div", { className: `glass-panel rounded-2xl overflow-hidden ${className}`, style }, /* @__PURE__ */ React.createElement("div", { className: "relative z-[1]" }, children));
 }
 function PageTransition({ pageKey, children }) {
   return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { key: pageKey, className: "glass-pane-enter" }, children));
@@ -1740,6 +1740,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   const [rangeLabel, setRangeLabel] = useState(subsection.rangeLabel || "");
   const [notes, setNotes] = useState(subsection.notes || "");
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
   const ov = subsection.recurrenceOverride;
   const [cadenceMode, setCadenceMode] = useState(ov ? ov.recurrence : "inherit");
   const [cadenceWeekdays, setCadenceWeekdays] = useState((ov && ov.recurrenceWeekdays) || []);
@@ -1781,6 +1782,13 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   const titleRow = React.createElement(
     "div",
     { className: "flex items-center gap-1.5 min-w-0" },
+    React.createElement("button", {
+      type: "button",
+      onClick: () => setShowColorPicker((p) => !p),
+      title: "\u0631\u0646\u06AF \u0632\u06CC\u0631\u0628\u062E\u0634",
+      className: "w-2 h-2 rounded-full shrink-0",
+      style: { background: subsection.color || "rgba(255,255,255,.25)" }
+    }),
     React.createElement("p", { className: "text-sm font-bold truncate", style: { color: subsection.archived || subsection.paused ? "var(--text-muted)" : "var(--text-normal)" } }, subsection.title),
     streak > 0 && React.createElement(
       "span",
@@ -1806,6 +1814,19 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   );
 
   const subtitle = !editing ? React.createElement("p", { className: "text-[10px] mb-2", style: { color: "var(--text-faint)" } }, subtitleParts.join(" \u00B7 ")) : null;
+  const colorPickerRow = showColorPicker ? React.createElement(
+    "div",
+    { className: "flex items-center gap-2 mb-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2" },
+    React.createElement("span", { className: "text-[11px] text-slate-500 shrink-0" }, "\u0631\u0646\u06AF:"),
+    React.createElement(ColorDotPicker, {
+      value: subsection.color,
+      onChange: (c) => {
+        onUpdateSubsection(subsection.id, { color: c });
+        setShowColorPicker(false);
+      },
+      size: 16
+    })
+  ) : null;
   const notesDisplay = !editing && subsection.notes ? React.createElement("p", { className: "text-[11px] mb-2", style: { color: "var(--text-muted)", fontStyle: "italic" } }, subsection.notes) : null;
   const heatmapToggle = !editing && task ? React.createElement(
     "button",
@@ -1886,7 +1907,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
 
   const body = editing ? editForm : task ? React.createElement(React.Fragment, null, completionBanner, React.createElement(LearningProgressEntry, { task, subsection, topic, onAddProgress })) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
 
-  return React.createElement(GlassCard, { className: "p-3.5" }, header, subtitle, notesDisplay, heatmapToggle, heatmap, body);
+  return React.createElement(GlassCard, { className: "p-3.5", style: subsection.color ? { borderRight: `3px solid ${subsection.color}` } : void 0 }, header, subtitle, colorPickerRow, notesDisplay, heatmapToggle, heatmap, body);
 }
 
 function AddSubsectionForm({ onAdd }) {
@@ -1966,7 +1987,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       progressTarget: 10,
       progressCurrent: 0
     });
-    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "" }] }));
+    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "", color: null }] }));
   };
   const updateSubsection = (id, patch) => {
     if (!topic) return;
