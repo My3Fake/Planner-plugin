@@ -1437,23 +1437,41 @@ var EXERCISE_TYPES = [
   { id: "\u06A9\u0627\u0631\u062F\u06CC\u0648", mode: "duration" },
   { id: "\u062F\u0648\u06CC\u062F\u0646", mode: "duration" }
 ];
+function computeFitnessStreak(exercises) {
+  let streak = 0;
+  for (let i = 0; ; i++) {
+    const d = /* @__PURE__ */ new Date();
+    d.setDate(d.getDate() - i);
+    const key = dateKeyOf(d);
+    const hasCompleted = exercises.some((e) => e.completedDate === key);
+    if (!hasCompleted) break;
+    streak += 1;
+  }
+  return streak;
+}
 function FitnessProgress({ exercises }) {
-  const weekData = [{ day: "\u0634", volume: 240 }, { day: "\u06CC", volume: 300 }, { day: "\u062F", volume: 180 }, { day: "\u0633", volume: 420 }, { day: "\u0686", volume: 260 }, { day: "\u067E", volume: 500 }, { day: "\u062C", volume: 320 }];
+  const days = lastNDays(7);
+  const weekData = days.map((d) => {
+    const dayExercises = exercises.filter((e) => e.completedDate === d.key);
+    const volume = dayExercises.reduce((s, e) => s + (e.mode === "sets" ? (e.sets || 0) * (e.reps || 0) : e.duration || 0), 0);
+    return { day: d.label, volume };
+  });
+  const hasAnyThisWeek = weekData.some((d) => d.volume > 0);
   const strengthVolume = exercises.reduce((s, e) => s + (e.mode === "sets" ? e.sets * e.reps : 0), 0);
   const cardioMinutes = exercises.reduce((s, e) => s + (e.mode === "duration" ? e.duration : 0), 0);
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "dumbbell", label: "\u062D\u062C\u0645 \u0642\u062F\u0631\u062A\u06CC", value: strengthVolume, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "flame", label: "\u062F\u0642\u0627\u06CC\u0642 \u06A9\u0627\u0631\u062F\u06CC\u0648", value: cardioMinutes, color: "#DB2777" })), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u062D\u062C\u0645 \u062A\u0645\u0631\u06CC\u0646 \u0647\u0641\u062A\u06AF\u06CC"), /* @__PURE__ */ React.createElement(SimpleLineChart, { data: weekData, xKey: "day", yKey: "volume", color: "#22D3EE", height: 140 })));
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "dumbbell", label: "\u062D\u062C\u0645 \u0642\u062F\u0631\u062A\u06CC", value: strengthVolume, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "flame", label: "\u062F\u0642\u0627\u06CC\u0642 \u06A9\u0627\u0631\u062F\u06CC\u0648", value: cardioMinutes, color: "#DB2777" })), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u062D\u062C\u0645 \u062A\u0645\u0631\u06CC\u0646 \u0647\u0641\u062A\u06AF\u06CC"), hasAnyThisWeek ? /* @__PURE__ */ React.createElement(SimpleLineChart, { data: weekData, xKey: "day", yKey: "volume", color: "#22D3EE", height: 140 }) : /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u0647\u06CC\u0686 \u062A\u0645\u0631\u06CC\u0646\u06CC \u062F\u0631 \u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631 \u062B\u0628\u062A \u0646\u0634\u062F\u0647.")));
 }
 function FitnessHub({ exercises, setExercises }) {
   const [sub, setSub] = useState("log");
   const [showAdd, setShowAdd] = useState(false);
   const [moodFor, setMoodFor] = useState(null);
-  const streak = 5;
+  const streak = computeFitnessStreak(exercises);
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["log", "\u062A\u0645\u0631\u06CC\u0646", "dumbbell"], ["progress", "\u067E\u06CC\u0634\u0631\u0641\u062A", "trending-up"]] }), sub === "log" && /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "flame", label: "\u0627\u0633\u062A\u0631\u06CC\u06A9 \u0648\u0631\u0632\u0634", value: `${streak} \u0631\u0648\u0632`, color: "#DB2777" }), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, exercises.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0645\u0631\u06CC\u0646\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC"), exercises.map((e) => /* @__PURE__ */ React.createElement("div", { key: e.id, className: "py-2.5 border-b border-white/[0.05] last:border-0" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3" }, /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => {
         const willBeDone = !e.done;
-        setExercises((p) => p.map((x) => x.id === e.id ? { ...x, done: willBeDone } : x));
+        setExercises((p) => p.map((x) => x.id === e.id ? { ...x, done: willBeDone, completedDate: willBeDone ? todayKey() : null } : x));
         if (willBeDone) setMoodFor(e.id);
       },
       className: "w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0",
@@ -1463,7 +1481,7 @@ function FitnessHub({ exercises, setExercises }) {
   ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${e.done ? "text-slate-500 line-through" : "text-slate-100"}` }, e.name), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500" }, e.mode === "sets" ? `${e.sets}\xD7${e.reps}` : `${e.duration} \u062F\u0642\u06CC\u0642\u0647`)), /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-md bg-white/[0.05] text-slate-400" }, e.type), /* @__PURE__ */ React.createElement("button", { onClick: () => setExercises((p) => p.filter((x) => x.id !== e.id)), className: "w-6 h-6 rounded-md flex items-center justify-center text-rose-400/80 hover:bg-rose-500/10 shrink-0" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 12 }))), moodFor === e.id && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-2 mr-9" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-400" }, "\u062D\u0633 \u0628\u0639\u062F \u0627\u0632 \u062A\u0645\u0631\u06CC\u0646:"), ["\u{1F61E}", "\u{1F610}", "\u{1F642}", "\u{1F4AA}", "\u{1F525}"].map((em, i) => /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => {
     setExercises((p) => p.map((x) => x.id === e.id ? { ...x, mood: i + 1 } : x));
     setMoodFor(null);
-  }, className: "text-lg" }, em)))))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u062A\u0645\u0631\u06CC\u0646")), sub === "progress" && /* @__PURE__ */ React.createElement(FitnessProgress, { exercises }), showAdd && /* @__PURE__ */ React.createElement(AddExerciseModal, { onClose: () => setShowAdd(false), onAdd: (ex) => setExercises((p) => [{ id: uid(), done: false, mood: null, ...ex }, ...p]) }));
+  }, className: "text-lg" }, em)))))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u062A\u0645\u0631\u06CC\u0646")), sub === "progress" && /* @__PURE__ */ React.createElement(FitnessProgress, { exercises }), showAdd && /* @__PURE__ */ React.createElement(AddExerciseModal, { onClose: () => setShowAdd(false), onAdd: (ex) => setExercises((p) => [{ id: uid(), done: false, mood: null, completedDate: null, ...ex }, ...p]) }));
 }
 function AddExerciseModal({ onClose, onAdd }) {
   const [name, setName] = useState(""), [type, setType] = useState("\u0642\u062F\u0631\u062A\u06CC");
