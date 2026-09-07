@@ -931,6 +931,24 @@ function ProgressiveTaskBar({ task, onAddProgress }) {
     }
   ), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "px-2.5 py-1 rounded-lg text-cyan-300 text-[11px] font-medium shrink-0", style: { background: "rgba(6,182,212,0.2)" } }, "\u062B\u0628\u062A")), /* @__PURE__ */ React.createElement(ProgressLogList, { log: task.progressLog }));
 }
+// Item 22 ("دسته‌ها"/categories) - provisional, automatic-only slice. Open
+// question #7 (what "category" refers to) is still unanswered, but the
+// spec explicitly allows auto-derived colors as an alternative to manual
+// per-item assignment ("رنگ‌ها بتوانند ... به‌صورت خودکار ... تعیین شوند"),
+// and a task's free-text `tag` is the closest existing categorization
+// concept in the data model. Rather than adding yet another manual
+// color-picker row to AddTaskModal (already flagged elsewhere as too long/
+// crowded), each distinct tag string gets a consistent, deterministic
+// color hashed from its own text - same tag always renders the same color,
+// different tags are visually distinguishable, zero new settings/data
+// fields, nothing to migrate if "category" turns out to mean something
+// else once question #7 is answered.
+function colorForTag(tag) {
+  if (!tag) return null;
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+  return INSTANCE_COLOR_PALETTE[h % INSTANCE_COLOR_PALETTE.length];
+}
 function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress }) {
   const q = QUADRANTS.find((x) => x.id === task.quad) || QUADRANTS[1];
   const [openSched, setOpenSched] = useState(false);
@@ -943,7 +961,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress }
       style: { borderColor: task.status === "done" ? q.color : "rgba(255,255,255,.25)", background: task.status === "done" ? q.color : "transparent" }
     },
     task.status === "done" && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10 }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => setOpenSched((v) => !v),
