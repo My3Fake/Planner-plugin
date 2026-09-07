@@ -1901,8 +1901,14 @@ function AddExerciseModal({ onClose, onAdd }) {
     mode === "sets" ? /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-2" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u062A\u0639\u062F\u0627\u062F \u0633\u062A"), /* @__PURE__ */ React.createElement("input", { type: "number", value: sets, onChange: (e) => setSets(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" })), /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u062A\u06A9\u0631\u0627\u0631 \u062F\u0631 \u0647\u0631 \u0633\u062A"), /* @__PURE__ */ React.createElement("input", { type: "number", value: reps, onChange: (e) => setReps(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" }))) : /* @__PURE__ */ React.createElement("div", { className: "mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u0645\u062F\u062A \u0632\u0645\u0627\u0646 (\u062F\u0642\u06CC\u0642\u0647)"), /* @__PURE__ */ React.createElement("input", { type: "number", value: duration, onChange: (e) => setDuration(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" }))
   );
 }
-function LearningGoalEditor({ topic, onChange }) {
-  const g = topic.goal || {};
+// Spec item 28 (per-node goals): originally only used for the topic root,
+// this component only ever reads/writes a plain `goal` field ({description,
+// expectedOutcome, targetJy/Jm/Jd}) off whatever object it's given — no
+// other topic-specific coupling (no .subsections, no .title) \u2014 so it's
+// reused as-is for individual subsections/tracks at any depth, not just
+// the topic. Renamed the prop from `topic` to the more accurate `entity`.
+function LearningGoalEditor({ entity, onChange }) {
+  const g = entity.goal || {};
   const nowJ = Jalali ? Jalali.toJalaliParts(/* @__PURE__ */ new Date()) : { jy: 1404, jm: 1, jd: 1 };
   const jy = g.targetJy || nowJ.jy, jm = g.targetJm || nowJ.jm, jd = g.targetJd || nowJ.jd;
   const hasTarget = !!g.targetJy;
@@ -1932,6 +1938,15 @@ function LearningGoalEditor({ topic, onChange }) {
       onChange: (e) => onChange({ ...g, description: e.target.value }),
       rows: 2,
       placeholder: "\u0645\u062B\u0644\u0627\u064B: \u062A\u0627 \u067E\u0627\u06CC\u0627\u0646 \u0633\u0627\u0644 \u06A9\u0644 \u062C\u0632\u0621 \u0639\u0645 \u0631\u0648 \u062D\u0641\u0638 \u06A9\u0646\u0645",
+      className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none resize-none mb-3"
+    }
+  ), /* @__PURE__ */ React.createElement(
+    "textarea",
+    {
+      value: g.expectedOutcome || "",
+      onChange: (e) => onChange({ ...g, expectedOutcome: e.target.value }),
+      rows: 2,
+      placeholder: "\u0646\u062A\u06CC\u062C\u0647\u0654 \u0645\u0648\u0631\u062F\u0627\u0646\u062A\u0638\u0627\u0631 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC) \u2014 \u0645\u062B\u0644\u0627\u064B: \u0628\u062A\u0648\u0627\u0646\u0645 \u06CC\u06A9 \u0645\u06A9\u0627\u0644\u0645\u0647\u0654 \u0633\u0627\u062F\u0647 \u0627\u0646\u06AF\u0644\u06CC\u0633\u06CC \u0631\u0627 \u0628\u062F\u0648\u0646 \u0632\u06CC\u0631\u0646\u0648\u06CC\u0633 \u0628\u062E\u0648\u0627\u0646\u0645",
       className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none resize-none mb-3"
     }
   ), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 flex-wrap mb-2.5" }, /* @__PURE__ */ React.createElement(
@@ -2013,7 +2028,7 @@ function TrackHeatmap({ task, subsection, weeks = 12 }) {
 function LearningProgressLogList({ log, unit }) {
   if (!log || !log.length) return null;
   return React.createElement("div", { className: "mt-2 space-y-1", style: { maxHeight: 96, overflowY: "auto" } }, log.slice(0, 8).map((entry) => React.createElement("div", { key: entry.id, className: "text-[10px] flex items-center justify-between text-slate-500" },
-    React.createElement("span", null, formatDateKeyFa(entry.date), entry.note ? ` \u2014 ${entry.note}` : ""),
+    React.createElement("span", null, formatDateKeyFa(entry.date), entry.detail ? ` \u2014 ${entry.detail}` : "", entry.note ? ` \u2014 ${entry.note}` : ""),
     React.createElement("span", { style: { color: "#22D3EE" } }, `+${toFa(entry.amount)} ${unit || ""}`)
   )));
 }
@@ -2026,6 +2041,8 @@ function LearningProgressEntry({ task, subsection, topic, onAddProgress }) {
   const quota = subsection.quotaPerPeriod || 0;
   const [amount, setAmount] = useState(quota ? toFa(quota) : "");
   const [note, setNote] = useState("");
+  const [showDetail, setShowDetail] = useState(false);
+  const [detail, setDetail] = useState("");
   const pct = Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100));
   const surplusInfo = computeTrackSurplusInfo(subsection, topic, task);
   const stillOwed = computeTodayStillOwed(subsection, topic, task);
@@ -2036,9 +2053,11 @@ function LearningProgressEntry({ task, subsection, topic, onAddProgress }) {
   const submit = () => {
     const n = parseFaNumber(amount);
     if (!n || n <= 0) return;
-    onAddProgress(task.id, n, note);
+    onAddProgress(task.id, n, note, detail);
     setAmount(quota ? toFa(quota) : "");
     setNote("");
+    setDetail("");
+    setShowDetail(false);
   };
   const bankParts = [];
   if (quota > 0 && surplusInfo && surplusInfo.surplus > 0) {
@@ -2071,6 +2090,20 @@ function LearningProgressEntry({ task, subsection, topic, onAddProgress }) {
       React.createElement("input", { type: "text", value: note, onChange: (e) => setNote(e.target.value), placeholder: "\u06CC\u0627\u062F\u062F\u0627\u0634\u062A (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)", className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none" }),
       React.createElement("button", { type: "button", onClick: submit, className: "px-2.5 py-1 bg-fuchsia-500/20 text-fuchsia-300 rounded-lg text-xs shrink-0" }, "\u062B\u0628\u062A")
     ),
+    // Spec item 29 (optional granularity): most people log a plain amount
+    // and never touch this \u2014 but for cases like "Harry Potter 2, pages
+    // 40 to 55" or "Quran review, page A to B", a free-text detail can
+    // optionally be attached to THIS specific log entry (not a static
+    // label on the whole track, which subsection.rangeLabel already
+    // covers \u2014 this is per-entry, capturing exactly what THIS session
+    // covered). Collapsed behind a toggle so it never adds friction for
+    // anyone who doesn't want it.
+    pct < 100 && React.createElement(
+      "button",
+      { type: "button", onClick: () => setShowDetail((v) => !v), className: "text-[10px]", style: { color: "var(--text-faint)" } },
+      showDetail ? "\u2212 \u062C\u0632\u0626\u06CC\u0627\u062A" : "+ \u062C\u0632\u0626\u06CC\u0627\u062A (\u0645\u062B\u0644\u0627\u064B: \u0635\u0641\u062D\u0647 \u06F1\u06F0 \u062A\u0627 \u06F1\u06F5)"
+    ),
+    pct < 100 && showDetail && React.createElement("input", { type: "text", value: detail, onChange: (e) => setDetail(e.target.value), placeholder: "\u062C\u0632\u0626\u06CC\u0627\u062A \u0627\u06CC\u0646 \u062B\u0628\u062A \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647 \u06F1\u06F0 \u062A\u0627 \u06F1\u06F5", className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none" }),
     React.createElement(LearningProgressLogList, { log: task.progressLog, unit: subsection.unit })
   );
 }
@@ -2078,6 +2111,7 @@ function SubsectionCard({ subsection, topic, tasks, onUpdateSubsection, onDelete
   const task = tasks.find((tk) => tk.id === subsection.linkedTaskId);
   const [editing, setEditing] = useState(false);
   const [childrenOpen, setChildrenOpen] = useState(false);
+  const [showGoal, setShowGoal] = useState(false);
   const [unit, setUnit] = useState(subsection.unit);
   const [target, setTarget] = useState(subsection.target);
   const [quota, setQuota] = useState(subsection.quotaPerPeriod ?? 1);
@@ -2182,6 +2216,21 @@ function SubsectionCard({ subsection, topic, tasks, onUpdateSubsection, onDelete
     showHeatmap ? "\u0646\u0645\u0627\u06CC\u0634 \u0641\u0639\u0627\u0644\u06CC\u062A: \u0628\u0633\u062A\u0646" : "\u0646\u0645\u0627\u06CC\u0634 \u0641\u0639\u0627\u0644\u06CC\u062A (۱۲ \u0647\u0641\u062A\u0647 \u0627\u062E\u06CC\u0631)"
   ) : null;
   const heatmap = !editing && task && showHeatmap ? React.createElement("div", { className: "mb-2" }, React.createElement(TrackHeatmap, { task, subsection })) : null;
+
+  // Spec item 28: same per-node goal capability the topic root already had
+  // (LearningGoalEditor, generalized to accept any `entity` with a `goal`
+  // field), now also available per subsection/track at any depth.
+  // Collapsed by default (like the heatmap) to avoid cluttering every
+  // card; a compact badge shows when a goal IS set even while collapsed.
+  const hasGoal = subsection.goal && (subsection.goal.description || subsection.goal.targetJy);
+  const goalDaysLeft = subsection.goal && subsection.goal.targetJy && Jalali ? Math.round((Jalali.fromJalaliParts(subsection.goal.targetJy, subsection.goal.targetJm, subsection.goal.targetJd) - /* @__PURE__ */ new Date()) / 864e5) : null;
+  const goalToggle = !editing ? React.createElement(
+    "button",
+    { type: "button", onClick: () => setShowGoal((v) => !v), className: "text-[10px] mb-2 items-center gap-1", style: { color: hasGoal ? "#F0ABFC" : "var(--text-muted)", display: "inline-flex" } },
+    React.createElement(Ic, { name: "sparkles", size: 10 }),
+    hasGoal ? (showGoal ? "\u0646\u0645\u0627\u06CC\u0634 \u0647\u062F\u0641: \u0628\u0633\u062A\u0646" : goalDaysLeft !== null ? goalDaysLeft >= 0 ? `\u0647\u062F\u0641 \u062F\u0627\u0631\u06CC \u2014 ${toFa(goalDaysLeft)} \u0631\u0648\u0632 \u0645\u0627\u0646\u062F\u0647` : `\u0647\u062F\u0641 \u062F\u0627\u0631\u06CC \u2014 ${toFa(-goalDaysLeft)} \u0631\u0648\u0632 \u06AF\u0630\u0634\u062A\u0647` : "\u0647\u062F\u0641 \u062F\u0627\u0631\u06CC \u2014 \u0646\u0645\u0627\u06CC\u0634") : showGoal ? "\u0628\u0633\u062A\u0646" : "+ \u0647\u062F\u0641 \u0628\u0631\u0627\u06CC \u0627\u06CC\u0646 \u0632\u06CC\u0631\u0645\u062C\u0645\u0648\u0639\u0647"
+  ) : null;
+  const goalEditor = !editing && showGoal ? React.createElement("div", { className: "mb-2" }, React.createElement(LearningGoalEditor, { entity: subsection, onChange: (goal) => onUpdateSubsection(subsection.id, { goal }) })) : null;
 
   const pct = task ? Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100)) : 0;
   const completionBanner = !editing && task && pct >= 100 && !subsection.archived ? React.createElement(
@@ -2288,7 +2337,7 @@ function SubsectionCard({ subsection, topic, tasks, onUpdateSubsection, onDelete
     }))
   ) : null;
 
-  return React.createElement(GlassCard, { className: "p-3.5", style: subsection.color ? { borderRight: `3px solid ${subsection.color}` } : void 0 }, header, subtitle, colorPickerRow, notesDisplay, heatmapToggle, heatmap, body, childrenToggle, childrenList);
+  return React.createElement(GlassCard, { className: "p-3.5", style: subsection.color ? { borderRight: `3px solid ${subsection.color}` } : void 0 }, header, subtitle, colorPickerRow, notesDisplay, goalToggle, goalEditor, heatmapToggle, heatmap, body, childrenToggle, childrenList);
 }
 
 function AddSubsectionForm({ onAdd }) {
@@ -2637,7 +2686,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     topic.subsections.forEach((s) => s.linkedTaskId && deleteTask(s.linkedTaskId));
     setProjects((prev) => prev.filter((p) => p.id !== topic.id));
     setActiveId(null);
-  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), topicColorPickerRow, /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: topic.color || "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
+  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), topicColorPickerRow, /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: topic.color || "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { entity: topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
     return /* @__PURE__ */ React.createElement(
       SubsectionCard,
       {
@@ -3163,28 +3212,44 @@ function DailyReportTrackRow({ subsection, topic, task, onAddProgress }) {
 function buildLearningTopicMarkdownReport(topic, tasks) {
   const lines = [];
   lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC: ${topic.title}`, "", `\u062A\u0627\u0631\u06CC\u062E \u062E\u0631\u0648\u062C\u06CC: ${formatDateKeyFa(todayKey())}`, "");
-  (topic.subsections || []).forEach((sec) => {
-    const task = (tasks || []).find((tk) => tk.id === sec.linkedTaskId);
-    const statusLabel = sec.archived ? "\u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647" : sec.paused ? "\u0645\u062A\u0648\u0642\u0641" : "\u0641\u0639\u0627\u0644";
-    lines.push(`## ${sec.title} (${statusLabel})`);
-    if (sec.rangeLabel) lines.push(`- \u0628\u0627\u0632\u0647: ${sec.rangeLabel}`);
-    if (sec.quotaPerPeriod) lines.push(`- \u0633\u0647\u0645\u06CC\u0647: ${sec.quotaPerPeriod} ${sec.unit} / \u062F\u0648\u0631\u0647`);
-    if (task) {
-      const pct = Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100));
-      lines.push(`- \u067E\u06CC\u0634\u0631\u0641\u062A: ${task.progressCurrent} / ${task.progressTarget} ${task.progressUnit} (${pct}%)`);
-      const streak = computeTrackStreak(sec, topic, task);
-      if (streak > 0) lines.push(`- \u0631\u0634\u062A\u0647\u200C\u06CC \u0641\u0639\u0644\u06CC: ${streak} \u0631\u0648\u0632 \u0645\u062A\u0648\u0627\u0644\u06CC`);
-    }
-    if (sec.notes) lines.push(`- \u06CC\u0627\u062F\u062F\u0627\u0634\u062A: ${sec.notes}`);
-    if (task && task.progressLog && task.progressLog.length) {
-      lines.push("", "### \u062A\u0627\u0631\u06CC\u062E\u0686\u0647\u200C\u06CC \u067E\u06CC\u0634\u0631\u0641\u062A");
-      const sortedLog = [...task.progressLog].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
-      sortedLog.forEach((e) => {
-        lines.push(`- ${formatDateKeyFa(e.date)}: +${e.amount} ${sec.unit}${e.note ? ` \u2014 ${e.note}` : ""}`);
-      });
-    }
-    lines.push("");
-  });
+  // Spec item 25 (multi-level tree): walks subsection.children recursively
+  // instead of only the top-level array \u2014 otherwise anything nested more
+  // than one level deep would silently be missing from the exported
+  // report. Heading depth grows with tree depth (## -> ### -> ####, capped
+  // at 6, Markdown's own limit) so the export visually mirrors the actual
+  // nesting instead of flattening it.
+  const walk = (sections, depth) => {
+    (sections || []).forEach((sec) => {
+      const task = (tasks || []).find((tk) => tk.id === sec.linkedTaskId);
+      const statusLabel = sec.archived ? "\u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647" : sec.paused ? "\u0645\u062A\u0648\u0642\u0641" : "\u0641\u0639\u0627\u0644";
+      const hashes = "#".repeat(Math.min(6, depth + 2));
+      lines.push(`${hashes} ${sec.title} (${statusLabel})`);
+      if (sec.rangeLabel) lines.push(`- \u0628\u0627\u0632\u0647: ${sec.rangeLabel}`);
+      if (sec.quotaPerPeriod) lines.push(`- \u0633\u0647\u0645\u06CC\u0647: ${sec.quotaPerPeriod} ${sec.unit} / \u062F\u0648\u0631\u0647`);
+      if (task) {
+        const pct = Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100));
+        lines.push(`- \u067E\u06CC\u0634\u0631\u0641\u062A: ${task.progressCurrent} / ${task.progressTarget} ${task.progressUnit} (${pct}%)`);
+        const streak = computeTrackStreak(sec, topic, task);
+        if (streak > 0) lines.push(`- \u0631\u0634\u062A\u0647\u200C\u06CC \u0641\u0639\u0644\u06CC: ${streak} \u0631\u0648\u0632 \u0645\u062A\u0648\u0627\u0644\u06CC`);
+      }
+      if (sec.goal && (sec.goal.description || sec.goal.targetJy)) {
+        if (sec.goal.description) lines.push(`- \u0647\u062F\u0641: ${sec.goal.description}`);
+        if (sec.goal.expectedOutcome) lines.push(`- \u0646\u062A\u06CC\u062C\u0647\u0654 \u0645\u0648\u0631\u062F\u0627\u0646\u062A\u0638\u0627\u0631: ${sec.goal.expectedOutcome}`);
+        if (sec.goal.targetJy && Jalali) lines.push(`- \u0645\u0647\u0644\u062A: ${Jalali.formatJalali(Jalali.fromJalaliParts(sec.goal.targetJy, sec.goal.targetJm, sec.goal.targetJd), { weekday: false })}`);
+      }
+      if (sec.notes) lines.push(`- \u06CC\u0627\u062F\u062F\u0627\u0634\u062A: ${sec.notes}`);
+      if (task && task.progressLog && task.progressLog.length) {
+        lines.push("", `${"#".repeat(Math.min(6, depth + 3))} \u062A\u0627\u0631\u06CC\u062E\u0686\u0647\u200C\u06CC \u067E\u06CC\u0634\u0631\u0641\u062A`);
+        const sortedLog = [...task.progressLog].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+        sortedLog.forEach((e) => {
+          lines.push(`- ${formatDateKeyFa(e.date)}: +${e.amount} ${sec.unit}${e.note ? ` \u2014 ${e.note}` : ""}${e.detail ? ` (${e.detail})` : ""}`);
+        });
+      }
+      lines.push("");
+      if (sec.children && sec.children.length) walk(sec.children, depth + 1);
+    });
+  };
+  walk(topic.subsections, 0);
   lines.push(`_\u0635\u0627\u062F\u0631\u0634\u062F\u0647 \u062A\u0648\u0633\u0637 \u067E\u0644\u0627\u06AF\u06CC\u0646 \u0632\u0646\u062F\u06AF\u06CC\u0622\u0631\u0627\u0645 \u062F\u0631 ${(/* @__PURE__ */ new Date()).toLocaleTimeString("fa-IR")}_`);
   return lines.join("\n");
 }
@@ -6026,11 +6091,12 @@ function LifeFlowApp() {
     // وضعیتِ done→todo این trigger را دوباره اجرا نمی‌کند.
     return willBeDone ? runAutomationRules(next, automationRules, "task_completed") : next;
   }));
-  const addTaskProgress = (id, amount, note) => setTasks((p) => p.map((t2) => {
+  const addTaskProgress = (id, amount, note, detail) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id || t2.progressType !== "progressive") return t2;
     const next = Math.min(t2.progressTarget, (t2.progressCurrent || 0) + amount);
     const done = next >= t2.progressTarget;
     const entry = { id: uid(), date: todayKey(), amount, note: (note || "").trim() };
+    if (detail && detail.trim()) entry.detail = detail.trim();
     return { ...t2, progressCurrent: next, progressLog: [entry, ...t2.progressLog || []], status: done ? "done" : "todo", completedDate: done ? todayKey() : null };
   }));
   useEffect(() => {
