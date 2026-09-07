@@ -109,7 +109,9 @@ function getTaskCalendarId(task) {
 // موتورِ اجرا فعلاً فقط `task_completed` را واقعاً بررسی می‌کند —
 // این محدودیت صادقانه در UI هم گفته می‌شود (نه فقط در کامنتِ کد).
 var AUTOMATION_TRIGGERS = [
-  { id: "task_completed", label: "\u0648\u0642\u062A\u06CC \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u06A9\u0645\u06CC\u0644 \u0634\u0648\u062F" }
+  { id: "task_completed", label: "\u0648\u0642\u062A\u06CC \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u06A9\u0645\u06CC\u0644 \u0634\u0648\u062F" },
+  { id: "deadline_approaching", label: "\u0648\u0642\u062A\u06CC \u0645\u0648\u0639\u062F\u06CC\u06A9 \u062A\u0633\u06A9 \u0646\u0632\u062F\u06CC\u06A9 \u0634\u0648\u062F" },
+  { id: "time_of_day", label: "\u0647\u0631 \u0631\u0648\u0632 \u062F\u0631 \u06CC\u06A9 \u0633\u0627\u0639\u062A\u0650 \u0645\u0634\u062E\u0635" }
 ];
 var AUTOMATION_ACTIONS = [
   { id: "move_to_calendar", label: "\u0627\u0646\u062A\u0642\u0627\u0644 \u0628\u0647 \u062A\u0642\u0648\u06CC\u0645" },
@@ -129,6 +131,54 @@ function applyAutomationAction(task, action) {
 }
 function runAutomationRules(task, rules, triggerId) {
   return (rules || []).filter((r) => r.enabled !== false && r.trigger === triggerId).reduce((acc, r) => ruleConditionMatches(r, acc) ? applyAutomationAction(acc, r.action) : acc, task);
+}
+// --- Lane 9: triggerهای زمان‌محور (بندهای ۱۲۸/۱۲۹) ---------------------
+// این‌ها بر خلافِ `task_completed` (که یک رویدادِ لحظه‌ای در `toggleTask`
+// است)، باید هر بار که ساعت تیک می‌خورد دوباره ارزیابی شوند — دقیقاً
+// همان الگویی که ساعتِ `now` (هر ۶۰ ثانیه) برای یادآوری‌ها استفاده
+// می‌کند. `actionWouldChange` قبل از اعمالِ واقعیِ عمل چک می‌شود تا وقتی
+// اثرِ یک عمل از قبل روی تسک نشسته، دوباره یک آبجکتِ تازه (و رندرِ
+// اضافه) ساخته نشود — عمل‌ها idempotent‌اند (مقدار را می‌نشانند، نه
+// افزایش می‌دهند)، پس این فقط بهینه‌سازیِ رندر است، نه یک نیازِ صحت.
+function actionWouldChange(task, action) {
+  if (action.type === "move_to_calendar") return getTaskCalendarId(task) !== action.value;
+  if (action.type === "add_tag") return task.tag !== action.value;
+  if (action.type === "set_priority") return task.priority !== action.value;
+  return false;
+}
+function isDeadlineApproaching(task, minutesBefore, now) {
+  if (!task.time || task.status === "done") return false;
+  if (!isTaskDueOn(task, now)) return false;
+  const [hh, mm] = task.time.split(":").map(Number);
+  const due = new Date(now);
+  due.setHours(hh, mm, 0, 0);
+  const diffMin = (due - now) / 6e4;
+  return diffMin >= 0 && diffMin <= minutesBefore;
+}
+function isTimeOfDayMatch(atTime, now) {
+  const nowHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return nowHM === atTime;
+}
+function evaluateTimeBasedRule(rule, task, now) {
+  if (rule.trigger === "deadline_approaching") return isDeadlineApproaching(task, rule.condition && rule.condition.minutesBefore || 30, now);
+  if (rule.trigger === "time_of_day") return isTimeOfDayMatch(rule.condition && rule.condition.atTime || "09:00", now);
+  return false;
+}
+function runTimeBasedRules(tasks, rules, now) {
+  const timeRules = (rules || []).filter((r) => r.enabled !== false && (r.trigger === "deadline_approaching" || r.trigger === "time_of_day"));
+  if (timeRules.length === 0) return tasks;
+  let changed = false;
+  const next = tasks.map((t2) => {
+    let acc = t2;
+    timeRules.forEach((r) => {
+      if (evaluateTimeBasedRule(r, acc, now) && ruleConditionMatches(r, acc) && actionWouldChange(acc, r.action)) {
+        acc = applyAutomationAction(acc, r.action);
+        changed = true;
+      }
+    });
+    return acc;
+  });
+  return changed ? next : tasks;
 }
 function playPomodoroChime(kind) {
   try {
@@ -3512,18 +3562,22 @@ function ActionPicker({ actionType, actionValue, onChangeType, onChangeValue, ca
 function AutomationRulesModal({ onClose, rules, calendars, onAdd, onToggleEnabled, onDelete, buttons, onAddButton, onDeleteButton }) {
   const [modalTab, setModalTab] = useState("rules");
   const [name, setName] = useState("");
+  const [triggerId, setTriggerId] = useState(AUTOMATION_TRIGGERS[0].id);
+  const [minutesBefore, setMinutesBefore] = useState(30);
+  const [atTime, setAtTime] = useState("09:00");
   const [quadFilter, setQuadFilter] = useState("");
   const [actionType, setActionType] = useState(AUTOMATION_ACTIONS[0].id);
   const [actionValue, setActionValue] = useState(calendars && calendars[0] ? calendars[0].id : "");
   const submit = () => {
     const n = name.trim();
     if (!n || !actionValue) return;
+    const condition = { ...quadFilter ? { quad: quadFilter } : {}, ...triggerId === "deadline_approaching" ? { minutesBefore: Number(minutesBefore) || 30 } : {}, ...triggerId === "time_of_day" ? { atTime } : {} };
     onAdd({
       id: uid(),
       name: n,
       enabled: true,
-      trigger: "task_completed",
-      condition: quadFilter ? { quad: quadFilter } : null,
+      trigger: triggerId,
+      condition: Object.keys(condition).length ? condition : null,
       action: { type: actionType, value: actionValue }
     });
     setName("");
@@ -3543,11 +3597,11 @@ function AutomationRulesModal({ onClose, rules, calendars, onAdd, onToggleEnable
     ModalShell,
     { title: "\u0627\u062A\u0648\u0645\u0627\u0633\u06CC\u0648\u0646", onClose },
     /* @__PURE__ */ React.createElement("div", { className: "mb-3" }, /* @__PURE__ */ React.createElement(SubTabs, { options: [["rules", "\u0642\u0648\u0627\u0646\u06CC\u0646 \u062E\u0648\u062F\u06A9\u0627\u0631"], ["buttons", "\u062F\u06A9\u0645\u0647\u200C\u0647\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC"]], value: modalTab, onChange: setModalTab })),
-    modalTab === "rules" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-3 leading-5" }, "قانون یعنی «وقتی X، آن‌وقت Y». نسخه‌ی فعلی فقط trigger «تسک تکمیل شد» را واقعاً اجرا می‌کند — انتقال به تقویم/تغییرِ برچسب/تغییرِ اولویت روی همان تسک، همان لحظه‌ی تکمیل."), rules.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, "\u0647\u0646\u0648\u0632 \u0642\u0627\u0646\u0648\u0646\u06CC \u0646\u0633\u0627\u062E\u062A\u0647\u200C\u0627\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2 mb-4" }, rules.map((r) => /* @__PURE__ */ React.createElement(
+    modalTab === "rules" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-3 leading-5" }, "قانون یعنی «وقتی X، آن‌وقت Y». سه trigger واقعاً اجرا می‌شوند: تکمیلِ تسک (آنی)، نزدیک‌شدنِ موعد و ساعتِ مشخصِ روزانه (هر دو با تیکِ هر ۶۰ثانیه‌ی ساعت بررسی می‌شوند، نه آنی)."), rules.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, "\u0647\u0646\u0648\u0632 \u0642\u0627\u0646\u0648\u0646\u06CC \u0646\u0633\u0627\u062E\u062A\u0647\u200C\u0627\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2 mb-4" }, rules.map((r) => /* @__PURE__ */ React.createElement(
       "div",
       { key: r.id, className: "flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5" },
       /* @__PURE__ */ React.createElement(Ic, { name: "zap", size: 13, className: r.enabled === false ? "text-slate-600" : "text-amber-300" }),
-      /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm truncate ${r.enabled === false ? "text-slate-500" : "text-slate-100"}` }, r.name), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, AUTOMATION_TRIGGERS.find((x) => x.id === r.trigger)?.label, r.condition && r.condition.quad ? ` \u2022 ${QUADRANTS.find((q) => q.id === r.condition.quad)?.label || ""}` : "", " \u2192 ", AUTOMATION_ACTIONS.find((x) => x.id === r.action.type)?.label)),
+      /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm truncate ${r.enabled === false ? "text-slate-500" : "text-slate-100"}` }, r.name), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, AUTOMATION_TRIGGERS.find((x) => x.id === r.trigger)?.label, r.trigger === "deadline_approaching" && r.condition && r.condition.minutesBefore ? ` (${r.condition.minutesBefore} \u062F\u0642\u06CC\u0642\u0647 \u0642\u0628\u0644)` : "", r.trigger === "time_of_day" && r.condition && r.condition.atTime ? ` (${r.condition.atTime})` : "", r.condition && r.condition.quad ? ` \u2022 ${QUADRANTS.find((q) => q.id === r.condition.quad)?.label || ""}` : "", " \u2192 ", AUTOMATION_ACTIONS.find((x) => x.id === r.action.type)?.label)),
       /* @__PURE__ */ React.createElement(ToggleSwitch, { on: r.enabled !== false, onClick: () => onToggleEnabled(r.id) }),
       /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => onDelete(r.id), className: "shrink-0 opacity-70 hover:opacity-100", "aria-label": "\u062D\u0630\u0641 \u0642\u0627\u0646\u0648\u0646" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 }))
     ))), /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0642\u0627\u0646\u0648\u0646 \u062A\u0627\u0632\u0647"), /* @__PURE__ */ React.createElement(
@@ -3558,6 +3612,24 @@ function AutomationRulesModal({ onClose, rules, calendars, onAdd, onToggleEnable
         onChange: (e) => setName(e.target.value),
         placeholder: "\u0645\u062B\u0644\u0627\u064B: \u0627\u0631\u0634\u06CC\u0648\u200C\u06A9\u0631\u062F\u0646 \u06A9\u0627\u0631\u0647\u0627\u06CC \u062A\u0645\u0627\u0645\u200C\u0634\u062F\u0647",
         className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-sm outline-none focus:border-fuchsia-400/60 mb-2"
+      }
+    ), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 mb-1" }, "\u0632\u0645\u0627\u0646\u06CC \u06A9\u0647..."), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap mb-2" }, AUTOMATION_TRIGGERS.map((tr) => /* @__PURE__ */ React.createElement(Chip, { key: tr.id, active: triggerId === tr.id, onClick: () => setTriggerId(tr.id) }, tr.label))), triggerId === "deadline_approaching" && /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "number",
+        min: "1",
+        value: minutesBefore,
+        onChange: (e) => setMinutesBefore(e.target.value),
+        placeholder: "\u0686\u0646\u062F \u062F\u0642\u06CC\u0642\u0647 \u0642\u0628\u0644 \u0627\u0632 \u0645\u0648\u0639\u062F\u061F \u0645\u062B\u0644\u0627\u064B ۳۰",
+        className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-sm outline-none focus:border-fuchsia-400/60 mb-2"
+      }
+    ), triggerId === "time_of_day" && /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "time",
+        value: atTime,
+        onChange: (e) => setAtTime(e.target.value),
+        className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-fuchsia-400/60 mb-2"
       }
     ), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 mb-1" }, "\u0641\u0642\u0637 \u0628\u0631\u0627\u06CC \u0631\u0628\u0639 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap mb-3" }, /* @__PURE__ */ React.createElement(Chip, { active: quadFilter === "", onClick: () => setQuadFilter("") }, "\u0647\u0645\u0647"), QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: quadFilter === q.id, color: q.color, onClick: () => setQuadFilter(q.id) }, q.label))), /* @__PURE__ */ React.createElement(ActionPicker, { actionType, actionValue, onChangeType: setActionType, onChangeValue: setActionValue, calendars }), /* @__PURE__ */ React.createElement(
       "button",
@@ -4736,6 +4808,12 @@ function LifeFlowApp() {
   const addAutomationRule = (rule) => setAutomationRules((p) => [...p, rule]);
   const toggleAutomationRuleEnabled = (id) => setAutomationRules((p) => p.map((r) => r.id === id ? { ...r, enabled: r.enabled === false } : r));
   const deleteAutomationRule = (id) => setAutomationRules((p) => p.filter((r) => r.id !== id));
+  // بند ۱۲۸/۱۲۹: بر خلافِ `task_completed` که در `toggleTask` قلاب شده،
+  // triggerهای زمان‌محور باید هر بار `now` تیک می‌خورد (هر ۶۰ ثانیه، دقیقاً
+  // همان تیکِ استفاده‌شده برای یادآوری‌ها) دوباره ارزیابی شوند.
+  useEffect(() => {
+    setTasks((prev) => runTimeBasedRules(prev, automationRules, now));
+  }, [now, automationRules]);
   // بند ۱۲۷: دکمه‌های عملیاتیِ سفارشی — همان موتورِ عمل (`applyAutomationAction`)
   // را دوباره استفاده می‌کند، فقط بدونِ trigger/condition چون کاربر خودش
   // روی یک تسکِ مشخص کلیک می‌کند تا اجرا شود (نه خودکار).
