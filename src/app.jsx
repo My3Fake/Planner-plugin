@@ -415,7 +415,7 @@ var DEFAULT_FEATURES = {
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
-var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS };
+var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", quadrantColors: DEFAULT_QUADRANT_COLORS };
 // Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
 // settings-tab.ts is plain TS, not part of this React tree) — same
 // low-divergence-risk duplication already used for QUADRANTS/PRIORITIES/
@@ -444,7 +444,7 @@ function mergeFeatures(f) {
 // keeping them, the same pitfall mergeFeatures already exists to avoid for
 // features.tabs.
 function mergeAppearance(a) {
-  return { ...DEFAULT_APPEARANCE, ...(a || {}), quadrantColors: { ...DEFAULT_QUADRANT_COLORS, ...((a || {}).quadrantColors || {}) } };
+  return { ...DEFAULT_APPEARANCE, ...(a || {}), quadrantColors: { ...DEFAULT_QUADRANT_COLORS, ...((a || {}).quadrantColors || {}) }, exerciseTypeColors: { ...DEFAULT_EXERCISE_TYPE_COLORS, ...((a || {}).exerciseTypeColors || {}) } };
 }
 // Mutates the shared QUADRANTS array's `color` fields in place so every one
 // of its many existing read sites (QUADRANTS.find/.map, scattered across
@@ -475,6 +475,7 @@ function loadSettings() {
     result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
   }
   applyQuadrantColors(result.appearance.quadrantColors);
+  applyExerciseTypeColors(result.appearance.exerciseTypeColors);
   return result;
 }
 function saveSettings(s) {
@@ -689,6 +690,7 @@ function GlobalSearchModal({ onClose, onNavigate, tasks, books, videos, podcasts
 }
 var ICON_PATHS = {
   plus: "M12 5v14M5 12h14",
+  minus: "M5 12h14",
   x: "M6 6l12 12M18 6L6 18",
   check: "M5 12.5l4.5 4.5L19 7",
   "check-square": "M9 12l2 2 4-4 M5 5h14v14H5Z",
@@ -770,8 +772,8 @@ function Ic({ name, size = 16, className = "", style = {}, color }) {
     /* @__PURE__ */ React.createElement("path", { d: ICON_PATHS[name] || "" })
   );
 }
-function GlassCard({ children, className = "" }) {
-  return /* @__PURE__ */ React.createElement("div", { className: `glass-panel rounded-2xl overflow-hidden ${className}` }, /* @__PURE__ */ React.createElement("div", { className: "relative z-[1]" }, children));
+function GlassCard({ children, className = "", style }) {
+  return /* @__PURE__ */ React.createElement("div", { className: `glass-panel rounded-2xl overflow-hidden ${className}`, style }, /* @__PURE__ */ React.createElement("div", { className: "relative z-[1]" }, children));
 }
 function PageTransition({ pageKey, children }) {
   return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { key: pageKey, className: "glass-pane-enter" }, children));
@@ -804,6 +806,38 @@ function Chip({ active, onClick, children, color }) {
     },
     children
   );
+}
+// Item 22 (رنگ‌بندی گسترده) - shared palette + picker for *per-instance*
+// custom colors (subtask/subsection/learning-topic), as opposed to the
+// per-*type* palettes above (quadrant/exercise-type) which mutate one
+// shared default for every item of that type. Here each individual
+// instance just stores its own optional hex string directly on its own
+// data object (subtask.color / subsection.color / topic.color); null means
+// "no custom color, fall back to whatever default look that context
+// already had" (e.g. the parent task's quadrant color).
+var INSTANCE_COLOR_PALETTE = ["#DB2777", "#C026D3", "#22D3EE", "#F59E0B", "#10B981", "#3B82F6", "#EF4444", "#6B7280"];
+function ColorDotPicker({ value, onChange, size = 16 }) {
+  return /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap" }, /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      type: "button",
+      onClick: () => onChange(null),
+      title: "\u0628\u062F\u0648\u0646 \u0631\u0646\u06AF \u0627\u062E\u062A\u0635\u0627\u0635\u06CC",
+      className: "rounded-full shrink-0 flex items-center justify-center",
+      style: { width: size, height: size, border: "1.5px dashed rgba(255,255,255,.35)", background: "transparent" }
+    },
+    !value && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: Math.round(size * 0.6), color: "rgba(255,255,255,.6)" })
+  ), INSTANCE_COLOR_PALETTE.map((c) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: c,
+      type: "button",
+      onClick: () => onChange(c),
+      title: c,
+      className: "rounded-full shrink-0",
+      style: { width: size, height: size, background: c, boxShadow: value === c ? "0 0 0 2px rgba(255,255,255,.9)" : "none" }
+    }
+  )));
 }
 function ToggleSwitch({ on, onClick, disabled }) {
   return /* @__PURE__ */ React.createElement(
@@ -999,6 +1033,24 @@ function ProgressiveTaskBar({ task, onAddProgress }) {
     }
   ), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "px-2.5 py-1 rounded-lg text-cyan-300 text-[11px] font-medium shrink-0", style: { background: "rgba(6,182,212,0.2)" } }, "\u062B\u0628\u062A")), /* @__PURE__ */ React.createElement(ProgressLogList, { log: task.progressLog }));
 }
+// Item 22 ("دسته‌ها"/categories) - provisional, automatic-only slice. Open
+// question #7 (what "category" refers to) is still unanswered, but the
+// spec explicitly allows auto-derived colors as an alternative to manual
+// per-item assignment ("رنگ‌ها بتوانند ... به‌صورت خودکار ... تعیین شوند"),
+// and a task's free-text `tag` is the closest existing categorization
+// concept in the data model. Rather than adding yet another manual
+// color-picker row to AddTaskModal (already flagged elsewhere as too long/
+// crowded), each distinct tag string gets a consistent, deterministic
+// color hashed from its own text - same tag always renders the same color,
+// different tags are visually distinguishable, zero new settings/data
+// fields, nothing to migrate if "category" turns out to mean something
+// else once question #7 is answered.
+function colorForTag(tag) {
+  if (!tag) return null;
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+  return INSTANCE_COLOR_PALETTE[h % INSTANCE_COLOR_PALETTE.length];
+}
 function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, calendars, customActionButtons, onRunAction }) {
   const q = QUADRANTS.find((x) => x.id === task.quad) || QUADRANTS[1];
   // Lane 9 (بند ۹۷): وقتی کاربر بیش از یک تقویم دارد، رنگ/نام تقویمِ
@@ -1020,7 +1072,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
       style: { borderColor: task.status === "done" ? q.color : "rgba(255,255,255,.25)", background: task.status === "done" ? q.color : "transparent" }
     },
     task.status === "done" && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10 }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => setOpenSched((v) => !v),
@@ -1086,12 +1138,14 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   const toggleWeekday = (id) => setWeekdays((p) => p.includes(id) ? p.length > 1 ? p.filter((x) => x !== id) : p : [...p, id]);
   const [subtasks, setSubtasks] = useState(initialTask && initialTask.subtasks ? initialTask.subtasks : []);
   const [subInput, setSubInput] = useState("");
+  const [subtaskColorFor, setSubtaskColorFor] = useState(null);
   const addSubtask = () => {
     const title2 = subInput.trim();
     if (!title2) return;
-    setSubtasks((prev) => [...prev, { id: uid(), title: title2, done: false }]);
+    setSubtasks((prev) => [...prev, { id: uid(), title: title2, done: false, color: null }]);
     setSubInput("");
   };
+  const setSubtaskColor = (id, color) => setSubtasks((prev) => prev.map((s) => s.id === id ? { ...s, color } : s));
   const removeSubtask = (id) => setSubtasks((prev) => prev.filter((s) => s.id !== id));
   const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive");
   const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime || !isEdit && !!defaults.advancedOpenByDefault);
@@ -1247,8 +1301,19 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
         "span",
         {
           key: s.id,
-          className: "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] bg-white/[0.06] border border-white/10 text-slate-200"
+          className: "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] border text-slate-200",
+          style: s.color ? { background: `${s.color}22`, borderColor: `${s.color}55` } : { background: "rgba(255,255,255,.06)", borderColor: "rgba(255,255,255,.1)" }
         },
+        /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setSubtaskColorFor((cur) => cur === s.id ? null : s.id),
+            title: "\u0631\u0646\u06AF \u0632\u06CC\u0631\u062A\u0633\u06A9",
+            className: "w-2 h-2 rounded-full shrink-0",
+            style: { background: s.color || "rgba(255,255,255,.3)" }
+          }
+        ),
         s.title,
         /* @__PURE__ */ React.createElement(
           "button",
@@ -1261,6 +1326,14 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
           /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 11 })
         )
       ))),
+      subtaskColorFor && subtasks.find((s) => s.id === subtaskColorFor) && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-500 shrink-0" }, "\u0631\u0646\u06AF:"), /* @__PURE__ */ React.createElement(ColorDotPicker, {
+        value: subtasks.find((s) => s.id === subtaskColorFor).color,
+        onChange: (c) => {
+          setSubtaskColor(subtaskColorFor, c);
+          setSubtaskColorFor(null);
+        },
+        size: 18
+      })),
       /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2" }, /* @__PURE__ */ React.createElement(
         "input",
         {
@@ -1562,12 +1635,28 @@ function StudyHub({ books, videos, podcasts, setBooks, setVideos, setPodcasts })
     }
   ))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full mt-2.5 rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u06A9\u062A\u0627\u0628")), sub === "videos" && /* @__PURE__ */ React.createElement("div", null, videos.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u0648\u06CC\u062F\u06CC\u0648\u06CC\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5 lg:space-y-0 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3" }, videos.map((v) => /* @__PURE__ */ React.createElement(VideoCard, { key: v.id, v, onToggleWatched: () => setVideos((p) => p.map((x) => x.id === v.id ? { ...x, watched: !x.watched } : x)), onDelete: (id) => setVideos((p) => p.filter((x) => x.id !== id)) }))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full mt-2.5 rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u0648\u06CC\u062F\u06CC\u0648")), sub === "podcasts" && /* @__PURE__ */ React.createElement("div", null, podcasts.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u067E\u0627\u062F\u06A9\u0633\u062A\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5 lg:space-y-0 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-3" }, podcasts.map((p) => /* @__PURE__ */ React.createElement(PodcastCard, { key: p.id, p, onToggleListened: () => setPodcasts((prev) => prev.map((x) => x.id === p.id ? { ...x, listened: !x.listened } : x)), onDelete: (id) => setPodcasts((prev) => prev.filter((x) => x.id !== id)) }))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full mt-2.5 rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u067E\u0627\u062F\u06A9\u0633\u062A")), sub === "progress" && /* @__PURE__ */ React.createElement(StudyProgress, { books, videos, podcasts }), showAdd && sub === "books" && /* @__PURE__ */ React.createElement(AddBookModal, { onClose: () => setShowAdd(false), onAdd: (b) => setBooks((p) => [{ id: uid(), ...b }, ...p]) }), showAdd && sub === "videos" && /* @__PURE__ */ React.createElement(AddVideoModal, { onClose: () => setShowAdd(false), onAdd: (v) => setVideos((p) => [{ id: uid(), ...v }, ...p]) }), showAdd && sub === "podcasts" && /* @__PURE__ */ React.createElement(AddPodcastModal, { onClose: () => setShowAdd(false), onAdd: (pc) => setPodcasts((p) => [{ id: uid(), ...pc }, ...p]) }));
 }
+// Item 22 (رنگ‌بندی گسترده) first slice: activity-type (fitness) colors,
+// extending the exact "shared mutation point" pattern applyQuadrantColors
+// already established. Default colors reuse the palette FitnessProgress
+// already used for strength (#C026D3) / cardio (#DB2777), plus two more
+// brand-consistent colors for the other two types.
+var DEFAULT_EXERCISE_TYPE_COLORS = { "\u0642\u062F\u0631\u062A\u06CC": "#C026D3", "\u06A9\u0634\u0634\u06CC": "#F59E0B", "\u06A9\u0627\u0631\u062F\u06CC\u0648": "#DB2777", "\u062F\u0648\u06CC\u062F\u0646": "#22D3EE" };
 var EXERCISE_TYPES = [
   { id: "\u0642\u062F\u0631\u062A\u06CC", mode: "sets" },
   { id: "\u06A9\u0634\u0634\u06CC", mode: "sets" },
   { id: "\u06A9\u0627\u0631\u062F\u06CC\u0648", mode: "duration" },
   { id: "\u062F\u0648\u06CC\u062F\u0646", mode: "duration" }
 ];
+// Same reasoning/pattern as applyQuadrantColors above: mutates EXERCISE_TYPES'
+// `color` fields in place so its existing read sites (FitnessHub's exercise
+// rows, AddExerciseModal's type chips) automatically pick up a user's custom
+// colors with zero changes to those call sites.
+function applyExerciseTypeColors(overrides) {
+  EXERCISE_TYPES.forEach((t) => {
+    const custom = overrides && overrides[t.id];
+    t.color = typeof custom === "string" && /^#[0-9a-fA-F]{6}$/.test(custom) ? custom : DEFAULT_EXERCISE_TYPE_COLORS[t.id];
+  });
+}
 function computeFitnessStreak(exercises) {
   let streak = 0;
   for (let i = 0; ; i++) {
@@ -1609,7 +1698,7 @@ function FitnessHub({ exercises, setExercises }) {
       style: { borderColor: e.done ? "#22D3EE" : "rgba(255,255,255,.25)", background: e.done ? "#22D3EE" : "transparent" }
     },
     e.done && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${e.done ? "text-slate-500 line-through" : "text-slate-100"}` }, e.name), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500" }, e.mode === "sets" ? `${e.sets}\xD7${e.reps}` : `${e.duration} \u062F\u0642\u06CC\u0642\u0647`)), /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-md bg-white/[0.05] text-slate-400" }, e.type), /* @__PURE__ */ React.createElement("button", { onClick: () => setExercises((p) => p.filter((x) => x.id !== e.id)), className: "w-6 h-6 rounded-md flex items-center justify-center text-rose-400/80 hover:bg-rose-500/10 shrink-0" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 12 }))), moodFor === e.id && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-2 mr-9" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-400" }, "\u062D\u0633 \u0628\u0639\u062F \u0627\u0632 \u062A\u0645\u0631\u06CC\u0646:"), ["\u{1F61E}", "\u{1F610}", "\u{1F642}", "\u{1F4AA}", "\u{1F525}"].map((em, i) => /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => {
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${e.done ? "text-slate-500 line-through" : "text-slate-100"}` }, e.name), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500" }, e.mode === "sets" ? `${e.sets}\xD7${e.reps}` : `${e.duration} \u062F\u0642\u06CC\u0642\u0647`)), /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-2 py-1 rounded-md", style: { background: `${(EXERCISE_TYPES.find((t2) => t2.id === e.type) || {}).color || "#6B7280"}18`, color: (EXERCISE_TYPES.find((t2) => t2.id === e.type) || {}).color || "#94A3B8" } }, e.type), /* @__PURE__ */ React.createElement("button", { onClick: () => setExercises((p) => p.filter((x) => x.id !== e.id)), className: "w-6 h-6 rounded-md flex items-center justify-center text-rose-400/80 hover:bg-rose-500/10 shrink-0" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 12 }))), moodFor === e.id && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-2 mr-9" }, /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-400" }, "\u062D\u0633 \u0628\u0639\u062F \u0627\u0632 \u062A\u0645\u0631\u06CC\u0646:"), ["\u{1F61E}", "\u{1F610}", "\u{1F642}", "\u{1F4AA}", "\u{1F525}"].map((em, i) => /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => {
     setExercises((p) => p.map((x) => x.id === e.id ? { ...x, mood: i + 1 } : x));
     setMoodFor(null);
   }, className: "text-lg" }, em)))))), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0627\u0641\u0632\u0648\u062F\u0646 \u062A\u0645\u0631\u06CC\u0646")), sub === "progress" && /* @__PURE__ */ React.createElement(FitnessProgress, { exercises }), showAdd && /* @__PURE__ */ React.createElement(AddExerciseModal, { onClose: () => setShowAdd(false), onAdd: (ex) => setExercises((p) => [{ id: uid(), done: false, mood: null, completedDate: null, ...ex }, ...p]) }));
@@ -1633,7 +1722,7 @@ function AddExerciseModal({ onClose, onAdd }) {
       submitDisabled: !name.trim()
     },
     /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: name, onChange: (e) => setName(e.target.value), placeholder: "\u0646\u0627\u0645 \u062A\u0645\u0631\u06CC\u0646 \u2014 \u0645\u062B\u0644\u0627\u064B \u0628\u0627\u0631\u0641\u06CC\u06A9\u0633" }),
-    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, EXERCISE_TYPES.map((t2) => /* @__PURE__ */ React.createElement(Chip, { key: t2.id, active: type === t2.id, onClick: () => setType(t2.id) }, t2.id))),
+    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, EXERCISE_TYPES.map((t2) => /* @__PURE__ */ React.createElement(Chip, { key: t2.id, active: type === t2.id, onClick: () => setType(t2.id), color: t2.color }, t2.id))),
     mode === "sets" ? /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-2" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u062A\u0639\u062F\u0627\u062F \u0633\u062A"), /* @__PURE__ */ React.createElement("input", { type: "number", value: sets, onChange: (e) => setSets(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" })), /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u062A\u06A9\u0631\u0627\u0631 \u062F\u0631 \u0647\u0631 \u0633\u062A"), /* @__PURE__ */ React.createElement("input", { type: "number", value: reps, onChange: (e) => setReps(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" }))) : /* @__PURE__ */ React.createElement("div", { className: "mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u0645\u062F\u062A \u0632\u0645\u0627\u0646 (\u062F\u0642\u06CC\u0642\u0647)"), /* @__PURE__ */ React.createElement("input", { type: "number", value: duration, onChange: (e) => setDuration(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" }))
   );
 }
@@ -1818,6 +1907,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   const [rangeLabel, setRangeLabel] = useState(subsection.rangeLabel || "");
   const [notes, setNotes] = useState(subsection.notes || "");
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
   const ov = subsection.recurrenceOverride;
   const [cadenceMode, setCadenceMode] = useState(ov ? ov.recurrence : "inherit");
   const [cadenceWeekdays, setCadenceWeekdays] = useState((ov && ov.recurrenceWeekdays) || []);
@@ -1859,6 +1949,13 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   const titleRow = React.createElement(
     "div",
     { className: "flex items-center gap-1.5 min-w-0" },
+    React.createElement("button", {
+      type: "button",
+      onClick: () => setShowColorPicker((p) => !p),
+      title: "\u0631\u0646\u06AF \u0632\u06CC\u0631\u0628\u062E\u0634",
+      className: "w-2 h-2 rounded-full shrink-0",
+      style: { background: subsection.color || "rgba(255,255,255,.25)" }
+    }),
     React.createElement("p", { className: "text-sm font-bold truncate", style: { color: subsection.archived || subsection.paused ? "var(--text-muted)" : "var(--text-normal)" } }, subsection.title),
     streak > 0 && React.createElement(
       "span",
@@ -1884,6 +1981,19 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   );
 
   const subtitle = !editing ? React.createElement("p", { className: "text-[10px] mb-2", style: { color: "var(--text-faint)" } }, subtitleParts.join(" \u00B7 ")) : null;
+  const colorPickerRow = showColorPicker ? React.createElement(
+    "div",
+    { className: "flex items-center gap-2 mb-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2" },
+    React.createElement("span", { className: "text-[11px] text-slate-500 shrink-0" }, "\u0631\u0646\u06AF:"),
+    React.createElement(ColorDotPicker, {
+      value: subsection.color,
+      onChange: (c) => {
+        onUpdateSubsection(subsection.id, { color: c });
+        setShowColorPicker(false);
+      },
+      size: 16
+    })
+  ) : null;
   const notesDisplay = !editing && subsection.notes ? React.createElement("p", { className: "text-[11px] mb-2", style: { color: "var(--text-muted)", fontStyle: "italic" } }, subsection.notes) : null;
   const heatmapToggle = !editing && task ? React.createElement(
     "button",
@@ -1964,7 +2074,7 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
 
   const body = editing ? editForm : task ? React.createElement(React.Fragment, null, completionBanner, React.createElement(LearningProgressEntry, { task, subsection, topic, onAddProgress })) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
 
-  return React.createElement(GlassCard, { className: "p-3.5" }, header, subtitle, notesDisplay, heatmapToggle, heatmap, body);
+  return React.createElement(GlassCard, { className: "p-3.5", style: subsection.color ? { borderRight: `3px solid ${subsection.color}` } : void 0 }, header, subtitle, colorPickerRow, notesDisplay, heatmapToggle, heatmap, body);
 }
 
 function AddSubsectionForm({ onAdd }) {
@@ -2010,6 +2120,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
   const [sortMode, setSortMode] = useState("default");
   const [topicExportMsg, setTopicExportMsg] = useState("");
   const [topicExportErr, setTopicExportErr] = useState("");
+  const [showTopicColorPicker, setShowTopicColorPicker] = useState(false);
   const topic = projects.find((p) => p.id === activeId);
   const updateTopic = (fn) => setProjects((prev) => prev.map((p) => p.id === activeId ? fn(p) : p));
   const subsectionTasks = (t2) => (t2?.subsections || []).map((sec) => tasks.find((tk) => tk.id === sec.linkedTaskId)).filter(Boolean);
@@ -2044,7 +2155,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       progressTarget: 10,
       progressCurrent: 0
     });
-    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "" }] }));
+    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "", color: null }] }));
   };
   const updateSubsection = (id, patch) => {
     if (!topic) return;
@@ -2185,7 +2296,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
   };
   if (!topic) {
     return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-8 flex flex-col items-center text-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "graduation-cap", size: 26, className: "text-fuchsia-300 mb-2" }), /* @__PURE__ */ React.createElement("p", { className: "text-slate-300 text-sm" }, "\u0647\u0646\u0648\u0632 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u0646\u0633\u0627\u062E\u062A\u06CC")), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0645\u0648\u0636\u0648\u0639 \u062C\u062F\u06CC\u062F"), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
-      const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [] };
+      const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
       setProjects([p]);
       setActiveId(p.id);
       setShowNewTopic(false);
@@ -2204,6 +2315,22 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     }
     return 0;
   });
+  // Item 22 - learning-topic color slice: same reusable per-instance
+  // infrastructure as subtask/subsection colors (INSTANCE_COLOR_PALETTE +
+  // ColorDotPicker).
+  const topicColorPickerRow = showTopicColorPicker ? React.createElement(
+    "div",
+    { className: "flex items-center gap-2 mb-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2" },
+    React.createElement("span", { className: "text-[11px] text-slate-500 shrink-0" }, "\u0631\u0646\u06AF:"),
+    React.createElement(ColorDotPicker, {
+      value: topic.color,
+      onChange: (c) => {
+        updateTopic((p) => ({ ...p, color: c }));
+        setShowTopicColorPicker(false);
+      },
+      size: 16
+    })
+  ) : null;
   const subsectionsHeader = React.createElement(
     "div",
     { className: "mb-2" },
@@ -2240,11 +2367,11 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       style: { borderColor: p.id === activeId ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: p.id === activeId ? "var(--background-modifier-hover)" : "var(--background-primary)", color: p.id === activeId ? "var(--text-accent)" : "var(--text-muted)" }
     },
     p.title
-  )), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "shrink-0 w-9 h-9 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15, className: "text-slate-400" }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-white" }, topic.title), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-fuchsia-300 font-bold" }, topicProgress(topic), "%"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+  )), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "shrink-0 w-9 h-9 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15, className: "text-slate-400" }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4", style: topic.color ? { borderRight: `3px solid ${topic.color}` } : void 0 }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 min-w-0" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowTopicColorPicker((p) => !p), title: "\u0631\u0646\u06AF \u0645\u0648\u0636\u0648\u0639", className: "w-2 h-2 rounded-full shrink-0", style: { background: topic.color || "rgba(255,255,255,.25)" } }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-white truncate" }, topic.title)), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-fuchsia-300 font-bold" }, topicProgress(topic), "%"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
     topic.subsections.forEach((s) => s.linkedTaskId && deleteTask(s.linkedTaskId));
     setProjects((prev) => prev.filter((p) => p.id !== topic.id));
     setActiveId(null);
-  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
+  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), topicColorPickerRow, /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: topic.color || "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
     const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
     return /* @__PURE__ */ React.createElement(
       SubsectionCard,
@@ -2263,7 +2390,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       }
     );
   })), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
-    const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [] };
+    const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
     setProjects((prev) => [...prev, p]);
     setActiveId(p.id);
     setShowNewTopic(false);
@@ -4163,7 +4290,33 @@ function PomodoroHub({ pomodoro, setPomodoro, tasks, onAddProgress, onToggle, la
   const [sub, setSub] = useState("timer");
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["timer", t("pomodoro_timer", lang), "clock"], ["report", t("pomodoro_report", lang), "trending-up"]] }), sub === "timer" && /* @__PURE__ */ React.createElement(PomodoroTimerView, { pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings, onFocusChange }), sub === "report" && /* @__PURE__ */ React.createElement(PomodoroReportView, { pomodoro, tasks }));
 }
-var CAL_HOURS = Array.from({ length: 36 }, (_, i) => 6 * 60 + i * 30);
+// Lane 6 / Task 23 (Zoom + time scale): the visible planning window is always
+// 06:00-24:00 (1080 minutes), regardless of how finely it's divided. Slot
+// duration (15/30/60 min) only controls how many gridlines/click-targets are
+// drawn - it's purely visual granularity. Actual scheduling still snaps to 5
+// minutes (see startMove/startResize/minutesFromClientY below), independent
+// of the chosen slot size, so switching slot size never loses precision on
+// existing task times.
+var CAL_TOTAL_MINUTES = 1080;
+function calSlots(slotMinutes) {
+  const count = CAL_TOTAL_MINUTES / slotMinutes;
+  return Array.from({ length: count }, (_, i) => 360 + i * slotMinutes);
+}
+var CAL_HOURS = calSlots(30);
+var CAL_SLOT_OPTIONS = [15, 30, 60];
+var CAL_ZOOM_MIN = 0.55;
+var CAL_ZOOM_MAX = 2.2;
+var CAL_ZOOM_STEP = 0.15;
+// Item 20 (نمایش فشرده و متنوع تسک‌ها): 3 practical levels rather than the
+// 5 literal examples in the spec (full card / compact card / small bar /
+// rounded rect / tiny element) - "full" and "compact" already map to the
+// existing two visual styles (Day view's title+time block vs Week view's
+// title-only block), and "minimal" is the new tiny/bar-only addition. This
+// only affects *scheduled* task blocks in the hourly-grid views (Day/
+// threeDay/Week-hourly) - the same views CalendarZoomControls already
+// targets for item 23. List/Kanban/Matrix/Agenda already have their own
+// fixed, appropriately-sized row styles and are out of scope here.
+var CAL_TASK_DETAIL_OPTIONS = ["full", "compact", "minimal"];
 function minutesToHHMM(mins) {
   return `${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`;
 }
@@ -4234,12 +4387,59 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
   );
   return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
-function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }) {
+// Items 23 (Zoom و مقیاس زمانی) و ۲۰ (نمایش فشرده/متنوع تسک‌ها): both live in
+// this one toolbar since they're both "how the hourly grid renders" controls
+// a user tweaks together, and both are only rendered for the hourly-grid
+// views (day / threeDay / week-hourly) by CalendarViews below, since month/
+// year/agenda have no time axis or scheduled-task blocks to affect.
+// Persisted via appearance.calendarZoom / calendarSlotMinutes /
+// calendarTaskDetail (see DEFAULT_APPEARANCE), so the chosen scale/detail
+// level survives closing/reopening the plugin, same as every other
+// appearance setting.
+function CalendarZoomControls({ zoom, slotMinutes, taskDetail, onZoomChange, onSlotMinutesChange, onTaskDetailChange }) {
+  const zoomOut = () => onZoomChange(Math.max(CAL_ZOOM_MIN, Math.round((zoom - CAL_ZOOM_STEP) * 100) / 100));
+  const zoomIn = () => onZoomChange(Math.min(CAL_ZOOM_MAX, Math.round((zoom + CAL_ZOOM_STEP) * 100) / 100));
+  const slotLabel = (m) => m === 60 ? "\u06F1\u0633\u0627\u0639\u062A" : `${toFa(m)}\u062F`;
+  const detailLabel = (d) => d === "full" ? "\u06A9\u0627\u0645\u0644" : d === "compact" ? "\u0641\u0634\u0631\u062F\u0647" : "\u06A9\u0645\u06CC\u0646\u0647";
+  return /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_SLOT_OPTIONS.map((m) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: m,
+      onClick: () => onSlotMinutesChange(m),
+      className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${slotMinutes === m ? "bg-white/10 text-white" : "text-slate-400"}`
+    },
+    slotLabel(m)
+  ))), onTaskDetailChange && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_TASK_DETAIL_OPTIONS.map((d) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: d,
+      onClick: () => onTaskDetailChange(d),
+      className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${taskDetail === d ? "bg-white/10 text-white" : "text-slate-400"}`
+    },
+    detailLabel(d)
+  )))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, /* @__PURE__ */ React.createElement(
+    "button",
+    { onClick: zoomOut, disabled: zoom <= CAL_ZOOM_MIN, className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 disabled:opacity-30" },
+    /* @__PURE__ */ React.createElement(Ic, { name: "minus", size: 13 })
+  ), /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-400 w-9 text-center" }, toFa(Math.round(zoom * 100)), "\u066A"), /* @__PURE__ */ React.createElement(
+    "button",
+    { onClick: zoomIn, disabled: zoom >= CAL_ZOOM_MAX, className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 disabled:opacity-30" },
+    /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
+  )));
+}
+function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
   const unscheduled = dayTasks.filter((tsk) => !tsk.time);
   const scheduled = dayTasks.filter((tsk) => tsk.time);
-  const rowH = 26;
+  // rowH is "pixels per 30 real minutes" - scaling it by `zoom` is the whole
+  // zoom mechanism. topFor/minutesFromClientY/drag deltas below were already
+  // written purely in terms of rowH, so they automatically respect zoom with
+  // no other changes. slotMinutes only changes the *visual* grid below (see
+  // gridRows), never this positioning math.
+  const rowH = 26 * zoom;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
+  const gridRows = calSlots(slotMinutes);
+  const gridRowH = slotMinutes / 30 * rowH;
   const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(/* @__PURE__ */ new Date()), 6e4);
@@ -4405,13 +4605,13 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
       },
       tsk.title
     );
-  }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0648\u0633\u0637 \u0628\u0644\u0648\u06A9 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062C\u0627\u0628\u0647\u200C\u062C\u0627\u06CC\u06CC\u061B \u0644\u0628\u0647\u200C\u06CC \u067E\u0627\u06CC\u06CC\u0646\u0634 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062A\u063A\u06CC\u06CC\u0631 \u0645\u062F\u062A \u2014 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC \u0628\u0632\u0646 \u062A\u0627 \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u0627\u0632\u0647 \u0628\u0633\u0627\u0632\u06CC"), /* @__PURE__ */ React.createElement("div", { ref: gridRef, className: "relative", style: { height: CAL_HOURS.length * rowH } }, CAL_HOURS.map((mins) => /* @__PURE__ */ React.createElement(
+  }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-2" }, "\u0648\u0633\u0637 \u0628\u0644\u0648\u06A9 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062C\u0627\u0628\u0647\u200C\u062C\u0627\u06CC\u06CC\u061B \u0644\u0628\u0647\u200C\u06CC \u067E\u0627\u06CC\u06CC\u0646\u0634 \u0631\u0648 \u0628\u06A9\u0634 \u0628\u0631\u0627\u06CC \u062A\u063A\u06CC\u06CC\u0631 \u0645\u062F\u062A \u2014 \u062C\u0627\u06CC \u062E\u0627\u0644\u06CC \u0628\u0632\u0646 \u062A\u0627 \u06CC\u06A9 \u062A\u0633\u06A9 \u062A\u0627\u0632\u0647 \u0628\u0633\u0627\u0632\u06CC"), /* @__PURE__ */ React.createElement("div", { ref: gridRef, className: "relative", style: { height: CAL_TOTAL_MINUTES / 30 * rowH } }, gridRows.map((mins) => /* @__PURE__ */ React.createElement(
     "div",
     {
       key: mins,
       onClick: () => createAt(mins),
       className: "absolute left-0 right-0 flex items-start gap-2 cursor-pointer",
-      style: { top: topFor(minutesToHHMM(mins)), height: rowH }
+      style: { top: topFor(minutesToHHMM(mins)), height: gridRowH }
     },
     mins % 60 === 0 && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 w-9 shrink-0" }, pad2(mins / 60), ":\u06F0\u06F0"),
     /* @__PURE__ */ React.createElement("div", { className: "flex-1 border-t border-white/[0.04]", style: { marginRight: mins % 60 === 0 ? 0 : 44 } })
@@ -4421,17 +4621,25 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     const liveTime = preview ? preview.time : tsk.time;
     const liveDur = preview ? preview.duration : tsk.duration;
     const h = Math.max(liveDur / 30 * rowH, rowH * 0.7);
+    // Item 20: "full" keeps title+time/duration (original behavior),
+    // "compact" drops the time/duration line (title only), "minimal" drops
+    // all text - just the colored bar itself, same idea as the untimed-task
+    // dots' hover-title pattern below, so the task is still identifiable on
+    // hover/tap without permanently spending pixel space on text.
+    const showTitle = taskDetail !== "minimal";
+    const showTime = taskDetail === "full";
     return /* @__PURE__ */ React.createElement(
       "div",
       {
         key: tsk.id,
         onPointerDown: (e) => startMove(e, tsk),
         onClick: () => onEdit(tsk),
-        className: "absolute right-1 rounded-lg px-2 py-1 overflow-hidden cursor-grab active:cursor-grabbing group select-none",
+        title: showTitle ? void 0 : tsk.title,
+        className: "absolute right-1 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing group select-none" + (showTitle ? " px-2 py-1" : ""),
         style: { top: topFor(liveTime), height: h, left: 46, background: `${q.color}22`, borderRight: `3px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1, userSelect: "none", touchAction: "none" }
       },
-      /* @__PURE__ */ React.createElement("p", { className: `text-[10px] font-medium truncate ${tsk.status === "done" ? "line-through" : ""}`, style: { color: q.color } }, tsk.title),
-      /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-400" }, liveTime, " \xB7 ", liveDur, "\u062F", liveDur > 60 ? ` (${Math.floor(liveDur / 60)}\u0633\u0627\u0639\u062A${liveDur % 60 ? ` ${liveDur % 60}\u062F` : ""})` : ""),
+      showTitle && /* @__PURE__ */ React.createElement("p", { className: `text-[10px] font-medium truncate ${tsk.status === "done" ? "line-through" : ""}`, style: { color: q.color } }, tsk.title),
+      showTime && /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-400" }, liveTime, " \xB7 ", liveDur, "\u062F", liveDur > 60 ? ` (${Math.floor(liveDur / 60)}\u0633\u0627\u0639\u062A${liveDur % 60 ? ` ${liveDur % 60}\u062F` : ""})` : ""),
       /* @__PURE__ */ React.createElement(
         "div",
         {
@@ -4456,10 +4664,15 @@ function WeekView({ cursor, tasks, onJumpDay }) {
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
-function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7 }) {
+function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
   if (!Jalali) return null;
-  const rowH = 22;
+  // Same zoom mechanism as DayPlannerView (see its comment above rowH) -
+  // rowH is "px per 30 real minutes", scaled by `zoom`; everything else in
+  // this view is already written purely in terms of rowH.
+  const rowH = 22 * zoom;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
+  const gridRows = calSlots(slotMinutes);
+  const gridRowH = slotMinutes / 30 * rowH;
   const start = dayCount === 7 ? Jalali.jalaliStartOfWeek(cursor) : cursor;
   const days = Array.from({ length: dayCount }, (_, i) => Jalali.addDays(start, i));
   const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
@@ -4547,14 +4760,14 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
   };
   const nowMins = now.getHours() * 60 + now.getMinutes();
   const nowInRange = nowMins >= 360 && nowMins <= 1410;
-  const gridHeight = CAL_HOURS.length * rowH;
+  const gridHeight = CAL_TOTAL_MINUTES / 30 * rowH;
   const headerHeight = 34;
   const untimedHeight = 16;
 
   const hourLabels = React.createElement(
     "div",
     { className: "relative w-8 shrink-0", style: { height: gridHeight, marginTop: headerHeight + untimedHeight } },
-    CAL_HOURS.filter((mins) => mins % 60 === 0).map((mins) => React.createElement(
+    gridRows.filter((mins) => mins % 60 === 0).map((mins) => React.createElement(
       "span",
       { key: mins, className: "absolute text-[9px] text-slate-500", style: { top: topFor(minutesToHHMM(mins)) - 5 } },
       pad2(mins / 60), ":\u06F0\u06F0"
@@ -4589,11 +4802,11 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
       }),
       untimedTasks.length > 5 ? React.createElement("span", { className: "text-[9px]", style: { color: "var(--text-faint)" } }, "+", untimedTasks.length - 5) : null
     );
-    const rows = CAL_HOURS.map((mins) => React.createElement("div", {
+    const rows = gridRows.map((mins) => React.createElement("div", {
       key: mins,
       onClick: () => onCreateAt && onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins)))),
       className: "absolute left-0 right-0 border-t border-white/[0.04] cursor-pointer",
-      style: { top: topFor(minutesToHHMM(mins)), height: rowH }
+      style: { top: topFor(minutesToHHMM(mins)), height: gridRowH }
     }));
     const blocks = dayTasks.map((tsk) => {
       const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
@@ -4601,6 +4814,11 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
       const liveTime = preview ? preview.time : tsk.time;
       const liveDur = preview ? preview.duration : tsk.duration;
       const h = Math.max((liveDur || 30) / 30 * rowH, rowH * 0.7);
+      // Item 20: this view's columns are already narrow (title-only, no
+      // time/duration line even at "full") so "full" and "compact" render
+      // the same here - only "minimal" removes the title text for a
+      // bar-only block, matching DayPlannerView's minimal treatment.
+      const showTitle = taskDetail !== "minimal";
       return React.createElement(
         "div",
         {
@@ -4610,10 +4828,11 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
             e.stopPropagation();
             onEdit(tsk);
           },
-          className: "absolute rounded-md overflow-hidden px-1 select-none" + (onSchedule ? " cursor-grab active:cursor-grabbing" : " cursor-pointer"),
+          title: showTitle ? void 0 : tsk.title,
+          className: "absolute rounded-md overflow-hidden select-none" + (showTitle ? " px-1" : "") + (onSchedule ? " cursor-grab active:cursor-grabbing" : " cursor-pointer"),
           style: { top: topFor(liveTime), height: h, left: 1, right: 1, background: `${q.color}22`, borderRight: `2px solid ${q.color}`, opacity: tsk.status === "done" ? 0.5 : 1, touchAction: "none" }
         },
-        React.createElement("p", { className: "text-[9px] font-medium truncate", style: { color: q.color } }, tsk.title),
+        showTitle ? React.createElement("p", { className: "text-[9px] font-medium truncate", style: { color: q.color } }, tsk.title) : null,
         onSchedule ? React.createElement(
           "div",
           {
@@ -4675,10 +4894,20 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
-function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt }) {
+function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, appearance, onChangeAppearance }) {
   const [view, setView] = useState("day");
   const [weekSubView, setWeekSubView] = useState("cards");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
+  const zoom = appearance?.calendarZoom ?? 1;
+  const slotMinutes = appearance?.calendarSlotMinutes ?? 30;
+  const taskDetail = appearance?.calendarTaskDetail ?? "full";
+  const setZoom = (z) => onChangeAppearance && onChangeAppearance({ calendarZoom: z });
+  const setSlotMinutes = (m) => onChangeAppearance && onChangeAppearance({ calendarSlotMinutes: m });
+  const setTaskDetail = (d) => onChangeAppearance && onChangeAppearance({ calendarTaskDetail: d });
+  // Only the hourly-grid views have a time axis worth zooming; month/year/
+  // agenda render fine at any zoom level so the control would be a no-op
+  // clutter there.
+  const showZoomControls = view === "day" || view === "threeDay" || view === "week" && weekSubView === "hourly";
   const step = (dir) => {
     if (!Jalali) return;
     if (view === "day") setCursor((c) => Jalali.addDays(c, dir));
@@ -4708,8 +4937,8 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       ))
     )
   );
-  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3 }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes, taskDetail }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
@@ -5065,7 +5294,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",

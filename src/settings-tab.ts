@@ -43,12 +43,26 @@ interface LifeFlowSettings {
 	appearance: {
 		fontFamily: string;
 		density: string;
+		// Lane 6 / item 23 (calendar zoom + time scale). No native-tab control
+		// for these yet — the zoom/slot buttons live directly in the calendar
+		// view (CalendarZoomControls in app.jsx), right where they're used.
+		// Optional here only so this interface doesn't need to know their
+		// defaults; readSettings()'s spread already round-trips whatever the
+		// React app wrote, same as any other appearance field.
+		calendarZoom?: number;
+		calendarSlotMinutes?: number;
+		calendarTaskDetail?: string;
 		quadrantColors: {
 			q1: string;
 			q2: string;
 			q3: string;
 			q4: string;
 		};
+		// Item 22 first slice - Record<string,string> rather than a fixed
+		// shape like quadrantColors, since the exercise-type ids are
+		// arbitrary Persian strings defined in app.jsx's EXERCISE_TYPES, not
+		// a fixed small set of known keys like q1-q4.
+		exerciseTypeColors?: Record<string, string>;
 	};
 	[key: string]: unknown;
 }
@@ -64,6 +78,13 @@ interface AiConfig {
 // reference the same object without repeating the 4 hex values twice.
 const DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
 
+// Item 22 first slice: mirrors app.jsx's DEFAULT_EXERCISE_TYPE_COLORS exactly
+// (same 4 Persian type ids as keys, same hex defaults). Kept here for the
+// same reason as DEFAULT_QUADRANT_COLORS above - this file is plain TS, not
+// part of the React tree, so a small amount of constant duplication is
+// cheaper and lower-risk than importing across the build boundary.
+const DEFAULT_EXERCISE_TYPE_COLORS: Record<string, string> = { "قدرتی": "#C026D3", "کششی": "#F59E0B", "کاردیو": "#DB2777", "دویدن": "#22D3EE" };
+
 const DEFAULT_SETTINGS: LifeFlowSettings = {
 	theme: "dark",
 	language: "fa",
@@ -74,7 +95,7 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 	},
 	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false },
 	reports: { folderName: "LifeFlow Reports" },
-	appearance: { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS },
+	appearance: { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS, exerciseTypeColors: DEFAULT_EXERCISE_TYPE_COLORS },
 };
 
 const LANGUAGE_OPTIONS: Record<string, string> = {
@@ -167,6 +188,7 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					...DEFAULT_SETTINGS.appearance,
 					...(parsed.appearance || {}),
 					quadrantColors: { ...DEFAULT_SETTINGS.appearance.quadrantColors, ...((parsed.appearance || {}).quadrantColors || {}) },
+					exerciseTypeColors: { ...DEFAULT_SETTINGS.appearance.exerciseTypeColors, ...((parsed.appearance || {}).exerciseTypeColors || {}) },
 				},
 			};
 		} catch (e) {
@@ -281,6 +303,42 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					btn.onClick(() => {
 						const next = this.readSettings();
 						next.appearance.quadrantColors[quadId] = DEFAULT_QUADRANT_COLORS[quadId];
+						this.writeSettings(next);
+						this.display();
+					});
+				});
+		});
+
+		// ---------------------------------------------------------------
+		// Item 22 (رنگ‌بندی گسترده) first slice: same one-color-per-item
+		// pattern as the quadrant section above, applied to fitness activity
+		// types. Further categories (بخش یادگیری/زیرتسک/زیربخش/دسته‌ها) are
+		// intentionally left for a later session - see PROGRESS.md 4.8.
+		containerEl.createEl("h3", { text: "رنگ‌های نوع فعالیت (ورزش)" });
+		containerEl.createEl("p", {
+			text: "رنگ هر نوع تمرین در برگه‌ی تناسب‌اندام (ثبت تمرین و افزودن تمرین تازه) استفاده می‌شود.",
+			cls: "setting-item-description",
+		});
+
+		Object.keys(DEFAULT_EXERCISE_TYPE_COLORS).forEach((typeId) => {
+			new Setting(containerEl)
+				.setName(typeId)
+				.addColorPicker((picker) => {
+					picker.setValue((settings.appearance.exerciseTypeColors || {})[typeId] ?? DEFAULT_EXERCISE_TYPE_COLORS[typeId]);
+					picker.onChange((value) => {
+						const next = this.readSettings();
+						if (!next.appearance.exerciseTypeColors) next.appearance.exerciseTypeColors = { ...DEFAULT_EXERCISE_TYPE_COLORS };
+						next.appearance.exerciseTypeColors[typeId] = value;
+						this.writeSettings(next);
+					});
+				})
+				.addExtraButton((btn) => {
+					btn.setIcon("rotate-ccw");
+					btn.setTooltip("بازگشت به رنگ پیش‌فرض");
+					btn.onClick(() => {
+						const next = this.readSettings();
+						if (!next.appearance.exerciseTypeColors) next.appearance.exerciseTypeColors = { ...DEFAULT_EXERCISE_TYPE_COLORS };
+						next.appearance.exerciseTypeColors[typeId] = DEFAULT_EXERCISE_TYPE_COLORS[typeId];
 						this.writeSettings(next);
 						this.display();
 					});
