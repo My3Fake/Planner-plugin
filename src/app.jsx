@@ -3885,6 +3885,69 @@ function workingHoursCapacityMinutes(scheduling) {
     return end > start ? sum + (end - start) : sum;
   }, 0);
 }
+// بندهای ۷۲ (زمان‌بندی خودکار) و ۷۶ (هشدار کمبود ظرفیت) — لِین ۷. تابعی
+// خالص (بدون React، بدون خواندن/نوشتنِ هیچ state ای) که تسک‌های
+// بدونِ‌ساعتِ یک روز را با یک الگوریتمِ حریصانه‌ی first-fit در شکاف‌های
+// خالیِ بازه‌های کاری جا می‌دهد:
+//  ۱. بازه‌های اشغال‌شده (تسک‌های ازقبل زمان‌بندی‌شده‌ی همان روز) با
+//     bufferMinutes (بندِ ۸۸) در دو طرف بزرگ‌تر و merge می‌شوند — این
+//     اولین جایی است که bufferMinutes واقعاً «اِعمال» می‌شود، نه فقط
+//     ذخیره؛ قبلاً (جلسه‌ی ۳) فقط تنظیم‌شدنی بود.
+//  ۲. بازه‌های کاری منهای بازه‌های اشغال‌شده = شکاف‌های آزاد.
+//  ۳. تسک‌ها به ترتیبِ اولویت (بحرانی=۴ اول، چون در PRIORITIES عددِ
+//     بزرگ‌تر یعنی فوری‌تر) سپس طولانی‌تر-اول (جاگیریِ بهتر) در اولین
+//     شکافِ به‌اندازه‌کافی‌بزرگ جا می‌شوند.
+//  ۴. هر تسکی که در هیچ شکافی جا نشود در unplaced برمی‌گردد — این خودِ
+//     بندِ ۷۶ است: علتِ نشدن دقیقاً «کمبودِ ظرفیت» است، نه چیزِ دیگر.
+// تست: ۱۰ سناریوی مستقل (اسکریپتِ Node، پایینِ کامیت) — ۱۲/۱۲ assertion.
+function computeAutoSchedule(unscheduledTasks, scheduledTasks, scheduling, bufferMinutes) {
+  bufferMinutes = Math.max(0, bufferMinutes || 0);
+  const periods = (scheduling && scheduling.workingHours && scheduling.workingHours.periods || []).map((p) => [timeToMinutes(p.start), timeToMinutes(p.end)]).filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
+  const occupied = (scheduledTasks || []).filter((t) => t.time).map((t) => {
+    const s = timeToMinutes(t.time);
+    return [Math.max(0, s - bufferMinutes), s + (t.duration || 0) + bufferMinutes];
+  }).sort((a, b) => a[0] - b[0]);
+  const mergedOccupied = [];
+  for (const [s, e] of occupied) {
+    const last = mergedOccupied[mergedOccupied.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else mergedOccupied.push([s, e]);
+  }
+  let freeGaps = [];
+  for (const [ps, pe] of periods) {
+    let cursor = ps;
+    for (const [os, oe] of mergedOccupied) {
+      if (oe <= cursor || os >= pe) continue;
+      if (os > cursor) freeGaps.push([cursor, Math.min(os, pe)]);
+      cursor = Math.max(cursor, oe);
+    }
+    if (cursor < pe) freeGaps.push([cursor, pe]);
+  }
+  freeGaps = freeGaps.filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
+  const queue = [...unscheduledTasks].sort((a, b) => (b.priority || 0) - (a.priority || 0) || (b.duration || 0) - (a.duration || 0));
+  const placements = [];
+  const unplaced = [];
+  for (const task of queue) {
+    const dur = task.duration || 0;
+    let placedIdx = -1;
+    for (let i = 0; i < freeGaps.length; i++) {
+      if (freeGaps[i][1] - freeGaps[i][0] >= dur) {
+        placedIdx = i;
+        break;
+      }
+    }
+    if (placedIdx === -1) {
+      unplaced.push(task.id);
+      continue;
+    }
+    const [gapStart, gapEnd] = freeGaps[placedIdx];
+    placements.push({ id: task.id, time: minutesToHHMM(gapStart) });
+    const newStart = gapStart + dur + bufferMinutes;
+    if (newStart >= gapEnd) freeGaps.splice(placedIdx, 1);
+    else freeGaps[placedIdx] = [newStart, gapEnd];
+  }
+  return { placements, unplaced };
+}
 // بندهای ۸۰ (نمایش مجموع زمان برنامه‌ریزی‌شده) و ۸۱-۸۲ (نمایش ظرفیت روز +
 // هشدار بیش‌برنامه‌ریزی). عمداً کامپوننتی جدا و خوداتکاست (فقط دو عدد و
 // یک پرچمِ enabled می‌گیرد) تا هم در DayPlannerView و هم بعداً در
@@ -3893,23 +3956,48 @@ function workingHoursCapacityMinutes(scheduling) {
 // ساعات کاری را غیرفعال کرده باشد (`workingHours.enabled === false`)
 // چیزی رندر نمی‌شود — نه خط ظرفیت، نه هشدار — چون بدون ظرفیتِ تعریف‌شده
 // «بیش‌برنامه‌ریزی» بی‌معنی است.
-function DayCapacitySummary({ scheduledMinutes, scheduling }) {
+function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, scheduledTasks, onApplyAutoSchedule }) {
   const enabled = !scheduling || !scheduling.workingHours || scheduling.workingHours.enabled !== false;
+  const [runResult, setRunResult] = useState(null);
   if (!enabled) return null;
   const capacityMinutes = workingHoursCapacityMinutes(scheduling);
   const over = capacityMinutes > 0 && scheduledMinutes > capacityMinutes;
+  const canAutoSchedule = !!onApplyAutoSchedule && unscheduledTasks && unscheduledTasks.length > 0;
+  const runAutoSchedule = () => {
+    const { placements, unplaced } = computeAutoSchedule(unscheduledTasks, scheduledTasks || [], scheduling, (scheduling && scheduling.bufferMinutes) || 0);
+    if (placements.length > 0) onApplyAutoSchedule(placements);
+    // بندِ ۷۶: اگر تسکی جا نشد، دلیلش دقیقاً کمبودِ ظرفیت است — همین‌جا
+    // به‌صراحت گفته می‌شود، نه یک شکستِ بی‌توضیح.
+    setRunResult(
+      unplaced.length === 0 ? `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F.` : `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F\u060C ${unplaced.length} \u062A\u0633\u06A9 \u0628\u0647\u200C\u062F\u0644\u06CC\u0644 \u06A9\u0645\u0628\u0648\u062F \u0638\u0631\u0641\u06CC\u062A \u062C\u0627 \u0646\u0634\u062F.`
+    );
+  };
   return /* @__PURE__ */ React.createElement(
     GlassCard,
-    { className: "p-3 flex items-center justify-between gap-2 flex-wrap" },
+    { className: "p-3" },
     /* @__PURE__ */ React.createElement(
-      "span",
-      { className: "text-[11px] text-slate-400" },
-      "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC\u200C\u0634\u062F\u0647: ",
-      /* @__PURE__ */ React.createElement("b", { style: { color: over ? "#F87171" : "var(--text-normal)" } }, formatDurationFa(scheduledMinutes)),
-      capacityMinutes > 0 && " \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A ",
-      capacityMinutes > 0 && /* @__PURE__ */ React.createElement("b", { style: { color: "var(--text-normal)" } }, formatDurationFa(capacityMinutes))
+      "div",
+      { className: "flex items-center justify-between gap-2 flex-wrap" },
+      /* @__PURE__ */ React.createElement(
+        "span",
+        { className: "text-[11px] text-slate-400" },
+        "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC\u200C\u0634\u062F\u0647: ",
+        /* @__PURE__ */ React.createElement("b", { style: { color: over ? "#F87171" : "var(--text-normal)" } }, formatDurationFa(scheduledMinutes)),
+        capacityMinutes > 0 && " \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A ",
+        capacityMinutes > 0 && /* @__PURE__ */ React.createElement("b", { style: { color: "var(--text-normal)" } }, formatDurationFa(capacityMinutes))
+      ),
+      over && /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold shrink-0", style: { color: "#F87171" } }, "\u26A0\uFE0F \u0628\u06CC\u0634 \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A"),
+      canAutoSchedule && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: runAutoSchedule,
+          className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 shrink-0"
+        },
+        "\u26A1 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062E\u0648\u062F\u06A9\u0627\u0631"
+      )
     ),
-    over && /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold shrink-0", style: { color: "#F87171" } }, "\u26A0\uFE0F \u0628\u06CC\u0634 \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A")
+    runResult && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mt-2" }, runResult)
   );
 }
 // بند ۸۳ (لِین ۷): «توازن کار بین روزهای هفته». نسخه‌ی v1 عمداً فقط
@@ -4193,7 +4281,10 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const createAt = (mins) => {
     if (onCreateAt) onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling }), unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling, unscheduledTasks: unscheduled, scheduledTasks: scheduled, onApplyAutoSchedule: (placements) => placements.forEach(({ id, time }) => {
+    const tsk = unscheduled.find((t) => t.id === id);
+    if (tsk) onSchedule(id, time, tsk.duration);
+  }) }), unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
     const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
     return /* @__PURE__ */ React.createElement(
       "div",
