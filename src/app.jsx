@@ -242,6 +242,17 @@ function splitInboxTasks(tasks) {
   return { withDaypart, bare };
 }
 // --- end Lane 8 part 3 helpers -------------------------------------------
+// --- Lane 8 part 4 (item 101): task dependencies -------------------------
+// Returns the blocking task object if `task` has an unfinished dependency,
+// else null. Used both for the toggleTask enforcement above and for the
+// "blocked" badge on TaskRow below - single source of truth for what
+// "blocked" means, so the two can't drift out of sync.
+function blockingTaskFor(task, tasks) {
+  if (!task || !task.dependsOn) return null;
+  const blocker = (tasks || []).find((t2) => t2.id === task.dependsOn);
+  return blocker && blocker.status !== "done" ? blocker : null;
+}
+// --- end Lane 8 part 4 helpers --------------------------------------------
 // --- end Lane 8 helpers -------------------------------------------------
 var BOOK_STATUSES = [
   { id: "want", label: "\u0645\u06CC\u200C\u062E\u0648\u0627\u0645 \u0628\u062E\u0648\u0646\u0645", color: "#6B7280" },
@@ -1293,7 +1304,7 @@ function ProgressiveTaskBar({ task, onAddProgress }) {
     }
   ), /* @__PURE__ */ React.createElement("button", { type: "submit", className: "px-2.5 py-1 rounded-lg text-cyan-300 text-[11px] font-medium shrink-0", style: { background: "rgba(6,182,212,0.2)" } }, "\u062B\u0628\u062A")), /* @__PURE__ */ React.createElement(ProgressLogList, { log: task.progressLog }));
 }
-function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onDefer }) {
+function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onDefer, blockedByTitle }) {
   const q = QUADRANTS.find((x) => x.id === task.quad) || QUADRANTS[1];
   const [openSched, setOpenSched] = useState(false);
   const isProgressive = task.progressType === "progressive";
@@ -1301,11 +1312,13 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
     "button",
     {
       onClick: () => onToggle(task.id),
-      className: "w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0",
+      disabled: !!blockedByTitle,
+      title: blockedByTitle ? "\u0645\u0646\u062A\u0638\u0631: " + blockedByTitle : void 0,
+      className: `w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${blockedByTitle ? "opacity-40 cursor-not-allowed" : ""}`,
       style: { borderColor: task.status === "done" ? q.color : "rgba(255,255,255,.25)", background: task.status === "done" ? q.color : "transparent" }
     },
     task.status === "done" && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10 }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), blockedByTitle && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-amber-300 flex items-center gap-0.5 bg-amber-500/10 rounded-md px-1.5 py-0.5", title: blockedByTitle }, /* @__PURE__ */ React.createElement(Ic, { name: "lock", size: 10 }), "\u0645\u0646\u062A\u0638\u0631: ", blockedByTitle), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10 }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => setOpenSched((v) => !v),
@@ -1336,9 +1349,14 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
     }
   ))));
 }
-function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }) {
+function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, tasks }) {
   const isEdit = !!initialTask;
   const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
+  // Lane 8 (item 101): task dependencies. `tasks` is a new optional prop
+  // (only one AddTaskModal call site in the file, so this is a safe,
+  // low-risk addition) used solely to populate the "depends on" picker -
+  // AddTaskModal doesn't otherwise need the full list.
+  const [dependsOn, setDependsOn] = useState(initialTask && initialTask.dependsOn || null);
   const [title, setTitle] = useState(initialTask ? initialTask.title : ""), [desc, setDesc] = useState(initialTask ? initialTask.desc || "" : "");
   const [quad, setQuad] = useState(initialTask ? initialTask.quad : defaults.quad), [priority, setPriority] = useState(initialTask ? initialTask.priority : defaults.priority);
   const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
@@ -1387,7 +1405,8 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
       progressUnit: progressType === "progressive" ? progressUnit.trim() || "\u0648\u0627\u062D\u062F" : void 0,
       progressTarget: progressType === "progressive" ? Math.max(1, Number(progressTarget) || 1) : void 0,
       progressCurrent: progressType === "progressive" ? progressCurrent : void 0,
-      progressLog: isEdit ? initialTask.progressLog || [] : []
+      progressLog: isEdit ? initialTask.progressLog || [] : [],
+      dependsOn: dependsOn || null
     });
     onClose();
   };
@@ -1551,7 +1570,19 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime }
           "aria-label": "\u0627\u0641\u0632\u0648\u062F\u0646 \u0632\u06CC\u0631\u062A\u0633\u06A9"
         },
         /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 })
-      ))
+      )),
+      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2 mt-4" }, "\u0648\u0627\u0628\u0633\u062A\u0647 \u0628\u0647 \u062A\u0633\u06A9 \u062F\u06CC\u06AF\u0631 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC) \u2014 \u062A\u0627 \u0622\u0646 \u062A\u0645\u0627\u0645 \u0646\u0634\u0648\u062F\u060C \u0627\u06CC\u0646 \u062A\u0633\u06A9 \u0642\u0641\u0644 \u0645\u06CC‌\u0645\u0627\u0646\u062F"),
+      /* @__PURE__ */ React.createElement(
+        "select",
+        {
+          value: dependsOn || "",
+          onChange: (e) => setDependsOn(e.target.value || null),
+          className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
+        },
+        [/* @__PURE__ */ React.createElement("option", { key: "none", value: "", className: "bg-[#120814]" }, "\u0647\u06CC\u0686‌\u06A9\u062F\u0627\u0645 \u2014 \u0645\u0633\u062F\u0648\u062F \u0646\u06CC\u0633\u062A")].concat(
+          (tasks || []).filter((t2) => t2.id !== (initialTask && initialTask.id) && t2.dependsOn !== (initialTask && initialTask.id)).map((t2) => /* @__PURE__ */ React.createElement("option", { key: t2.id, value: t2.id, className: "bg-[#120814]" }, t2.title))
+        )
+      )
     )
   );
 }
@@ -4827,6 +4858,11 @@ function LifeFlowApp() {
   const toggleTask = (id) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id) return t2;
     const willBeDone = t2.status !== "done";
+    // Lane 8 (item 101): a task can't be completed while the task it
+    // depends on isn't done yet. Un-completing is always allowed - this
+    // only guards the todo->done transition. The blocking task is looked
+    // up in `p` (the array as of this update), not a stale closure.
+    if (willBeDone && blockingTaskFor(t2, p)) return t2;
     return { ...t2, status: willBeDone ? "done" : "todo", completedDate: willBeDone ? todayKey() : t2.completedDate };
   }));
   const addTaskProgress = (id, amount, note) => setTasks((p) => p.map((t2) => {
@@ -4911,7 +4947,7 @@ function LifeFlowApp() {
     } catch (e) {
     }
   }, [now, tasks, settings.notifications, focusMode]);
-  const deleteTask = (id) => setTasks((p) => p.filter((t2) => t2.id !== id));
+  const deleteTask = (id) => setTasks((p) => p.filter((t2) => t2.id !== id).map((t2) => t2.dependsOn === id ? { ...t2, dependsOn: null } : t2));
   const saveTask = (t2) => setTasks((prev) => prev.some((x) => x.id === t2.id) ? prev.map((x) => x.id === t2.id ? t2 : x) : [t2, ...prev]);
   const moveTask = (id, status) => setTasks((p) => p.map((t2) => t2.id === id ? { ...t2, status } : t2));
   const scheduleTask = (id, time, duration) => setTasks((p) => p.map((t2) => t2.id === id ? { ...t2, time, duration } : t2));
@@ -5095,12 +5131,12 @@ function LifeFlowApp() {
         tasks
       }),
       tasks.length > 0 && filteredSortedTasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0628\u0627 \u0627\u06CC\u0646 \u0641\u06CC\u0644\u062A\u0631\u0647\u0627 \u062A\u0633\u06A9\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F"),
-      !taskGroups && filteredSortedTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onDefer: deferTaskToInbox })),
+      !taskGroups && filteredSortedTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onDefer: deferTaskToInbox, blockedByTitle: blockingTaskFor(t2, tasks)?.title || null })),
       taskGroups && taskGroups.map((g) => /* @__PURE__ */ React.createElement(
         "div",
         { key: g.key, className: "mb-3 last:mb-0" },
         /* @__PURE__ */ React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-1.5 px-0.5" }, g.label, " ", /* @__PURE__ */ React.createElement("span", { className: "text-slate-600 font-normal" }, "(", g.items.length, ")")),
-        g.items.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onDefer: deferTaskToInbox }))
+        g.items.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onDefer: deferTaskToInbox, blockedByTitle: blockingTaskFor(t2, tasks)?.title || null }))
       ))
     ), view === "inbox" && /* @__PURE__ */ React.createElement(
       GlassCard,
@@ -5110,13 +5146,13 @@ function LifeFlowApp() {
         "div",
         { className: "mb-3" },
         /* @__PURE__ */ React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-1.5 px-0.5" }, "\u0628\u062F\u0648\u0646 \u0647\u06CC\u0686 \u0628\u0631\u0646\u0627\u0645\u0647‌\u0627\u06CC"),
-        inboxSplit.bare.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: moveInboxItemToCalendar, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))
+        inboxSplit.bare.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: moveInboxItemToCalendar, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, blockedByTitle: blockingTaskFor(t2, tasks)?.title || null }))
       ),
       inboxSplit.withDaypart.length > 0 && /* @__PURE__ */ React.createElement(
         "div",
         null,
         /* @__PURE__ */ React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-1.5 px-0.5" }, "\u0627\u06CC\u0646 \u0647\u0641\u062A\u0647\u060C \u0628\u062F\u0648\u0646 \u0633\u0627\u0639\u062A \u0645\u0634\u062E\u0635"),
-        inboxSplit.withDaypart.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: moveInboxItemToCalendar, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress }))
+        inboxSplit.withDaypart.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: moveInboxItemToCalendar, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, blockedByTitle: blockingTaskFor(t2, tasks)?.title || null }))
       )
     ), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
@@ -5140,7 +5176,7 @@ function LifeFlowApp() {
       setShowAdd(false);
       setEditingTask(null);
       setPrefillTime(null);
-    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, prefillTime }),
+    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, prefillTime, tasks }),
     searchOpen && /* @__PURE__ */ React.createElement(
       GlobalSearchModal,
       {
