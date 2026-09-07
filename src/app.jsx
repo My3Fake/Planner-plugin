@@ -3903,6 +3903,21 @@ function workingHoursCapacityMinutes(scheduling) {
     return end > start ? sum + (end - start) : sum;
   }, 0);
 }
+// بندِ ۷۷ (لِین ۷) — نسخه‌ی «آگاهی»، نه «جلوگیری»: آیا یک ساعتِ مشخص
+// داخلِ یکی از بازه‌های کاری تعریف‌شده می‌افتد یا نه. اِعمالِ واقعیِ
+// جلوگیری (بلاک‌کردنِ drop هنگامِ درگ دستی در DayPlannerView/WeekHourlyView)
+// عمداً این جلسه انجام نشد — آن نیازمندِ لمسِ توابعِ startMove/startResize
+// است که همین الان بینِ لِین‌های ۳ و ۶ به‌شدت فعال است؛ این تابع فقط
+// می‌گوید «آیا این ساعت بیرون از ساعاتِ کاری است»، تا لایه‌ی نمایشی
+// بتواند بدونِ لمسِ منطقِ درگ، این آگاهی را نشان دهد.
+function isTimeWithinWorkingHours(hhmm, scheduling) {
+  const periods = scheduling && scheduling.workingHours && scheduling.workingHours.periods || [];
+  const mins = timeToMinutes(hhmm);
+  return periods.some((p) => {
+    const start = timeToMinutes(p.start), end = timeToMinutes(p.end);
+    return end > start && mins >= start && mins < end;
+  });
+}
 // بندهای ۷۲ (زمان‌بندی خودکار) و ۷۶ (هشدار کمبود ظرفیت) — لِین ۷. تابعی
 // خالص (بدون React، بدون خواندن/نوشتنِ هیچ state ای) که تسک‌های
 // بدونِ‌ساعتِ یک روز را با یک الگوریتمِ حریصانه‌ی first-fit در شکاف‌های
@@ -3981,6 +3996,11 @@ function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, sc
   if (!enabled) return null;
   const capacityMinutes = workingHoursCapacityMinutes(scheduling);
   const over = capacityMinutes > 0 && scheduledMinutes > capacityMinutes;
+  // بندِ ۷۷ (نیمه‌ی آگاهی): تسک‌هایی که ساعتِ‌مشخص دارند ولی آن ساعت
+  // بیرون از همه‌ی بازه‌های کاریِ تعریف‌شده می‌افتد. فقط وقتی حداقل یک
+  // بازه‌ی کاریِ معتبر تعریف شده معنا دارد (capacityMinutes>0) — وگرنه
+  // «بیرون از ساعاتِ کاری» یعنی «همه‌چیز»، که هشدارِ بی‌فایده‌ای می‌شود.
+  const outOfHoursTasks = capacityMinutes > 0 ? (scheduledTasks || []).filter((t) => t.time && !isTimeWithinWorkingHours(t.time, scheduling)) : [];
   const canAutoSchedule = !!onApplyAutoSchedule && unscheduledTasks && unscheduledTasks.length > 0;
   const runAutoSchedule = () => {
     const { placements, unplaced } = computeAutoSchedule(unscheduledTasks, scheduledTasks || [], scheduling, (scheduling && scheduling.bufferMinutes) || 0);
@@ -4065,7 +4085,13 @@ function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, sc
         )
       )
     ),
-    runResult && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mt-2" }, runResult)
+    runResult && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mt-2" }, runResult),
+    outOfHoursTasks.length > 0 && /* @__PURE__ */ React.createElement(
+      "p",
+      { className: "text-[11px] mt-2", style: { color: "#FBBF24" } },
+      "\u23F0 \u0628\u06CC\u0631\u0648\u0646 \u0627\u0632 \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC: ",
+      outOfHoursTasks.map((t) => t.title).join("\u060C ")
+    )
   );
 }
 // بند ۸۳ (لِین ۷): «توازن کار بین روزهای هفته». نسخه‌ی v1 عمداً فقط
