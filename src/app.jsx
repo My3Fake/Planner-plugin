@@ -1953,6 +1953,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
   const [sortMode, setSortMode] = useState("default");
   const [topicExportMsg, setTopicExportMsg] = useState("");
   const [topicExportErr, setTopicExportErr] = useState("");
+  const [showTopicColorPicker, setShowTopicColorPicker] = useState(false);
   const topic = projects.find((p) => p.id === activeId);
   const updateTopic = (fn) => setProjects((prev) => prev.map((p) => p.id === activeId ? fn(p) : p));
   const subsectionTasks = (t2) => (t2?.subsections || []).map((sec) => tasks.find((tk) => tk.id === sec.linkedTaskId)).filter(Boolean);
@@ -2128,7 +2129,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
   };
   if (!topic) {
     return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-8 flex flex-col items-center text-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "graduation-cap", size: 26, className: "text-fuchsia-300 mb-2" }), /* @__PURE__ */ React.createElement("p", { className: "text-slate-300 text-sm" }, "\u0647\u0646\u0648\u0632 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u0646\u0633\u0627\u062E\u062A\u06CC")), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0645\u0648\u0636\u0648\u0639 \u062C\u062F\u06CC\u062F"), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
-      const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [] };
+      const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
       setProjects([p]);
       setActiveId(p.id);
       setShowNewTopic(false);
@@ -2147,6 +2148,22 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     }
     return 0;
   });
+  // Item 22 - learning-topic color slice: same reusable per-instance
+  // infrastructure as subtask/subsection colors (INSTANCE_COLOR_PALETTE +
+  // ColorDotPicker).
+  const topicColorPickerRow = showTopicColorPicker ? React.createElement(
+    "div",
+    { className: "flex items-center gap-2 mb-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2" },
+    React.createElement("span", { className: "text-[11px] text-slate-500 shrink-0" }, "\u0631\u0646\u06AF:"),
+    React.createElement(ColorDotPicker, {
+      value: topic.color,
+      onChange: (c) => {
+        updateTopic((p) => ({ ...p, color: c }));
+        setShowTopicColorPicker(false);
+      },
+      size: 16
+    })
+  ) : null;
   const subsectionsHeader = React.createElement(
     "div",
     { className: "mb-2" },
@@ -2183,11 +2200,11 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       style: { borderColor: p.id === activeId ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: p.id === activeId ? "var(--background-modifier-hover)" : "var(--background-primary)", color: p.id === activeId ? "var(--text-accent)" : "var(--text-muted)" }
     },
     p.title
-  )), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "shrink-0 w-9 h-9 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15, className: "text-slate-400" }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-white" }, topic.title), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-fuchsia-300 font-bold" }, topicProgress(topic), "%"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+  )), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "shrink-0 w-9 h-9 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15, className: "text-slate-400" }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4", style: topic.color ? { borderRight: `3px solid ${topic.color}` } : void 0 }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 min-w-0" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowTopicColorPicker((p) => !p), title: "\u0631\u0646\u06AF \u0645\u0648\u0636\u0648\u0639", className: "w-2 h-2 rounded-full shrink-0", style: { background: topic.color || "rgba(255,255,255,.25)" } }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-white truncate" }, topic.title)), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-fuchsia-300 font-bold" }, topicProgress(topic), "%"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
     topic.subsections.forEach((s) => s.linkedTaskId && deleteTask(s.linkedTaskId));
     setProjects((prev) => prev.filter((p) => p.id !== topic.id));
     setActiveId(null);
-  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
+  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), topicColorPickerRow, /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: topic.color || "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
     const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
     return /* @__PURE__ */ React.createElement(
       SubsectionCard,
@@ -2206,7 +2223,7 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       }
     );
   })), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
-    const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [] };
+    const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
     setProjects((prev) => [...prev, p]);
     setActiveId(p.id);
     setShowNewTopic(false);
