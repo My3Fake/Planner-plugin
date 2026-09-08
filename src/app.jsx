@@ -305,6 +305,72 @@ function playPomodoroChime(kind, opts = {}) {
     });
   } };
 }
+// --- Lane 9: تشخیصِ تعارضِ زمانی + پیشنهادِ زمانِ جایگزین (بندهای ۱۳۲/۱۳۳) ---
+// از `timeToMinutes`/`minutesToHHMM`ِ موجود (پایین‌ترِ همین فایل، از کارِ
+// یکی از لِین‌های دیگر روی زمان‌بندیِ تقویم) استفاده می‌کند به‌جایِ
+// تعریفِ دوباره‌ی همان تبدیل — function hoisting یعنی ترتیبِ تعریف در
+// فایل مهم نیست، هر دو در زمانِ فراخوانی در دسترس‌اند.
+function timeRangesOverlap(aStart, aDur, bStart, bDur) {
+  return aStart < bStart + bDur && bStart < aStart + aDur;
+}
+function findConflictingTasks(candidateTime, candidateDuration, otherTasks, excludeId) {
+  const candStart = timeToMinutes(candidateTime);
+  return (otherTasks || []).filter((t2) => {
+    if (!t2.time || !t2.duration) return false;
+    if (excludeId != null && t2.id === excludeId) return false;
+    return timeRangesOverlap(candStart, candidateDuration || 30, timeToMinutes(t2.time), t2.duration);
+  });
+}
+function suggestAlternativeTime(candidateTime, candidateDuration, otherTasks, excludeId, dayStartMin, dayEndMin) {
+  dayStartMin = dayStartMin == null ? 0 : dayStartMin;
+  dayEndMin = dayEndMin == null ? 24 * 60 : dayEndMin;
+  const duration = candidateDuration || 30;
+  const busy = (otherTasks || []).filter((t2) => t2.time && t2.duration && !(excludeId != null && t2.id === excludeId)).map((t2) => ({ start: timeToMinutes(t2.time), end: timeToMinutes(t2.time) + t2.duration })).sort((a, b) => a.start - b.start);
+  let candidate = Math.max(timeToMinutes(candidateTime), dayStartMin);
+  for (const b of busy) {
+    if (candidate + duration <= b.start) break;
+    if (candidate < b.end) candidate = b.end;
+  }
+  if (candidate + duration > dayEndMin) return null;
+  return minutesToHHMM(candidate);
+}
+// --- Lane 9: عملیاتِ گروهی + Preview + Undo (بندهای ۱۳۰/۱۳۱) -------------
+// عملیاتِ گروهی همان واژگانِ عملِ موتورِ اتوماسیون/دکمه‌ها را دوباره
+// استفاده می‌کند (`applyAutomationAction`) — فقط حذف یک نوعِ عملِ تازه است
+// که آن موتور پوشش نمی‌دهد (چون معنایی جز حذف ندارد).
+function getBulkActionFieldValue(task, action) {
+  if (action.type === "move_to_calendar") return getTaskCalendarId(task);
+  if (action.type === "set_priority") return task.priority;
+  if (action.type === "add_tag") return task.tag || "";
+  return void 0;
+}
+function buildBulkPreview(tasks, selectedIds, action) {
+  const idSet = new Set(selectedIds);
+  return tasks.filter((t2) => idSet.has(t2.id)).map((t2) => ({
+    id: t2.id,
+    title: t2.title,
+    before: getBulkActionFieldValue(t2, action),
+    after: action.type === "delete" ? void 0 : action.value
+  }));
+}
+function applyBulkAction(tasks, selectedIds, action) {
+  const idSet = new Set(selectedIds);
+  if (action.type === "delete") return tasks.filter((t2) => !idSet.has(t2.id));
+  return tasks.map((t2) => idSet.has(t2.id) ? applyAutomationAction(t2, action) : t2);
+}
+function computeBulkUndoSnapshot(tasks, selectedIds) {
+  const idSet = new Set(selectedIds);
+  return tasks.filter((t2) => idSet.has(t2.id)).map((t2) => ({ ...t2 }));
+}
+function restoreBulkUndo(tasks, snapshot, wasDelete) {
+  if (wasDelete) {
+    const existingIds = new Set(tasks.map((t2) => t2.id));
+    const toRestore = snapshot.filter((t2) => !existingIds.has(t2.id));
+    return [...toRestore, ...tasks];
+  }
+  const snapMap = new Map(snapshot.map((t2) => [t2.id, t2]));
+  return tasks.map((t2) => snapMap.has(t2.id) ? snapMap.get(t2.id) : t2);
+}
 function parseYouTubeId(url) {
   const patterns = [
     /(?:youtube\.com\/watch\?v=)([\w-]{11})/,
