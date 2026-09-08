@@ -34,6 +34,18 @@ var WEEKDAYS = [
 var JALALI_MONTHS_FA = Jalali ? Jalali.MONTH_NAMES_FA : ["\u0641\u0631\u0648\u0631\u062F\u06CC\u0646", "\u0627\u0631\u062F\u06CC\u0628\u0647\u0634\u062A", "\u062E\u0631\u062F\u0627\u062F", "\u062A\u06CC\u0631", "\u0645\u0631\u062F\u0627\u062F", "\u0634\u0647\u0631\u06CC\u0648\u0631", "\u0645\u0647\u0631", "\u0622\u0628\u0627\u0646", "\u0622\u0630\u0631", "\u062F\u06CC", "\u0628\u0647\u0645\u0646", "\u0627\u0633\u0641\u0646\u062F"];
 var RECURRENCE_TYPES = [["none", "\u0628\u062F\u0648\u0646 \u062A\u06A9\u0631\u0627\u0631"], ["daily", "\u0631\u0648\u0632\u0627\u0646\u0647"], ["weekly", "\u0647\u0641\u062A\u06AF\u06CC"], ["monthly", "\u0645\u0627\u0647\u0627\u0646\u0647 (\u0634\u0645\u0633\u06CC)"], ["yearly", "\u0633\u0627\u0644\u0627\u0646\u0647 (\u0634\u0645\u0633\u06CC)"], ["even", "\u0631\u0648\u0632\u0647\u0627\u06CC \u0632\u0648\u062C"], ["odd", "\u0631\u0648\u0632\u0647\u0627\u06CC \u0641\u0631\u062F"]];
 function isTaskDueOn(task, dateObj) {
+  // بند ۷۹ (لِین ۷): زمانِ شروعِ مجاز — اگر تسک notBefore دارد و dateObj
+  // زودتر از آن روز است، due نیست، مستقل از تکرار. مقایسه روی سطحِ روز
+  // انجام می‌شود (نه ساعت) چون notBefore یک تاریخِ خالص است (بدون ساعت).
+  if (task.notBefore) {
+    const nb = new Date(task.notBefore);
+    if (!isNaN(nb.getTime())) {
+      nb.setHours(0, 0, 0, 0);
+      const cmp = new Date(dateObj);
+      cmp.setHours(0, 0, 0, 0);
+      if (cmp < nb) return false;
+    }
+  }
   if (!task.recurrence || task.recurrence === "none") return true;
   if (task.recurrence === "daily") return true;
   if (task.recurrence === "weekly") {
@@ -416,6 +428,40 @@ var DEFAULT_FEATURES = {
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
 var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", quadrantColors: DEFAULT_QUADRANT_COLORS };
+// Lane 7 (زمان‌بندی هوشمند و ظرفیت، بندهای ۷۲–۸۸ در PROGRESS.md): پایه‌ی
+// داده‌ایِ «ساعات کاری» — یک یا چند بازه‌ی زمانی که مجموعشان ظرفیت روزانه
+// را می‌سازد (بند ۷۸: چند بازه کاری در یک روز). فعلاً یک مجموعه‌ی واحد
+// برای همه‌ی روزهای هفته (بدون تفاوتِ آخرهفته/روزهای کاری) — ساده‌ترین
+// نسخه‌ی قابل‌استفاده؛ اگر نیاز به تنظیمِ جداگانه به‌ازای هر روز هفته شد،
+// این شکل به‌راحتی قابل‌گسترش است بدون شکستن داده‌ی موجود (هر روز می‌تواند
+// در آینده override اختیاری خودش را روی همین ساختار پایه اضافه کند).
+// Mirrors settings-tab.ts's DEFAULT_SETTINGS.scheduling exactly (kept
+// separate since settings-tab.ts is plain TS, not part of this React tree
+// — same low-divergence-risk duplication already used for QUADRANTS etc.).
+var DEFAULT_WORKING_HOURS_PERIODS = [{ id: "default-1", start: "09:00", end: "17:00" }];
+// بندهای ۸۴-۸۸ (لِین ۷، جلسه‌ی ۳): چهار مفهومِ مستقلِ دیگرِ همین خوشه —
+// عمداً همه زیرِ یک ثابتِ `DEFAULT_SCHEDULING` واحد نگه داشته شدند (نه
+// چهار ثابتِ پراکنده) چون همه از یک تنظیماتِ کاربریِ واحد («زمان‌بندی
+// هوشمند و ظرفیت») می‌آیند و در `mergeScheduling` یک‌جا merge می‌شوند:
+//  - focusTime: دقیقاً هم‌شکلِ workingHours (بازه‌های زمانی) — بندِ ۸۴.
+//    پیش‌فرض خاموش/خالی چون برخلافِ ساعاتِ کاری، «زمانِ تمرکز» یک مفهومِ
+//    opt-in است، نه چیزی که همه بخواهند از روزِ اول داشته باشند.
+//  - focusGoals: دو عددِ ساده (دقیقه) — بندهای ۸۵/۸۶. صفر یعنی «هدفی
+//    تنظیم نشده» (نه «هدفِ صفردقیقه‌ای»)، مصرف‌کننده باید این را چک کند.
+//  - noMeetingWeekdays: آرایه‌ای از اعدادِ ۰-۶ هم‌قراردادِ `Date.getDay()`
+//    (۰=یکشنبه در جاوااسکریپت) — بندِ ۸۷. پیش‌فرض خالی.
+//  - bufferMinutes: یک عددِ سراسریِ ساده — بندِ ۸۸. پیش‌فرض صفر (بدونِ
+//    زمانِ حائل). نسخه‌ی v1: یک مقدارِ ثابتِ سراسری، نه قابلِ‌تنظیم به‌ازای
+//    هر فعالیت — چون اِعمالِ واقعیِ حائل (درجِ خودکار در برنامه) بخشی از
+//    موتورِ زمان‌بندیِ خودکار (بندهای ۷۲-۷۶) است که هنوز شروع نشده؛ فعلاً
+//    فقط مقدارِ خواسته‌شده ذخیره می‌شود.
+var DEFAULT_SCHEDULING = {
+  workingHours: { enabled: true, periods: DEFAULT_WORKING_HOURS_PERIODS },
+  focusTime: { enabled: false, periods: [] },
+  focusGoals: { dailyMinutes: 0, weeklyMinutes: 0 },
+  noMeetingWeekdays: [],
+  bufferMinutes: 0
+};
 // Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
 // settings-tab.ts is plain TS, not part of this React tree) — same
 // low-divergence-risk duplication already used for QUADRANTS/PRIORITIES/
@@ -446,6 +492,23 @@ function mergeFeatures(f) {
 function mergeAppearance(a) {
   return { ...DEFAULT_APPEARANCE, ...(a || {}), quadrantColors: { ...DEFAULT_QUADRANT_COLORS, ...((a || {}).quadrantColors || {}) }, exerciseTypeColors: { ...DEFAULT_EXERCISE_TYPE_COLORS, ...((a || {}).exerciseTypeColors || {}) } };
 }
+// workingHours.periods is an array, so — like features.tabs/appearance.quadrantColors
+// above — it needs its own nested merge: a flat spread would let a saved
+// `scheduling` object with no `workingHours` key at all (e.g. from before
+// this Lane 7 feature existed) silently end up with `workingHours: undefined`
+// instead of falling back to the default. periods itself is taken wholesale
+// from the saved value when present (not merged item-by-item) since it's a
+// user-edited list, not a fixed set of named keys like quadrantColors.
+function mergeScheduling(s) {
+  const src = s || {};
+  return {
+    ...DEFAULT_SCHEDULING,
+    ...src,
+    workingHours: { ...DEFAULT_SCHEDULING.workingHours, ...(src.workingHours || {}) },
+    focusTime: { ...DEFAULT_SCHEDULING.focusTime, ...(src.focusTime || {}) },
+    focusGoals: { ...DEFAULT_SCHEDULING.focusGoals, ...(src.focusGoals || {}) }
+  };
+}
 // Mutates the shared QUADRANTS array's `color` fields in place so every one
 // of its many existing read sites (QUADRANTS.find/.map, scattered across
 // the whole file — the matrix, task rows, kanban, day/week planners,
@@ -466,13 +529,13 @@ function loadSettings() {
   try {
     const raw = storage.get(SETTINGS_KEY);
     if (!raw) {
-      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING };
     } else {
       const parsed = JSON.parse(raw);
-      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance) };
+      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance), scheduling: mergeScheduling(parsed.scheduling) };
     }
   } catch (e) {
-    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING };
   }
   applyQuadrantColors(result.appearance.quadrantColors);
   applyExerciseTypeColors(result.appearance.exerciseTypeColors);
@@ -1128,6 +1191,11 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
   const [time, setTime] = useState(initialTask ? initialTask.time || "" : prefillTime || ""), [duration, setDuration] = useState(initialTask ? initialTask.duration : defaults.duration);
   const [recurrence, setRecurrence] = useState(initialTask ? initialTask.recurrence : "none"), [reminder, setReminder] = useState(initialTask ? initialTask.reminder : false);
+  // بند ۷۹ (لِین ۷، PROGRESS.md): «زمان شروع مجاز» — تاریخی که پیش از آن این
+  // فعالیت اصلاً due/قابل‌زمان‌بندی نیست. مقدار به‌فرمتِ همان رشته‌ی ایزوی
+  // خامِ "YYYY-MM-DD" که JalaliDateTimePicker می‌دهد ذخیره می‌شود (مثل الگوی
+  // ذخیره‌سازیِ AddVideoModal/AddPodcastModal — بدون مهاجرتِ فرمت).
+  const [notBefore, setNotBefore] = useState(initialTask ? initialTask.notBefore || "" : "");
   const [progressType, setProgressType] = useState(initialTask ? initialTask.progressType || "binary" : "binary");
   const [progressUnit, setProgressUnit] = useState(initialTask && initialTask.progressUnit || "");
   const [progressTarget, setProgressTarget] = useState(initialTask && initialTask.progressTarget || 10);
@@ -1147,7 +1215,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   };
   const setSubtaskColor = (id, color) => setSubtasks((prev) => prev.map((s) => s.id === id ? { ...s, color } : s));
   const removeSubtask = (id) => setSubtasks((prev) => prev.filter((s) => s.id !== id));
-  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive");
+  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive" || initialTask.notBefore);
   const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime || !isEdit && !!defaults.advancedOpenByDefault);
   const submit = () => {
     if (!title.trim()) return;
@@ -1166,6 +1234,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
       duration,
       recurrence,
       reminder,
+      notBefore: notBefore || null,
       recurrenceWeekdays: recurrence === "weekly" ? weekdays : void 0,
       recurrenceDay: recurrence === "monthly" || recurrence === "yearly" ? monthDay : void 0,
       recurrenceMonth: recurrence === "yearly" ? yearMonth : void 0,
@@ -1240,6 +1309,16 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
           placeholder: "\u062F\u0642\u06CC\u0642\u0647"
         }
       ))),
+      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0632\u0645\u0627\u0646 \u0634\u0631\u0648\u0639 \u0645\u062C\u0627\u0632 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC) \u2014 \u067E\u06CC\u0634 \u0627\u0632 \u0627\u06CC\u0646 \u062A\u0627\u0631\u06CC\u062E \u0627\u06CC\u0646 \u0641\u0639\u0627\u0644\u06CC\u062A due/\u0642\u0627\u0628\u0644\u200C\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0646\u06CC\u0633\u062A"),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement(JalaliDateTimePicker, { value: notBefore, onChange: setNotBefore, includeTime: false, placeholder: "\u0628\u062F\u0648\u0646 \u0645\u062D\u062F\u0648\u062F\u06CC\u062A" })), notBefore && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => setNotBefore(""),
+          className: "shrink-0 text-[11px] text-slate-500 hover:text-slate-300 px-2 py-1"
+        },
+        "\u062D\u0630\u0641"
+      )),
       /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0646\u0648\u0639 \u062A\u0633\u06A9"),
       /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3" }, /* @__PURE__ */ React.createElement(Chip, { active: progressType === "binary", onClick: () => setProgressType("binary") }, "\u0633\u0627\u062F\u0647 (\u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F/\u0646\u0634\u062F)"), /* @__PURE__ */ React.createElement(Chip, { active: progressType === "progressive", color: "#22D3EE", onClick: () => setProgressType("progressive") }, t("progress_task", "fa"))),
       progressType === "progressive" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3 flex gap-2 items-end" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-1" }, "\u0648\u0627\u062D\u062F \u067E\u06CC\u0634\u0631\u0641\u062A \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647\u060C \u062F\u0642\u06CC\u0642\u0647"), /* @__PURE__ */ React.createElement(
@@ -4324,6 +4403,272 @@ function timeToMinutes(hhmm) {
   const [h, m] = (hhmm || "00:00").split(":").map(Number);
   return h * 60 + m;
 }
+// --- Lane 7 (زمان‌بندی هوشمند و ظرفیت) — PROGRESS.md بندهای ۷۸، ۸۰-۸۲ ---
+// خروجی مثال‌های خودِ مشخصات ("۵ ساعت و ۴۰ دقیقه") را عیناً می‌سازد.
+function formatDurationFa(mins) {
+  const total = Math.max(0, Math.round(mins || 0));
+  const h = Math.floor(total / 60), r = total % 60;
+  if (h <= 0) return `${r} \u062F\u0642\u06CC\u0642\u0647`;
+  if (r === 0) return `${h} \u0633\u0627\u0639\u062A`;
+  return `${h} \u0633\u0627\u0639\u062A \u0648 ${r} \u062F\u0642\u06CC\u0642\u0647`;
+}
+// بند ۷۸ (چند بازه‌ی کاری در یک روز): ظرفیت = مجموع طول بازه‌ها. بازه‌های
+// نامعتبر/صفر/معکوس (پایان <= شروع — مثلاً هنگام ویرایش نیمه‌کاره در
+// تنظیمات) بی‌صدا نادیده گرفته می‌شوند تا یک ورودی موقتاً ناقص کل محاسبه‌ی
+// ظرفیت را خراب نکند.
+function workingHoursCapacityMinutes(scheduling) {
+  const periods = scheduling && scheduling.workingHours && scheduling.workingHours.periods || [];
+  return periods.reduce((sum, p) => {
+    const start = timeToMinutes(p.start), end = timeToMinutes(p.end);
+    return end > start ? sum + (end - start) : sum;
+  }, 0);
+}
+// بندِ ۷۷ (لِین ۷) — نسخه‌ی «آگاهی»، نه «جلوگیری»: آیا یک ساعتِ مشخص
+// داخلِ یکی از بازه‌های کاری تعریف‌شده می‌افتد یا نه. اِعمالِ واقعیِ
+// جلوگیری (بلاک‌کردنِ drop هنگامِ درگ دستی در DayPlannerView/WeekHourlyView)
+// عمداً این جلسه انجام نشد — آن نیازمندِ لمسِ توابعِ startMove/startResize
+// است که همین الان بینِ لِین‌های ۳ و ۶ به‌شدت فعال است؛ این تابع فقط
+// می‌گوید «آیا این ساعت بیرون از ساعاتِ کاری است»، تا لایه‌ی نمایشی
+// بتواند بدونِ لمسِ منطقِ درگ، این آگاهی را نشان دهد.
+function isTimeWithinWorkingHours(hhmm, scheduling) {
+  const periods = scheduling && scheduling.workingHours && scheduling.workingHours.periods || [];
+  const mins = timeToMinutes(hhmm);
+  return periods.some((p) => {
+    const start = timeToMinutes(p.start), end = timeToMinutes(p.end);
+    return end > start && mins >= start && mins < end;
+  });
+}
+// بندهای ۷۲ (زمان‌بندی خودکار) و ۷۶ (هشدار کمبود ظرفیت) — لِین ۷. تابعی
+// خالص (بدون React، بدون خواندن/نوشتنِ هیچ state ای) که تسک‌های
+// بدونِ‌ساعتِ یک روز را با یک الگوریتمِ حریصانه‌ی first-fit در شکاف‌های
+// خالیِ بازه‌های کاری جا می‌دهد:
+//  ۱. بازه‌های اشغال‌شده (تسک‌های ازقبل زمان‌بندی‌شده‌ی همان روز) با
+//     bufferMinutes (بندِ ۸۸) در دو طرف بزرگ‌تر و merge می‌شوند — این
+//     اولین جایی است که bufferMinutes واقعاً «اِعمال» می‌شود، نه فقط
+//     ذخیره؛ قبلاً (جلسه‌ی ۳) فقط تنظیم‌شدنی بود.
+//  ۲. بازه‌های کاری منهای بازه‌های اشغال‌شده = شکاف‌های آزاد.
+//  ۳. تسک‌ها به ترتیبِ اولویت (بحرانی=۴ اول، چون در PRIORITIES عددِ
+//     بزرگ‌تر یعنی فوری‌تر) سپس طولانی‌تر-اول (جاگیریِ بهتر) در اولین
+//     شکافِ به‌اندازه‌کافی‌بزرگ جا می‌شوند.
+//  ۴. هر تسکی که در هیچ شکافی جا نشود در unplaced برمی‌گردد — این خودِ
+//     بندِ ۷۶ است: علتِ نشدن دقیقاً «کمبودِ ظرفیت» است، نه چیزِ دیگر.
+// تست: ۱۰ سناریوی مستقل (اسکریپتِ Node، پایینِ کامیت) — ۱۲/۱۲ assertion.
+function computeAutoSchedule(unscheduledTasks, scheduledTasks, scheduling, bufferMinutes) {
+  bufferMinutes = Math.max(0, bufferMinutes || 0);
+  const periods = (scheduling && scheduling.workingHours && scheduling.workingHours.periods || []).map((p) => [timeToMinutes(p.start), timeToMinutes(p.end)]).filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
+  const occupied = (scheduledTasks || []).filter((t) => t.time).map((t) => {
+    const s = timeToMinutes(t.time);
+    return [Math.max(0, s - bufferMinutes), s + (t.duration || 0) + bufferMinutes];
+  }).sort((a, b) => a[0] - b[0]);
+  const mergedOccupied = [];
+  for (const [s, e] of occupied) {
+    const last = mergedOccupied[mergedOccupied.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else mergedOccupied.push([s, e]);
+  }
+  let freeGaps = [];
+  for (const [ps, pe] of periods) {
+    let cursor = ps;
+    for (const [os, oe] of mergedOccupied) {
+      if (oe <= cursor || os >= pe) continue;
+      if (os > cursor) freeGaps.push([cursor, Math.min(os, pe)]);
+      cursor = Math.max(cursor, oe);
+    }
+    if (cursor < pe) freeGaps.push([cursor, pe]);
+  }
+  freeGaps = freeGaps.filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
+  const queue = [...unscheduledTasks].sort((a, b) => (b.priority || 0) - (a.priority || 0) || (b.duration || 0) - (a.duration || 0));
+  const placements = [];
+  const unplaced = [];
+  for (const task of queue) {
+    const dur = task.duration || 0;
+    let placedIdx = -1;
+    for (let i = 0; i < freeGaps.length; i++) {
+      if (freeGaps[i][1] - freeGaps[i][0] >= dur) {
+        placedIdx = i;
+        break;
+      }
+    }
+    if (placedIdx === -1) {
+      unplaced.push(task.id);
+      continue;
+    }
+    const [gapStart, gapEnd] = freeGaps[placedIdx];
+    placements.push({ id: task.id, time: minutesToHHMM(gapStart) });
+    const newStart = gapStart + dur + bufferMinutes;
+    if (newStart >= gapEnd) freeGaps.splice(placedIdx, 1);
+    else freeGaps[placedIdx] = [newStart, gapEnd];
+  }
+  return { placements, unplaced };
+}
+// بندهای ۸۰ (نمایش مجموع زمان برنامه‌ریزی‌شده) و ۸۱-۸۲ (نمایش ظرفیت روز +
+// هشدار بیش‌برنامه‌ریزی). عمداً کامپوننتی جدا و خوداتکاست (فقط دو عدد و
+// یک پرچمِ enabled می‌گیرد) تا هم در DayPlannerView و هم بعداً در
+// نماهای دیگر تقویم (WeekHourlyView و مشابه — قلمروِ لِین‌های ۳/۶، این
+// جلسه لمس نشدند) با کمترین تغییر قابل‌استفاده‌ی مجدد باشد. اگر کاربر
+// ساعات کاری را غیرفعال کرده باشد (`workingHours.enabled === false`)
+// چیزی رندر نمی‌شود — نه خط ظرفیت، نه هشدار — چون بدون ظرفیتِ تعریف‌شده
+// «بیش‌برنامه‌ریزی» بی‌معنی است.
+function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, scheduledTasks, onApplyAutoSchedule }) {
+  const enabled = !scheduling || !scheduling.workingHours || scheduling.workingHours.enabled !== false;
+  const [runResult, setRunResult] = useState(null);
+  const [confirmingReschedule, setConfirmingReschedule] = useState(false);
+  if (!enabled) return null;
+  const capacityMinutes = workingHoursCapacityMinutes(scheduling);
+  const over = capacityMinutes > 0 && scheduledMinutes > capacityMinutes;
+  // بندِ ۷۷ (نیمه‌ی آگاهی): تسک‌هایی که ساعتِ‌مشخص دارند ولی آن ساعت
+  // بیرون از همه‌ی بازه‌های کاریِ تعریف‌شده می‌افتد. فقط وقتی حداقل یک
+  // بازه‌ی کاریِ معتبر تعریف شده معنا دارد (capacityMinutes>0) — وگرنه
+  // «بیرون از ساعاتِ کاری» یعنی «همه‌چیز»، که هشدارِ بی‌فایده‌ای می‌شود.
+  const outOfHoursTasks = capacityMinutes > 0 ? (scheduledTasks || []).filter((t) => t.time && !isTimeWithinWorkingHours(t.time, scheduling)) : [];
+  const canAutoSchedule = !!onApplyAutoSchedule && unscheduledTasks && unscheduledTasks.length > 0;
+  const runAutoSchedule = () => {
+    const { placements, unplaced } = computeAutoSchedule(unscheduledTasks, scheduledTasks || [], scheduling, (scheduling && scheduling.bufferMinutes) || 0);
+    if (placements.length > 0) onApplyAutoSchedule(placements);
+    // بندِ ۷۶: اگر تسکی جا نشد، دلیلش دقیقاً کمبودِ ظرفیت است — همین‌جا
+    // به‌صراحت گفته می‌شود، نه یک شکستِ بی‌توضیح.
+    setRunResult(
+      unplaced.length === 0 ? `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F.` : `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F\u060C ${unplaced.length} \u062A\u0633\u06A9 \u0628\u0647\u200C\u062F\u0644\u06CC\u0644 \u06A9\u0645\u0628\u0648\u062F \u0638\u0631\u0641\u06CC\u062A \u062C\u0627 \u0646\u0634\u062F.`
+    );
+  };
+  // بندِ ۷۳ (برنامه‌ریزیِ مجددِ خودکار): وقتی روز already بیش‌برنامه‌ریزی
+  // شده (over===true)، «دوباره‌چینیِ کلِ روز» یعنی هر دو دسته‌ی تسکِ
+  // زمان‌بندی‌شده و نشده را یک‌جا به‌عنوانِ ورودیِ «بدونِ‌ساعت» به همان
+  // computeAutoSchedule تست‌شده بدهیم (نه یک الگوریتمِ تازه) — نتیجه:
+  // کلِ روز از نو، به‌ترتیبِ اولویت، بازچیده می‌شود. چون این کارِ
+  // مخرب‌تری از «فقط جاهای خالی را پر کن» است (زمانِ تسک‌هایی را که
+  // کاربر دستی گذاشته عوض می‌کند)، پشتِ یک تأییدِ دوقدمی گذاشته شده —
+  // فقط وقتی واقعاً لازم است (over) نمایش داده می‌شود، نه همیشه.
+  const canReschedule = over && !!onApplyAutoSchedule && (scheduledTasks && scheduledTasks.length > 0);
+  const runReschedule = () => {
+    const allDayTasks = [...(scheduledTasks || []), ...(unscheduledTasks || [])];
+    const { placements, unplaced } = computeAutoSchedule(allDayTasks, [], scheduling, (scheduling && scheduling.bufferMinutes) || 0);
+    if (placements.length > 0) onApplyAutoSchedule(placements);
+    setRunResult(
+      unplaced.length === 0 ? `\u0628\u0631\u0646\u0627\u0645\u0647‌\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F: ${placements.length} \u062A\u0633\u06A9 \u062C\u0627\u0628\u0647‌\u062C\u0627 \u0634\u062F.` : `\u0628\u0631\u0646\u0627\u0645\u0647‌\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F: ${placements.length} \u062C\u0627\u0628\u0647‌\u062C\u0627 \u0634\u062F\u060C ${unplaced.length} \u0628\u0627\u0632 \u0647\u0645 \u062C\u0627 \u0646\u0634\u062F (\u0638\u0631\u0641\u06CC\u062A \u06A9\u0627\u0641\u06CC \u0646\u06CC\u0633\u062A).`
+    );
+    setConfirmingReschedule(false);
+  };
+  return /* @__PURE__ */ React.createElement(
+    GlassCard,
+    { className: "p-3" },
+    /* @__PURE__ */ React.createElement(
+      "div",
+      { className: "flex items-center justify-between gap-2 flex-wrap" },
+      /* @__PURE__ */ React.createElement(
+        "span",
+        { className: "text-[11px] text-slate-400" },
+        "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC\u200C\u0634\u062F\u0647: ",
+        /* @__PURE__ */ React.createElement("b", { style: { color: over ? "#F87171" : "var(--text-normal)" } }, formatDurationFa(scheduledMinutes)),
+        capacityMinutes > 0 && " \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A ",
+        capacityMinutes > 0 && /* @__PURE__ */ React.createElement("b", { style: { color: "var(--text-normal)" } }, formatDurationFa(capacityMinutes))
+      ),
+      over && /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold shrink-0", style: { color: "#F87171" } }, "\u26A0\uFE0F \u0628\u06CC\u0634 \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A"),
+      canAutoSchedule && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: runAutoSchedule,
+          className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 shrink-0"
+        },
+        "\u26A1 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062E\u0648\u062F\u06A9\u0627\u0631"
+      ),
+      canReschedule && !confirmingReschedule && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => setConfirmingReschedule(true),
+          className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 shrink-0"
+        },
+        "\u{1F504} \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F \u06A9\u0644 \u0631\u0648\u0632"
+      ),
+      canReschedule && confirmingReschedule && /* @__PURE__ */ React.createElement(
+        "span",
+        { className: "flex items-center gap-1.5 shrink-0" },
+        /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setConfirmingReschedule(false),
+            className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5"
+          },
+          "\u0627\u0646\u0635\u0631\u0627\u0641"
+        ),
+        /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: runReschedule,
+            className: "text-[11px] font-bold text-white bg-rose-500 rounded-lg px-2.5 py-1.5"
+          },
+          "\u0645\u0637\u0645\u0626\u0646\u06CC\u061F \u0633\u0627\u0639\u062A\u200C\u0647\u0627\u06CC \u062F\u0633\u062A\u06CC \u0647\u0645 \u0639\u0648\u0636 \u0645\u06CC\u200C\u0634\u0648\u0646\u062F"
+        )
+      )
+    ),
+    runResult && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mt-2" }, runResult),
+    outOfHoursTasks.length > 0 && /* @__PURE__ */ React.createElement(
+      "p",
+      { className: "text-[11px] mt-2", style: { color: "#FBBF24" } },
+      "\u23F0 \u0628\u06CC\u0631\u0648\u0646 \u0627\u0632 \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC: ",
+      outOfHoursTasks.map((t) => t.title).join("\u060C ")
+    )
+  );
+}
+// بند ۸۳ (لِین ۷): «توازن کار بین روزهای هفته». نسخه‌ی v1 عمداً فقط
+// اطلاع‌رسانی است، نه اتوماتیک — سیستم هیچ تسکی را جابه‌جا نمی‌کند، فقط
+// نشان می‌دهد کدام روزها نسبت به بقیه سنگین‌ترند تا کاربر خودش دستی
+// جابه‌جا کند. توازنِ خودکارِ واقعی (جابه‌جاییِ تسک‌ها) طبیعتاً بخشی از
+// موتورِ زمان‌بندیِ خودکار (بندهای ۷۲-۷۶) است که هنوز شروع نشده.
+// عمداً یک کامپوننتِ کاملاً مستقل/جدا (نه چیزی افزوده‌شده داخلِ
+// DayPlannerView/WeekHourlyView که همین الان بینِ سه لِین مشترک است) —
+// فقط از یک دکمه‌ی تکی در CalendarViews صدا زده می‌شود، برای کمینه‌کردنِ
+// ریسکِ برخورد.
+function WeeklyLoadModal({ cursor, tasks, scheduling, onClose }) {
+  const capacityMinutes = workingHoursCapacityMinutes(scheduling);
+  const weekStart = Jalali ? Jalali.jalaliStartOfWeek(cursor) : cursor;
+  const days = Array.from({ length: 7 }, (_, i) => Jalali ? Jalali.addDays(weekStart, i) : cursor);
+  const rows = days.map((d) => {
+    const scheduledMinutes = tasks.filter((tsk) => isTaskDueOn(tsk, d) && tsk.time).reduce((s, tsk) => s + (tsk.duration || 0), 0);
+    return {
+      date: d,
+      // WEEKDAY_SHORT_FA is indexed by Date.getDay() (همان قراردادِ خودِ
+      // jalali.js، نه ترتیبِ نمایشِ ستون‌ها) — دیدنِ formatJalali برای تأیید.
+      label: Jalali ? Jalali.WEEKDAY_SHORT_FA[d.getDay()] : "",
+      minutes: scheduledMinutes,
+      over: capacityMinutes > 0 && scheduledMinutes > capacityMinutes
+    };
+  });
+  const overDays = rows.filter((r) => r.over);
+  const chartData = rows.map((r) => ({ day: r.label, minutes: r.minutes }));
+  const closeFooter = /* @__PURE__ */ React.createElement(
+    "button",
+    { type: "button", onClick: onClose, className: "mod-cta rounded-xl py-3 font-bold text-sm w-full" },
+    "\u0628\u0633\u062A\u0646"
+  );
+  return ModalShell(
+    {
+      title: "\u0628\u0627\u0631 \u06A9\u0627\u0631\u06CC \u0647\u0641\u062A\u0647",
+      onClose,
+      footer: closeFooter
+    },
+    /* @__PURE__ */ React.createElement(
+      "p",
+      { className: "text-[11px] text-slate-400 mb-3" },
+      capacityMinutes > 0 ? `\u0645\u0642\u0627\u06CC\u0633\u0647\u0654 \u0647\u0631 \u0631\u0648\u0632 \u0646\u0633\u0628\u062A \u0628\u0647 \u0638\u0631\u0641\u06CC\u062A\u06CC \u0627\u0633\u062A \u06A9\u0647 \u062F\u0631 \u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u062A\u0639\u0631\u06CC\u0641 \u06A9\u0631\u062F\u0647\u200C\u0627\u06CC\u062F (${formatDurationFa(capacityMinutes)} \u062F\u0631 \u0631\u0648\u0632).` : "\u0628\u0631\u0627\u06CC \u0645\u0642\u0627\u06CC\u0633\u0647 \u0628\u0627 \u06CC\u06A9 \u0638\u0631\u0641\u06CC\u062A \u062B\u0627\u0628\u062A، \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC \u0631\u0627 \u0627\u0632 \u0628\u062E\u0634 \u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u0641\u0639\u0627\u0644 \u06A9\u0646\u06CC\u062F — \u0641\u0639\u0644\u0627\u064B \u0641\u0642\u0637 \u0628\u0627\u0631ِ \u0646\u0633\u0628\u06CC \u0631\u0648\u0632\u0647\u0627 \u0646\u0633\u0628\u062A \u0628\u0647 \u0647\u0645 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F."
+    ),
+    /* @__PURE__ */ React.createElement(SimpleBarChart, { data: chartData, xKey: "day", yKey: "minutes", color: "#22D3EE", height: 130 }),
+    overDays.length > 0 && /* @__PURE__ */ React.createElement(
+      "div",
+      { className: "mt-2 p-3 rounded-xl", style: { background: "rgba(248,113,113,.1)", border: "1px solid rgba(248,113,113,.25)" } },
+      /* @__PURE__ */ React.createElement(
+        "p",
+        { className: "text-[11px] font-bold", style: { color: "#F87171" } },
+        "\u26A0\uFE0F \u0631\u0648\u0632\u0647\u0627\u06CC \u0628\u06CC\u0634\u200C\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0634\u062F\u0647: ",
+        overDays.map((r) => `${r.label} (${formatDurationFa(r.minutes)})`).join("\u060C ")
+      )
+    )
+  );
+}
 function AgendaView({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }) {
   if (!Jalali) return null;
   const today = /* @__PURE__ */ new Date();
@@ -4427,15 +4772,20 @@ function CalendarZoomControls({ zoom, slotMinutes, taskDetail, onZoomChange, onS
     /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
   )));
 }
-function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
+function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
   const unscheduled = dayTasks.filter((tsk) => !tsk.time);
   const scheduled = dayTasks.filter((tsk) => tsk.time);
+  // بند ۸۰ (Lane 7): «زمان‌بندی‌شده» طبق تعریفِ همین ویو یعنی تسک‌هایی که
+  // ساعت مشخص دارند (بالا، `scheduled`) — نه هر تسکِ بدون‌تکرارِ due-هرروز؛
+  // این‌طوری تسک‌های شناور بدون ساعت (که isTaskDueOn برای آن‌ها همیشه true
+  // برمی‌گرداند) عدد ظرفیت را کاذب زیاد نمی‌کنند.
+  const scheduledMinutes = scheduled.reduce((s, tsk) => s + (tsk.duration || 0), 0);
   // rowH is "pixels per 30 real minutes" - scaling it by `zoom` is the whole
-  // zoom mechanism. topFor/minutesFromClientY/drag deltas below were already
-  // written purely in terms of rowH, so they automatically respect zoom with
-  // no other changes. slotMinutes only changes the *visual* grid below (see
-  // gridRows), never this positioning math.
+  // zoom mechanism (Lane 6). topFor/minutesFromClientY/drag deltas below were
+  // already written purely in terms of rowH, so they automatically respect
+  // zoom with no other changes. slotMinutes only changes the *visual* grid
+  // below (see gridRows), never this positioning math.
   const rowH = 26 * zoom;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
   const gridRows = calSlots(slotMinutes);
@@ -4592,7 +4942,13 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const createAt = (mins) => {
     if (onCreateAt) onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling, unscheduledTasks: unscheduled, scheduledTasks: scheduled, onApplyAutoSchedule: (placements) => placements.forEach(({ id, time }) => {
+    // dayTasks (نه فقط unscheduled) چون این callback هم برای بندِ ۷۲
+    // (فقط تسک‌های بدونِ‌ساعت) و هم بندِ ۷۳ (کلِ روز، شاملِ تسک‌هایی که
+    // قبلاً ساعت داشتند) صدا زده می‌شود.
+    const tsk = dayTasks.find((t) => t.id === id);
+    if (tsk) onSchedule(id, time, tsk.duration);
+  }) }), unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
     const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
     return /* @__PURE__ */ React.createElement(
       "div",
@@ -4894,10 +5250,14 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
-function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, appearance, onChangeAppearance }) {
+function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, scheduling, appearance, onChangeAppearance }) {
   const [view, setView] = useState("day");
   const [weekSubView, setWeekSubView] = useState("cards");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
+  // بند ۸۳ (لِین ۷): «بار کاری هفته» — دکمه‌ی تکی که یک مودالِ مستقل و
+  // اطلاع‌رسانیِ‌محضِ WeeklyLoadModal را باز می‌کند؛ عمداً هیچ نمای موجودِ
+  // تقویم (DayPlannerView/WeekHourlyView/...) را تغییر نمی‌دهد.
+  const [showWeeklyLoad, setShowWeeklyLoad] = useState(false);
   const zoom = appearance?.calendarZoom ?? 1;
   const slotMinutes = appearance?.calendarSlotMinutes ?? 30;
   const taskDetail = appearance?.calendarTaskDetail ?? "full";
@@ -4938,7 +5298,20 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     )
   );
   const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes, taskDetail }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  const weeklyLoadButton = /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "flex justify-end" },
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setShowWeeklyLoad(true),
+        className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5"
+      },
+      "\u{1F4CA} \u0628\u0627\u0631 \u06A9\u0627\u0631\u06CC \u0647\u0641\u062A\u0647"
+    )
+  );
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), weeklyLoadButton, view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }), showWeeklyLoad && /* @__PURE__ */ React.createElement(WeeklyLoadModal, { cursor, tasks, scheduling, onClose: () => setShowWeeklyLoad(false) }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
@@ -5294,7 +5667,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
