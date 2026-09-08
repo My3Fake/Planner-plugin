@@ -40,15 +40,58 @@ interface LifeFlowSettings {
 	reports: {
 		folderName: string;
 	};
+	// Lane 7 (زمان‌بندی هوشمند و ظرفیت، PROGRESS.md بندهای ۷۷/۷۸/۸۰-۸۸): بازه‌های
+	// ساعات کاری که مجموعشان ظرفیتِ روزانه را می‌سازد (بند ۷۸: چند بازه در یک
+	// روز). یک مجموعه‌ی واحد برای همه‌ی روزهای هفته — نسخه‌ی v1، بدون تفکیکِ
+	// روزهای هفته. Mirrors app.jsx's DEFAULT_SCHEDULING exactly (kept separate
+	// since this file is plain TS, not part of the React tree — same
+	// low-divergence-risk duplication already used for QUADRANTS/PRIORITIES).
+	scheduling: {
+		workingHours: {
+			enabled: boolean;
+			periods: Array<{ id: string; start: string; end: string }>;
+		};
+		// بندِ ۸۴: دقیقاً هم‌شکلِ workingHours — بازه‌هایی از روز به‌عنوانِ
+		// زمانِ تمرکز؛ opt-in (پیش‌فرض خاموش/خالی).
+		focusTime: {
+			enabled: boolean;
+			periods: Array<{ id: string; start: string; end: string }>;
+		};
+		// بندهای ۸۵/۸۶: هدفِ روزانه/هفتگیِ تمرکز به دقیقه؛ ۰ یعنی «هدفی
+		// تنظیم نشده»، نه «هدفِ صفردقیقه‌ای».
+		focusGoals: {
+			dailyMinutes: number;
+			weeklyMinutes: number;
+		};
+		// بندِ ۸۷: اعدادِ ۰-۶ هم‌قراردادِ JS Date.getDay() (۰=یکشنبه).
+		noMeetingWeekdays: number[];
+		// بندِ ۸۸: یک عددِ سراسریِ ساده (v1) — اِعمالِ واقعیِ آن (درجِ خودکار
+		// در برنامه) بخشی از موتورِ زمان‌بندیِ خودکارِ آینده است.
+		bufferMinutes: number;
+	};
 	appearance: {
 		fontFamily: string;
 		density: string;
+		// Lane 6 / item 23 (calendar zoom + time scale). No native-tab control
+		// for these yet — the zoom/slot buttons live directly in the calendar
+		// view (CalendarZoomControls in app.jsx), right where they're used.
+		// Optional here only so this interface doesn't need to know their
+		// defaults; readSettings()'s spread already round-trips whatever the
+		// React app wrote, same as any other appearance field.
+		calendarZoom?: number;
+		calendarSlotMinutes?: number;
+		calendarTaskDetail?: string;
 		quadrantColors: {
 			q1: string;
 			q2: string;
 			q3: string;
 			q4: string;
 		};
+		// Item 22 first slice - Record<string,string> rather than a fixed
+		// shape like quadrantColors, since the exercise-type ids are
+		// arbitrary Persian strings defined in app.jsx's EXERCISE_TYPES, not
+		// a fixed small set of known keys like q1-q4.
+		exerciseTypeColors?: Record<string, string>;
 	};
 	[key: string]: unknown;
 }
@@ -64,6 +107,16 @@ interface AiConfig {
 // reference the same object without repeating the 4 hex values twice.
 const DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
 
+// Mirrors app.jsx's DEFAULT_WORKING_HOURS_PERIODS exactly (same 09:00–17:00
+// single-period default, chosen as a common generic working day).
+const DEFAULT_WORKING_HOURS_PERIODS = [{ id: "default-1", start: "09:00", end: "17:00" }];
+// Item 22 first slice: mirrors app.jsx's DEFAULT_EXERCISE_TYPE_COLORS exactly
+// (same 4 Persian type ids as keys, same hex defaults). Kept here for the
+// same reason as DEFAULT_QUADRANT_COLORS above - this file is plain TS, not
+// part of the React tree, so a small amount of constant duplication is
+// cheaper and lower-risk than importing across the build boundary.
+const DEFAULT_EXERCISE_TYPE_COLORS: Record<string, string> = { "قدرتی": "#C026D3", "کششی": "#F59E0B", "کاردیو": "#DB2777", "دویدن": "#22D3EE" };
+
 const DEFAULT_SETTINGS: LifeFlowSettings = {
 	theme: "dark",
 	language: "fa",
@@ -74,8 +127,22 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 	},
 	taskDefaults: { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false },
 	reports: { folderName: "LifeFlow Reports" },
-	appearance: { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS },
+	scheduling: {
+		workingHours: { enabled: true, periods: DEFAULT_WORKING_HOURS_PERIODS },
+		focusTime: { enabled: false, periods: [] },
+		focusGoals: { dailyMinutes: 0, weeklyMinutes: 0 },
+		noMeetingWeekdays: [],
+		bufferMinutes: 0,
+	},
+	appearance: { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS, exerciseTypeColors: DEFAULT_EXERCISE_TYPE_COLORS },
 };
+
+// Tiny local id generator for new working-hour periods — settings-tab.ts is
+// plain TS with no dependency on app.jsx's `uid()`, so it gets its own
+// (same reasoning as every other small duplicated helper in this file).
+function newPeriodId(): string {
+	return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
 
 const LANGUAGE_OPTIONS: Record<string, string> = {
 	fa: "فارسی",
@@ -163,10 +230,27 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 				},
 				taskDefaults: { ...DEFAULT_SETTINGS.taskDefaults, ...(parsed.taskDefaults || {}) },
 				reports: { ...DEFAULT_SETTINGS.reports, ...(parsed.reports || {}) },
+				scheduling: {
+					...DEFAULT_SETTINGS.scheduling,
+					...(parsed.scheduling || {}),
+					workingHours: {
+						...DEFAULT_SETTINGS.scheduling.workingHours,
+						...((parsed.scheduling || {}).workingHours || {}),
+					},
+					focusTime: {
+						...DEFAULT_SETTINGS.scheduling.focusTime,
+						...((parsed.scheduling || {}).focusTime || {}),
+					},
+					focusGoals: {
+						...DEFAULT_SETTINGS.scheduling.focusGoals,
+						...((parsed.scheduling || {}).focusGoals || {}),
+					},
+				},
 				appearance: {
 					...DEFAULT_SETTINGS.appearance,
 					...(parsed.appearance || {}),
 					quadrantColors: { ...DEFAULT_SETTINGS.appearance.quadrantColors, ...((parsed.appearance || {}).quadrantColors || {}) },
+					exerciseTypeColors: { ...DEFAULT_SETTINGS.appearance.exerciseTypeColors, ...((parsed.appearance || {}).exerciseTypeColors || {}) },
 				},
 			};
 		} catch (e) {
@@ -281,6 +365,42 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					btn.onClick(() => {
 						const next = this.readSettings();
 						next.appearance.quadrantColors[quadId] = DEFAULT_QUADRANT_COLORS[quadId];
+						this.writeSettings(next);
+						this.display();
+					});
+				});
+		});
+
+		// ---------------------------------------------------------------
+		// Item 22 (رنگ‌بندی گسترده) first slice: same one-color-per-item
+		// pattern as the quadrant section above, applied to fitness activity
+		// types. Further categories (بخش یادگیری/زیرتسک/زیربخش/دسته‌ها) are
+		// intentionally left for a later session - see PROGRESS.md 4.8.
+		containerEl.createEl("h3", { text: "رنگ‌های نوع فعالیت (ورزش)" });
+		containerEl.createEl("p", {
+			text: "رنگ هر نوع تمرین در برگه‌ی تناسب‌اندام (ثبت تمرین و افزودن تمرین تازه) استفاده می‌شود.",
+			cls: "setting-item-description",
+		});
+
+		Object.keys(DEFAULT_EXERCISE_TYPE_COLORS).forEach((typeId) => {
+			new Setting(containerEl)
+				.setName(typeId)
+				.addColorPicker((picker) => {
+					picker.setValue((settings.appearance.exerciseTypeColors || {})[typeId] ?? DEFAULT_EXERCISE_TYPE_COLORS[typeId]);
+					picker.onChange((value) => {
+						const next = this.readSettings();
+						if (!next.appearance.exerciseTypeColors) next.appearance.exerciseTypeColors = { ...DEFAULT_EXERCISE_TYPE_COLORS };
+						next.appearance.exerciseTypeColors[typeId] = value;
+						this.writeSettings(next);
+					});
+				})
+				.addExtraButton((btn) => {
+					btn.setIcon("rotate-ccw");
+					btn.setTooltip("بازگشت به رنگ پیش‌فرض");
+					btn.onClick(() => {
+						const next = this.readSettings();
+						if (!next.appearance.exerciseTypeColors) next.appearance.exerciseTypeColors = { ...DEFAULT_EXERCISE_TYPE_COLORS };
+						next.appearance.exerciseTypeColors[typeId] = DEFAULT_EXERCISE_TYPE_COLORS[typeId];
 						this.writeSettings(next);
 						this.display();
 					});
@@ -426,6 +546,217 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					this.writeSettings(next);
 				});
 			});
+
+		// ---------------------------------------------------------------
+		containerEl.createEl("h3", { text: "زمان‌بندی هوشمند و ظرفیت" });
+		containerEl.createEl("p", {
+			text: "بازه‌های ساعات کاری زیر مجموعاً «ظرفیت» هر روز را می‌سازند — مثلاً صبح ۹ تا ۱۳ به‌علاوه‌ی عصر ۱۵ تا ۱۹ یعنی ظرفیت ۸ ساعت. این ظرفیت در نمای «برنامه‌ریزی روزانه»ی تقویم، کنار مجموع زمانِ زمان‌بندی‌شده‌ی همان روز نشان داده می‌شود و در صورت بیش‌برنامه‌ریزی هشدار می‌دهد. در هر ردیف، ورودیِ اول ساعتِ شروع و ورودیِ دوم ساعتِ پایانِ همان بازه است. فعلاً همین یک مجموعه‌ی بازه برای همه‌ی روزهای هفته یکسان اعمال می‌شود.",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("لحاظ‌کردن ساعات کاری در محاسبه‌ی ظرفیت")
+			.setDesc("خاموش‌کردن این گزینه فقط نمایشِ ظرفیت/هشدارِ بیش‌برنامه‌ریزی را در تقویم مخفی می‌کند؛ خودِ بازه‌ها پاک نمی‌شوند.")
+			.addToggle((toggle) => {
+				toggle.setValue(settings.scheduling.workingHours.enabled);
+				toggle.onChange((value) => {
+					const next = this.readSettings();
+					next.scheduling.workingHours.enabled = value;
+					this.writeSettings(next);
+				});
+			});
+
+		settings.scheduling.workingHours.periods.forEach((period, idx) => {
+			const canRemove = settings.scheduling.workingHours.periods.length > 1;
+			new Setting(containerEl)
+				.setName(`بازه‌ی کاری ${idx + 1}`)
+				.addText((text) => {
+					text.inputEl.type = "time";
+					text.setValue(period.start);
+					text.onChange((value) => {
+						const next = this.readSettings();
+						const p = next.scheduling.workingHours.periods.find((x) => x.id === period.id);
+						if (p) p.start = value;
+						this.writeSettings(next);
+					});
+				})
+				.addText((text) => {
+					text.inputEl.type = "time";
+					text.setValue(period.end);
+					text.onChange((value) => {
+						const next = this.readSettings();
+						const p = next.scheduling.workingHours.periods.find((x) => x.id === period.id);
+						if (p) p.end = value;
+						this.writeSettings(next);
+					});
+				})
+				.addExtraButton((btn) => {
+					btn.setIcon("trash-2");
+					btn.setTooltip(canRemove ? "حذف این بازه" : "حداقل یک بازه لازم است");
+					btn.setDisabled(!canRemove);
+					btn.onClick(() => {
+						if (!canRemove) return;
+						const next = this.readSettings();
+						next.scheduling.workingHours.periods = next.scheduling.workingHours.periods.filter((x) => x.id !== period.id);
+						this.writeSettings(next);
+						this.display();
+					});
+				});
+		});
+
+		new Setting(containerEl).addButton((btn) => {
+			btn.setButtonText("+ افزودن بازه‌ی کاری");
+			btn.onClick(() => {
+				const next = this.readSettings();
+				next.scheduling.workingHours.periods.push({ id: newPeriodId(), start: "09:00", end: "17:00" });
+				this.writeSettings(next);
+				this.display();
+			});
+		});
+
+		// --- بند ۸۴: Focus Time — دقیقاً هم‌ساختارِ ساعاتِ کاری بالا، فقط
+		// روی زیرشاخه‌ی دیگری از scheduling می‌نویسد (opt-in، پیش‌فرض خاموش).
+		containerEl.createEl("h4", { text: "زمان تمرکز (Focus Time)" });
+		containerEl.createEl("p", {
+			text: "بازه‌هایی از روز که می‌خواهید به‌عنوان زمانِ تمرکزِ محافظت‌شده علامت بخورند (مثلاً صبح‌های زود). فعلاً فقط تعریف می‌شوند؛ جلوگیریِ خودکار از زمان‌بندیِ کارهای دیگر در این بازه‌ها بخشی از موتورِ زمان‌بندیِ خودکارِ آینده خواهد بود.",
+			cls: "setting-item-description",
+		});
+		new Setting(containerEl).setName("فعال‌کردن زمان تمرکز").addToggle((toggle) => {
+			toggle.setValue(settings.scheduling.focusTime.enabled);
+			toggle.onChange((value) => {
+				const next = this.readSettings();
+				next.scheduling.focusTime.enabled = value;
+				this.writeSettings(next);
+			});
+		});
+		settings.scheduling.focusTime.periods.forEach((period, idx) => {
+			const canRemove = true;
+			new Setting(containerEl)
+				.setName(`بازه‌ی تمرکز ${idx + 1}`)
+				.addText((text) => {
+					text.inputEl.type = "time";
+					text.setValue(period.start);
+					text.onChange((value) => {
+						const next = this.readSettings();
+						const p = next.scheduling.focusTime.periods.find((x) => x.id === period.id);
+						if (p) p.start = value;
+						this.writeSettings(next);
+					});
+				})
+				.addText((text) => {
+					text.inputEl.type = "time";
+					text.setValue(period.end);
+					text.onChange((value) => {
+						const next = this.readSettings();
+						const p = next.scheduling.focusTime.periods.find((x) => x.id === period.id);
+						if (p) p.end = value;
+						this.writeSettings(next);
+					});
+				})
+				.addExtraButton((btn) => {
+					btn.setIcon("trash-2");
+					btn.setTooltip("حذف این بازه");
+					btn.setDisabled(!canRemove);
+					btn.onClick(() => {
+						const next = this.readSettings();
+						next.scheduling.focusTime.periods = next.scheduling.focusTime.periods.filter((x) => x.id !== period.id);
+						this.writeSettings(next);
+						this.display();
+					});
+				});
+		});
+		new Setting(containerEl).addButton((btn) => {
+			btn.setButtonText("+ افزودن بازه‌ی تمرکز");
+			btn.onClick(() => {
+				const next = this.readSettings();
+				next.scheduling.focusTime.periods.push({ id: newPeriodId(), start: "07:00", end: "09:00" });
+				this.writeSettings(next);
+				this.display();
+			});
+		});
+
+		// --- بندهای ۸۵/۸۶: هدف روزانه/هفتگیِ تمرکز (به دقیقه). صفر یعنی
+		// «بدون هدف» — این‌جا فقط ذخیره می‌شود؛ محاسبه‌ی پیشرفتِ واقعی از
+		// روی جلساتِ پومودورو (قلمروِ لِین ۴) در جلسه‌ای دیگر انجام می‌شود
+		// تا با کارِ فعالِ آن لِین برخورد نکند.
+		containerEl.createEl("h4", { text: "هدف تمرکز روزانه و هفتگی" });
+		containerEl.createEl("p", {
+			text: "هدفِ دقیقه‌ای برای زمانِ تمرکز (مثلاً زمانِ کاریِ پومودورو). صفر یعنی هدفی تنظیم نشده.",
+			cls: "setting-item-description",
+		});
+		new Setting(containerEl).setName("هدف روزانه (دقیقه)").addText((text) => {
+			text.inputEl.type = "number";
+			text.inputEl.min = "0";
+			text.inputEl.step = "5";
+			text.setValue(String(settings.scheduling.focusGoals.dailyMinutes));
+			text.onChange((value) => {
+				const next = this.readSettings();
+				next.scheduling.focusGoals.dailyMinutes = Math.max(0, Number(value) || 0);
+				this.writeSettings(next);
+			});
+		});
+		new Setting(containerEl).setName("هدف هفتگی (دقیقه)").addText((text) => {
+			text.inputEl.type = "number";
+			text.inputEl.min = "0";
+			text.inputEl.step = "5";
+			text.setValue(String(settings.scheduling.focusGoals.weeklyMinutes));
+			text.onChange((value) => {
+				const next = this.readSettings();
+				next.scheduling.focusGoals.weeklyMinutes = Math.max(0, Number(value) || 0);
+				this.writeSettings(next);
+			});
+		});
+
+		// --- بند ۸۷: روز بدون جلسه — انتخابِ روزهای هفته که نباید در آن‌ها
+		// جلسه/کارِ زمان‌بندی‌شده گذاشته شود. id ها دقیقاً هم‌قراردادِ
+		// app.jsx's WEEKDAYS (id = Date.getDay()، ترتیبِ نمایش از شنبه).
+		containerEl.createEl("h4", { text: "روز بدون جلسه" });
+		containerEl.createEl("p", {
+			text: "روزهایی از هفته که ترجیح می‌دهید در آن‌ها جلسه یا کارِ زمان‌بندی‌شده نداشته باشید.",
+			cls: "setting-item-description",
+		});
+		const WEEKDAY_LABELS_FA: Array<{ id: number; label: string }> = [
+			{ id: 6, label: "شنبه" },
+			{ id: 0, label: "یکشنبه" },
+			{ id: 1, label: "دوشنبه" },
+			{ id: 2, label: "سه‌شنبه" },
+			{ id: 3, label: "چهارشنبه" },
+			{ id: 4, label: "پنج‌شنبه" },
+			{ id: 5, label: "جمعه" },
+		];
+		WEEKDAY_LABELS_FA.forEach(({ id, label }) => {
+			new Setting(containerEl).setName(label).addToggle((toggle) => {
+				toggle.setValue(settings.scheduling.noMeetingWeekdays.includes(id));
+				toggle.onChange((value) => {
+					const next = this.readSettings();
+					const set = new Set(next.scheduling.noMeetingWeekdays);
+					if (value) set.add(id);
+					else set.delete(id);
+					next.scheduling.noMeetingWeekdays = Array.from(set).sort();
+					this.writeSettings(next);
+				});
+			});
+		});
+
+		// --- بند ۸۸: زمان حائل — نسخه‌ی v1، فقط یک عددِ سراسری ذخیره
+		// می‌شود؛ درجِ خودکارِ آن در برنامه موکول به موتورِ زمان‌بندیِ
+		// خودکارِ آینده است.
+		containerEl.createEl("h4", { text: "زمان حائل" });
+		containerEl.createEl("p", {
+			text: "چند دقیقه فاصله‌ی خالی قبل و بعد از فعالیت‌های زمان‌بندی‌شده در نظر گرفته شود (فعلاً فقط ذخیره می‌شود؛ اِعمالِ خودکارِ آن به‌زودی).",
+			cls: "setting-item-description",
+		});
+		new Setting(containerEl).setName("زمان حائل (دقیقه)").addText((text) => {
+			text.inputEl.type = "number";
+			text.inputEl.min = "0";
+			text.inputEl.step = "5";
+			text.setValue(String(settings.scheduling.bufferMinutes));
+			text.onChange((value) => {
+				const next = this.readSettings();
+				next.scheduling.bufferMinutes = Math.max(0, Number(value) || 0);
+				this.writeSettings(next);
+			});
+		});
 
 		// ---------------------------------------------------------------
 		containerEl.createEl("h3", { text: "خلاصه‌سازی با هوش مصنوعی" });
