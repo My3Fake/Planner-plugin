@@ -4376,6 +4376,8 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
       title = `\u0633\u0627\u0644 ${Jalali.toFaDigits(Jalali.toJalaliParts(cursor).jy)}`;
     } else if (view === "agenda") {
       title = "\u06F1\u06F4 \u0631\u0648\u0632 \u0622\u06CC\u0646\u062F\u0647";
+    } else if (view === "custom") {
+      title = "\u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC";
     }
   }
   const navButtons = view === "agenda" ? null : React.createElement(
@@ -4385,7 +4387,7 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
     React.createElement("button", { onClick: onToday, className: "px-3 h-8 rounded-lg bg-white/[0.06] text-xs text-slate-300 font-medium" }, "\u0627\u0645\u0631\u0648\u0632"),
     React.createElement("button", { onClick: onNext, className: "w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center" }, React.createElement(Ic, { name: "chevron-left", size: 15 }))
   );
-  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
+  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"], ["custom", "\u0633\u0641\u0627\u0631\u0634\u06CC"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
 // Items 23 (Zoom و مقیاس زمانی) و ۲۰ (نمایش فشرده/متنوع تسک‌ها): both live in
 // this one toolbar since they're both "how the hourly grid renders" controls
@@ -4396,11 +4398,19 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
 // calendarTaskDetail (see DEFAULT_APPEARANCE), so the chosen scale/detail
 // level survives closing/reopening the plugin, same as every other
 // appearance setting.
+// بندهای ۲۰/۲۳/۱۹ مشترکاً از این دو لیبل استفاده می‌کنند (CalendarZoomControls
+// و CustomViewEditorModal تازه‌ی بندِ ۱۹).
+function calSlotLabel(m) {
+  return m === 60 ? "\u06F1\u0633\u0627\u0639\u062A" : `${toFa(m)}\u062F`;
+}
+function calDetailLabel(d) {
+  return d === "full" ? "\u06A9\u0627\u0645\u0644" : d === "compact" ? "\u0641\u0634\u0631\u062F\u0647" : "\u06A9\u0645\u06CC\u0646\u0647";
+}
 function CalendarZoomControls({ zoom, slotMinutes, taskDetail, onZoomChange, onSlotMinutesChange, onTaskDetailChange }) {
   const zoomOut = () => onZoomChange(Math.max(CAL_ZOOM_MIN, Math.round((zoom - CAL_ZOOM_STEP) * 100) / 100));
   const zoomIn = () => onZoomChange(Math.min(CAL_ZOOM_MAX, Math.round((zoom + CAL_ZOOM_STEP) * 100) / 100));
-  const slotLabel = (m) => m === 60 ? "\u06F1\u0633\u0627\u0639\u062A" : `${toFa(m)}\u062F`;
-  const detailLabel = (d) => d === "full" ? "\u06A9\u0627\u0645\u0644" : d === "compact" ? "\u0641\u0634\u0631\u062F\u0647" : "\u06A9\u0645\u06CC\u0646\u0647";
+  const slotLabel = calSlotLabel;
+  const detailLabel = calDetailLabel;
   return /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_SLOT_OPTIONS.map((m) => /* @__PURE__ */ React.createElement(
     "button",
     {
@@ -4426,6 +4436,56 @@ function CalendarZoomControls({ zoom, slotMinutes, taskDetail, onZoomChange, onS
     { onClick: zoomIn, disabled: zoom >= CAL_ZOOM_MAX, className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 disabled:opacity-30" },
     /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
   )));
+}
+// بند ۱۹ (نماهای کاملاً سفارشی): فرمِ ساخت/ویرایشِ یک نمای ذخیره‌شده.
+// عمداً از همان کنترل‌های بندهای ۲۰/۲۳ (چیپ‌های سطحِ جزئیات/مقیاسِ زمانی،
+// دکمه‌های زوم) استفاده مجدد شده - این‌ها همان زبانِ بصری‌ای‌اند که کاربر
+// از قبل در تولبارِ اصلیِ تقویم دیده، پس یادگیریِ تازه‌ای لازم ندارد.
+function CustomViewEditorModal({ initial, onClose, onSave }) {
+  const [name, setName] = useState(initial.name || "");
+  const [dayCount, setDayCount] = useState(initial.dayCount || 3);
+  const [taskDetail, setTaskDetail] = useState(initial.taskDetail || "full");
+  const [zoom, setZoom] = useState(initial.zoom || 1);
+  const [slotMinutes, setSlotMinutes] = useState(initial.slotMinutes || 30);
+  const [quadFilter, setQuadFilter] = useState(initial.quadFilter || null);
+  const toggleQuad = (id) => setQuadFilter((prev) => {
+    const cur = Array.isArray(prev) ? prev : [];
+    return cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+  });
+  const submit = () => {
+    onSave({ ...initial, name: name.trim() || "\u0628\u06CC\u200C\u0646\u0627\u0645", dayCount: Math.max(1, Math.min(14, dayCount)), taskDetail, zoom, slotMinutes, quadFilter: Array.isArray(quadFilter) && quadFilter.length > 0 ? quadFilter : null });
+  };
+  return /* @__PURE__ */ React.createElement(
+    ModalShell,
+    { title: initial.isNew ? "\u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC \u062A\u0627\u0632\u0647" : "\u0648\u06CC\u0631\u0627\u06CC\u0634 \u0646\u0645\u0627", onClose, onSubmit: submit, submitLabel: "\u0630\u062E\u06CC\u0631\u0647" },
+    /* @__PURE__ */ React.createElement("input", {
+      type: "text",
+      value: name,
+      onChange: (e) => setName(e.target.value),
+      placeholder: "\u0646\u0627\u0645 \u0646\u0645\u0627 \u2014 \u0645\u062B\u0644 \u0628\u0631\u0631\u0633\u06CC \u0647\u0641\u062A\u06AF\u06CC",
+      className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none mb-3"
+    }),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u062A\u0639\u062F\u0627\u062F \u0631\u0648\u0632"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, /* @__PURE__ */ React.createElement(
+      "button",
+      { onClick: () => setDayCount((d) => Math.max(1, d - 1)), className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300" },
+      /* @__PURE__ */ React.createElement(Ic, { name: "minus", size: 13 })
+    ), /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-300 w-9 text-center" }, toFa(dayCount), " \u0631\u0648\u0632"), /* @__PURE__ */ React.createElement(
+      "button",
+      { onClick: () => setDayCount((d) => Math.min(14, d + 1)), className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300" },
+      /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
+    ))),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u0633\u0637\u062D \u062C\u0632\u0626\u06CC\u0627\u062A"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_TASK_DETAIL_OPTIONS.map((d) => /* @__PURE__ */ React.createElement(
+      "button",
+      { key: d, onClick: () => setTaskDetail(d), className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${taskDetail === d ? "bg-white/10 text-white" : "text-slate-400"}` },
+      calDetailLabel(d)
+    )))),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u0645\u0642\u06CC\u0627\u0633 \u0632\u0645\u0627\u0646\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_SLOT_OPTIONS.map((m) => /* @__PURE__ */ React.createElement(
+      "button",
+      { key: m, onClick: () => setSlotMinutes(m), className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${slotMinutes === m ? "bg-white/10 text-white" : "text-slate-400"}` },
+      calSlotLabel(m)
+    )))),
+    /* @__PURE__ */ React.createElement("div", { className: "mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0631\u0628\u0639\u200C\u0647\u0627 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: Array.isArray(quadFilter) && quadFilter.includes(q.id), onClick: () => toggleQuad(q.id), color: q.color }, q.label))))
+  );
 }
 function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
@@ -4894,10 +4954,17 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
-function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, appearance, onChangeAppearance }) {
+function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, appearance, onChangeAppearance, customViews = [], onAddCustomView, onUpdateCustomView, onDeleteCustomView }) {
   const [view, setView] = useState("day");
   const [weekSubView, setWeekSubView] = useState("cards");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
+  // بند ۱۹ (نماهای کاملاً سفارشی): کدام نمای ذخیره‌شده الان فعال است -
+  // این خودش ذخیره نمی‌شود (فقط انتخابِ لحظه‌ای در جلسه)، ولی خودِ لیستِ
+  // نماها (`customViews`) از طریقِ appearance-level state در LifeFlowApp
+  // ماندگار است.
+  const [activeCustomViewId, setActiveCustomViewId] = useState(null);
+  const [editingCustomView, setEditingCustomView] = useState(null);
+  const activeCustomView = customViews.find((v) => v.id === activeCustomViewId) || null;
   const zoom = appearance?.calendarZoom ?? 1;
   const slotMinutes = appearance?.calendarSlotMinutes ?? 30;
   const taskDetail = appearance?.calendarTaskDetail ?? "full";
@@ -4914,6 +4981,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     else if (view === "threeDay") setCursor((c) => Jalali.addDays(c, dir * 3));
     else if (view === "week") setCursor((c) => Jalali.addDays(c, dir * 7));
     else if (view === "month") setCursor((c) => Jalali.jalaliAddMonths(c, dir));
+    else if (view === "custom") setCursor((c) => Jalali.addDays(c, dir * (activeCustomView ? activeCustomView.dayCount : 1)));
     else setCursor((c) => Jalali.jalaliAddMonths(c, dir * 12));
   };
   const jumpDay = (d) => {
@@ -4938,7 +5006,78 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     )
   );
   const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes, taskDetail }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }));
+  // بند ۱۹: فیلترِ ربع فقط وقتی اعمال می‌شود که کاربر صراحتاً حداقل یک ربع
+  // را انتخاب کرده باشد؛ `null`/آرایه‌ی خالی یعنی «همه را نشان بده» (پیش‌فرضِ
+  // امن برایِ نماهای تازه، تا هیچ تسکی به‌طورِ غیرمنتظره پنهان نشود).
+  const customViewTasks = (cv) => cv && Array.isArray(cv.quadFilter) && cv.quadFilter.length > 0 ? tasks.filter((t2) => cv.quadFilter.includes(t2.quad)) : tasks;
+  const customToolbar = React.createElement(
+    "div",
+    { className: "flex items-center gap-1.5 flex-wrap" },
+    customViews.map((cv) => React.createElement(
+      "button",
+      {
+        key: cv.id,
+        onClick: () => setActiveCustomViewId(cv.id),
+        className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium shrink-0 ${activeCustomViewId === cv.id ? "bg-white/10 text-white" : "bg-white/[0.05] text-slate-400"}`
+      },
+      cv.name || "\u0628\u06CC\u200C\u0646\u0627\u0645"
+    )),
+    React.createElement(
+      "button",
+      {
+        onClick: () => setEditingCustomView({ id: uid(), name: "", dayCount: 3, taskDetail: "full", zoom: 1, slotMinutes: 30, quadFilter: null, isNew: true }),
+        className: "px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-fuchsia-300 bg-white/[0.05] flex items-center gap-1 shrink-0"
+      },
+      React.createElement(Ic, { name: "plus", size: 12 }),
+      "\u0646\u0645\u0627\u06CC \u062A\u0627\u0632\u0647"
+    ),
+    activeCustomView && React.createElement(
+      "button",
+      { onClick: () => setEditingCustomView({ ...activeCustomView }), className: "w-7 h-7 rounded-lg bg-white/[0.05] flex items-center justify-center shrink-0", title: "\u0648\u06CC\u0631\u0627\u06CC\u0634" },
+      React.createElement(Ic, { name: "pencil", size: 13, className: "text-slate-300" })
+    ),
+    activeCustomView && React.createElement(
+      "button",
+      {
+        onClick: () => {
+          onDeleteCustomView && onDeleteCustomView(activeCustomView.id);
+          setActiveCustomViewId(null);
+        },
+        className: "w-7 h-7 rounded-lg bg-white/[0.05] flex items-center justify-center shrink-0",
+        title: "\u062D\u0630\u0641"
+      },
+      React.createElement(Ic, { name: "trash", size: 13, className: "text-rose-400/80" })
+    )
+  );
+  const customContent = customViews.length === 0 ? React.createElement(GlassCard, { className: "p-6 text-center" }, React.createElement("p", { className: "text-sm text-slate-400 mb-3" }, "\u0647\u0646\u0648\u0632 \u0647\u06CC\u0686 \u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC\u06CC \u0646\u0633\u0627\u062E\u062A\u0647\u200C\u0627\u06CC\u062F"), React.createElement(
+    "button",
+    { onClick: () => setEditingCustomView({ id: uid(), name: "", dayCount: 3, taskDetail: "full", zoom: 1, slotMinutes: 30, quadFilter: null, isNew: true }), className: "mod-cta rounded-xl px-4 py-2 text-sm font-bold" },
+    "\u0633\u0627\u062E\u062A\u0646 \u0627\u0648\u0644\u06CC\u0646 \u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC"
+  )) : !activeCustomView ? React.createElement(GlassCard, { className: "p-6 text-center" }, React.createElement("p", { className: "text-sm text-slate-400" }, "\u06CC\u06A9 \u0646\u0645\u0627 \u0627\u0632 \u0628\u0627\u0644\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646")) : React.createElement(WeekHourlyView, {
+    cursor,
+    tasks: customViewTasks(activeCustomView),
+    onEdit,
+    onCreateAt,
+    onSchedule,
+    dayCount: activeCustomView.dayCount,
+    zoom: activeCustomView.zoom,
+    slotMinutes: activeCustomView.slotMinutes,
+    taskDetail: activeCustomView.taskDetail
+  });
+  const customViewModal = editingCustomView ? React.createElement(CustomViewEditorModal, {
+    initial: editingCustomView,
+    onClose: () => setEditingCustomView(null),
+    onSave: (view2) => {
+      if (editingCustomView.isNew) {
+        onAddCustomView && onAddCustomView(view2);
+      } else {
+        onUpdateCustomView && onUpdateCustomView(view2.id, view2);
+      }
+      setActiveCustomViewId(view2.id);
+      setEditingCustomView(null);
+    }
+  }) : null;
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }), view === "custom" && customToolbar, view === "custom" && customContent, customViewModal);
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
@@ -5050,6 +5189,15 @@ function LifeFlowApp() {
   const addCustomActionButton = (btn) => setCustomActionButtons((p) => [...p, btn]);
   const deleteCustomActionButton = (id) => setCustomActionButtons((p) => p.filter((b) => b.id !== id));
   const runCustomActionButton = (taskId, action) => setTasks((p) => p.map((t2) => t2.id === taskId ? applyAutomationAction(t2, action) : t2));
+  // بند ۱۹ (نماهای کاملاً سفارشیِ تقویم): هر نما یک ترکیبِ ذخیره‌شده از
+  // {dayCount, taskDetail, zoom, slotMinutes, quadFilter} است - همان
+  // زیرساختِ بندهای ۲۰/۲۲/۲۳ (که از قبل روی WeekHourlyView قابلِ تنظیم
+  // بودند)، فقط این‌بار به‌عنوانِ چند پیش‌تنظیمِ قابلِ‌نام‌گذاری و ذخیره،
+  // به‌جای یک تنظیمِ سراسریِ واحد.
+  const [customCalendarViews, setCustomCalendarViews] = useState(savedData.customCalendarViews || []);
+  const addCustomCalendarView = (view) => setCustomCalendarViews((p) => [...p, view]);
+  const updateCustomCalendarView = (id, patch) => setCustomCalendarViews((p) => p.map((v) => v.id === id ? { ...v, ...patch } : v));
+  const deleteCustomCalendarView = (id) => setCustomCalendarViews((p) => p.filter((v) => v.id !== id));
   const [pomodoro, setPomodoro] = useState(savedData.pomodoro || DEFAULT_POMODORO);
   // Tracks whether an active pomodoro *work* session is currently running, so
   // the notification effects below can suppress other notices (DND) while
@@ -5058,7 +5206,7 @@ function LifeFlowApp() {
   // targeted callback rather than fully lifting the timer's state.
   const [focusMode, setFocusMode] = useState(false);
   useEffect(() => {
-    const fullState = { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, pomodoro };
+    const fullState = { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, customCalendarViews, pomodoro };
     try {
       storage.set(STORAGE_KEY, JSON.stringify(fullState));
     } catch (e) {
@@ -5069,7 +5217,7 @@ function LifeFlowApp() {
       } catch (e) {
       }
     }
-  }, [tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, pomodoro]);
+  }, [tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, customCalendarViews, pomodoro]);
   const toggleTask = (id) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id) return t2;
     const willBeDone = t2.status !== "done";
@@ -5294,7 +5442,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })), customViews: customCalendarViews, onAddCustomView: addCustomCalendarView, onUpdateCustomView: updateCustomCalendarView, onDeleteCustomView: deleteCustomCalendarView }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
