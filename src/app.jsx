@@ -4488,12 +4488,10 @@ function CustomViewEditorModal({ initial, tasks, onClose, onSave }) {
   return /* @__PURE__ */ React.createElement(
     ModalShell,
     { title: initial.isNew ? "\u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC \u062A\u0627\u0632\u0647" : "\u0648\u06CC\u0631\u0627\u06CC\u0634 \u0646\u0645\u0627", onClose, onSubmit: submit, submitLabel: "\u0630\u062E\u06CC\u0631\u0647" },
-    /* @__PURE__ */ React.createElement("input", {
-      type: "text",
+    /* @__PURE__ */ React.createElement(TextInput, {
       value: name,
       onChange: (e) => setName(e.target.value),
-      placeholder: "\u0646\u0627\u0645 \u0646\u0645\u0627 \u2014 \u0645\u062B\u0644 \u0628\u0631\u0631\u0633\u06CC \u0647\u0641\u062A\u06AF\u06CC",
-      className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none mb-3"
+      placeholder: "\u0646\u0627\u0645 \u0646\u0645\u0627 \u2014 \u0645\u062B\u0644 \u0628\u0631\u0631\u0633\u06CC \u0647\u0641\u062A\u06AF\u06CC"
     }),
     /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u062A\u0639\u062F\u0627\u062F \u0631\u0648\u0632"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, /* @__PURE__ */ React.createElement(
       "button",
