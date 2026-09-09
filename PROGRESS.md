@@ -165,7 +165,7 @@ git merge origin/main   # یا: git rebase origin/main
 | `calendarId` | `Task` | تقویمِ مستقلی که تسک به آن تعلق دارد؛ نبودِ این فیلد یعنی تقویمِ پیش‌فرض (`getTaskCalendarId` این فال‌بک را می‌دهد، نیازی به مهاجرتِ داده نیست) | ۹ | لاگ ۴.۱۰ |
 | `calendars` (state جدید، نه فیلدِ روی شیءِ موجود) | `LifeFlowApp` (سطحِ ریشه، هم‌ردیفِ `tasks`/`books`/...) | آرایه‌ی تقویم‌های مستقل: `{id, name, color, visible}[]` | ۹ | لاگ ۴.۱۰ |
 | `automationRules` (state جدید) | `LifeFlowApp` (سطحِ ریشه، هم‌ردیفِ `tasks`/`calendars`/...) | آرایه‌ی قوانینِ خودکار: `{id, name, enabled, trigger, condition, action}[]` | ۹ | لاگ ۴.۱۰ |
-| `customCalendarViews` (state جدید) | `LifeFlowApp` (سطحِ ریشه، هم‌ردیفِ `tasks`/`calendars`/...) | آرایه‌ی نماهای سفارشیِ تقویمِ ذخیره‌شده: `{id, name, dayCount, taskDetail, zoom, slotMinutes, quadFilter, tagFilter}[]` — بند ۱۹ | ۶ | لاگ ۴.۸ |
+| `customCalendarViews` (state جدید) | `LifeFlowApp` (سطحِ ریشه، هم‌ردیفِ `tasks`/`calendars`/...) | آرایه‌ی نماهای سفارشیِ تقویمِ ذخیره‌شده: `{id, name, dayCount, taskDetail, zoom, slotMinutes, quadFilter, tagFilter, typeFilter}[]` — بند ۱۹ | ۶ | لاگ ۴.۸ |
 | `scheduling` | `settings` | `{ workingHours:{enabled,periods}, focusTime:{enabled,periods}, focusGoals:{dailyMinutes,weeklyMinutes}, noMeetingWeekdays:number[], bufferMinutes }` — ساعاتِ کاری/ظرفیت (بندهای ۷۸، ۸۰-۸۲)، Focus Time (۸۴)، اهدافِ تمرکز (۸۵/۸۶)، روزِ بدونِ جلسه (۸۷)، زمانِ حائل (۸۸، فقط ذخیره‌سازی هنوز) | ۷ | لاگ ۴.۱۱ |
 | `detail` | `Task.progressLog[]` (ورودیِ لاگِ پیشرفت) | جزئیاتِ اختیاریِ هر ثبتِ پیشرفت (مثلاً «صفحه ۱۰ تا ۱۵») — کاملاً اختیاری، فیلدهای قدیمیِ `progressLog` (بدون `detail`) دست‌نخورده کار می‌کنند؛ هر تسکِ روند‌دار (نه فقط یادگیری) می‌تواند از آن استفاده کند — بند ۲۹ | ۲ | لاگ ۴.۲ |
 | `goal` | `subsection` (زیربخشِ یادگیری، هر عمق) | همان شکلِ `topic.goal` (description/expectedOutcome/targetJy‌Jm‌Jd) ولی حالا روی هر گره — بند ۲۸ | ۲ | لاگ ۴.۲ |
@@ -1626,6 +1626,15 @@ _هنوز جلسه‌ای دیگری در این ساختار ثبت نشده.__
 `npm run build`، `node --check`، `npx tsc --noEmit`، بررسیِ انکودینگ — تأیید شدند.
 
 **باقی‌مانده:** تستِ دستیِ رفتارهایِ لبه؛ «چه مقدار اطلاعات» فراتر از سه‌سطحیِ فعلی؛ export/import نماها.
+
+**بندِ ۱۹ — فیلترِ نوعِ تسک (ساده/رونددار) اضافه شد:**
+
+- متنِ اسپک صراحتاً «چه نوع تسک‌هایی دیده شوند» را خواسته بود. `itemType` (تسک/رویداد/روتین/یادگیری، از کارِ لِین ۱) طبقِ کامنتِ صریحِ خودِ کد در نزدیکیِ `DEFAULT_CALENDARS` («باید منتظرِ پایدار شدنِ مدلِ تسکِ لِین ۱ (itemType) بماند») **هنوز روی `main` پایدار/موجود نیست** — لِین ۹ هم دقیقاً همین دلیل را برایِ محدودکردنِ دامنه‌ی موتورِ اتوماسیونش آورده بود. به‌جایِ وابسته‌شدن به یک فیلدِ ناپایدار، از `task.progressType` (`binary`/`progressive` — ساده/رونددار) استفاده شد که یک فیلدِ کاملاً پایدار و از قبل موجود است.
+- اگر بعداً `itemType` روی `main` پایدار شد، افزودنِ یک فیلترِ چهارم (`itemTypeFilter`) به همین مدل و مودال کارِ کوچکی خواهد بود — دقیقاً همان الگوی سه فیلترِ فعلی.
+
+`npm run build`، `node --check`، `npx tsc --noEmit`، بررسیِ انکودینگ — تأیید شدند. کلاسِ Tailwindِ تازه‌ای لازم نشد (همه از پیش تأییدشده بودند).
+
+**باقی‌مانده:** تستِ دستیِ رفتارهایِ لبه؛ export/import نماها (اگر لازم تشخیص داده شود).
 
 **این لِین را کاربر مستقیماً تخصیص داد** («تو شماره‌ی ۸ هستی») — نه خودتخصیصی. قبل از شروع، کدِ فعلیِ نمای لیستِ تسک‌ها و مدلِ تسکِ موجود (`AddTaskModal`) بررسی شد، و شاخه‌ی `feature/task-item-type` (لِین ۱، هنوز merge نشده) چک شد تا معلوم شود فیلدِ `itemType`/ثابتِ `ITEM_TYPES` هنوز فقط آن‌جاست، نه روی `main`. شاخه‌ی `lane8/task-productivity-layer` از `main` ساخته شد.
 
