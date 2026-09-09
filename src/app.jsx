@@ -4441,19 +4441,37 @@ function CalendarZoomControls({ zoom, slotMinutes, taskDetail, onZoomChange, onS
 // عمداً از همان کنترل‌های بندهای ۲۰/۲۳ (چیپ‌های سطحِ جزئیات/مقیاسِ زمانی،
 // دکمه‌های زوم) استفاده مجدد شده - این‌ها همان زبانِ بصری‌ای‌اند که کاربر
 // از قبل در تولبارِ اصلیِ تقویم دیده، پس یادگیریِ تازه‌ای لازم ندارد.
-function CustomViewEditorModal({ initial, onClose, onSave }) {
+function CustomViewEditorModal({ initial, tasks, onClose, onSave }) {
   const [name, setName] = useState(initial.name || "");
   const [dayCount, setDayCount] = useState(initial.dayCount || 3);
   const [taskDetail, setTaskDetail] = useState(initial.taskDetail || "full");
   const [zoom, setZoom] = useState(initial.zoom || 1);
   const [slotMinutes, setSlotMinutes] = useState(initial.slotMinutes || 30);
   const [quadFilter, setQuadFilter] = useState(initial.quadFilter || null);
+  const [tagFilter, setTagFilter] = useState(initial.tagFilter || null);
+  // بند ۱۹: تگ‌ها آزادند (نه یک enum ثابت مثلِ ربع‌ها)، پس گزینه‌ها از خودِ
+  // تسک‌هایِ موجود استخراج می‌شوند - اگر کاربر هنوز هیچ تگی استفاده نکرده،
+  // این بخش اصلاً نشان داده نمی‌شود (به‌جایِ یک فرمِ خالیِ گیج‌کننده).
+  const availableTags = Array.from(new Set(tasks.map((t2) => t2.tag).filter(Boolean)));
   const toggleQuad = (id) => setQuadFilter((prev) => {
     const cur = Array.isArray(prev) ? prev : [];
     return cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
   });
+  const toggleTag = (t2) => setTagFilter((prev) => {
+    const cur = Array.isArray(prev) ? prev : [];
+    return cur.includes(t2) ? cur.filter((x) => x !== t2) : [...cur, t2];
+  });
   const submit = () => {
-    onSave({ ...initial, name: name.trim() || "\u0628\u06CC\u200C\u0646\u0627\u0645", dayCount: Math.max(1, Math.min(14, dayCount)), taskDetail, zoom, slotMinutes, quadFilter: Array.isArray(quadFilter) && quadFilter.length > 0 ? quadFilter : null });
+    onSave({
+      ...initial,
+      name: name.trim() || "\u0628\u06CC\u200C\u0646\u0627\u0645",
+      dayCount: Math.max(1, Math.min(14, dayCount)),
+      taskDetail,
+      zoom,
+      slotMinutes,
+      quadFilter: Array.isArray(quadFilter) && quadFilter.length > 0 ? quadFilter : null,
+      tagFilter: Array.isArray(tagFilter) && tagFilter.length > 0 ? tagFilter : null
+    });
   };
   return /* @__PURE__ */ React.createElement(
     ModalShell,
@@ -4484,7 +4502,8 @@ function CustomViewEditorModal({ initial, onClose, onSave }) {
       { key: m, onClick: () => setSlotMinutes(m), className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${slotMinutes === m ? "bg-white/10 text-white" : "text-slate-400"}` },
       calSlotLabel(m)
     )))),
-    /* @__PURE__ */ React.createElement("div", { className: "mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0631\u0628\u0639\u200C\u0647\u0627 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: Array.isArray(quadFilter) && quadFilter.includes(q.id), onClick: () => toggleQuad(q.id), color: q.color }, q.label))))
+    /* @__PURE__ */ React.createElement("div", { className: "mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0631\u0628\u0639\u200C\u0647\u0627 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: Array.isArray(quadFilter) && quadFilter.includes(q.id), onClick: () => toggleQuad(q.id), color: q.color }, q.label)))),
+    availableTags.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "mb-1 mt-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, availableTags.map((t2) => /* @__PURE__ */ React.createElement(Chip, { key: t2, active: Array.isArray(tagFilter) && tagFilter.includes(t2), onClick: () => toggleTag(t2), color: colorForTag(t2) }, t2))))
   );
 }
 function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
@@ -5009,7 +5028,13 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   // بند ۱۹: فیلترِ ربع فقط وقتی اعمال می‌شود که کاربر صراحتاً حداقل یک ربع
   // را انتخاب کرده باشد؛ `null`/آرایه‌ی خالی یعنی «همه را نشان بده» (پیش‌فرضِ
   // امن برایِ نماهای تازه، تا هیچ تسکی به‌طورِ غیرمنتظره پنهان نشود).
-  const customViewTasks = (cv) => cv && Array.isArray(cv.quadFilter) && cv.quadFilter.length > 0 ? tasks.filter((t2) => cv.quadFilter.includes(t2.quad)) : tasks;
+  const customViewTasks = (cv) => {
+    if (!cv) return tasks;
+    let result = tasks;
+    if (Array.isArray(cv.quadFilter) && cv.quadFilter.length > 0) result = result.filter((t2) => cv.quadFilter.includes(t2.quad));
+    if (Array.isArray(cv.tagFilter) && cv.tagFilter.length > 0) result = result.filter((t2) => cv.tagFilter.includes(t2.tag));
+    return result;
+  };
   const customToolbar = React.createElement(
     "div",
     { className: "flex items-center gap-1.5 flex-wrap" },
@@ -5025,7 +5050,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     React.createElement(
       "button",
       {
-        onClick: () => setEditingCustomView({ id: uid(), name: "", dayCount: 3, taskDetail: "full", zoom: 1, slotMinutes: 30, quadFilter: null, isNew: true }),
+        onClick: () => setEditingCustomView({ id: uid(), name: "", dayCount: 3, taskDetail: "full", zoom: 1, slotMinutes: 30, quadFilter: null, tagFilter: null, isNew: true }),
         className: "px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-fuchsia-300 bg-white/[0.05] flex items-center gap-1 shrink-0"
       },
       React.createElement(Ic, { name: "plus", size: 12 }),
@@ -5051,7 +5076,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   );
   const customContent = customViews.length === 0 ? React.createElement(GlassCard, { className: "p-6 text-center" }, React.createElement("p", { className: "text-sm text-slate-400 mb-3" }, "\u0647\u0646\u0648\u0632 \u0647\u06CC\u0686 \u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC\u06CC \u0646\u0633\u0627\u062E\u062A\u0647\u200C\u0627\u06CC\u062F"), React.createElement(
     "button",
-    { onClick: () => setEditingCustomView({ id: uid(), name: "", dayCount: 3, taskDetail: "full", zoom: 1, slotMinutes: 30, quadFilter: null, isNew: true }), className: "mod-cta rounded-xl px-4 py-2 text-sm font-bold" },
+    { onClick: () => setEditingCustomView({ id: uid(), name: "", dayCount: 3, taskDetail: "full", zoom: 1, slotMinutes: 30, quadFilter: null, tagFilter: null, isNew: true }), className: "mod-cta rounded-xl px-4 py-2 text-sm font-bold" },
     "\u0633\u0627\u062E\u062A\u0646 \u0627\u0648\u0644\u06CC\u0646 \u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC"
   )) : !activeCustomView ? React.createElement(GlassCard, { className: "p-6 text-center" }, React.createElement("p", { className: "text-sm text-slate-400" }, "\u06CC\u06A9 \u0646\u0645\u0627 \u0627\u0632 \u0628\u0627\u0644\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646")) : React.createElement(WeekHourlyView, {
     cursor,
@@ -5066,6 +5091,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   });
   const customViewModal = editingCustomView ? React.createElement(CustomViewEditorModal, {
     initial: editingCustomView,
+    tasks,
     onClose: () => setEditingCustomView(null),
     onSave: (view2) => {
       if (editingCustomView.isNew) {

@@ -165,7 +165,7 @@ git merge origin/main   # یا: git rebase origin/main
 | `calendarId` | `Task` | تقویمِ مستقلی که تسک به آن تعلق دارد؛ نبودِ این فیلد یعنی تقویمِ پیش‌فرض (`getTaskCalendarId` این فال‌بک را می‌دهد، نیازی به مهاجرتِ داده نیست) | ۹ | لاگ ۴.۱۰ |
 | `calendars` (state جدید، نه فیلدِ روی شیءِ موجود) | `LifeFlowApp` (سطحِ ریشه، هم‌ردیفِ `tasks`/`books`/...) | آرایه‌ی تقویم‌های مستقل: `{id, name, color, visible}[]` | ۹ | لاگ ۴.۱۰ |
 | `automationRules` (state جدید) | `LifeFlowApp` (سطحِ ریشه، هم‌ردیفِ `tasks`/`calendars`/...) | آرایه‌ی قوانینِ خودکار: `{id, name, enabled, trigger, condition, action}[]` | ۹ | لاگ ۴.۱۰ |
-| `customCalendarViews` (state جدید) | `LifeFlowApp` (سطحِ ریشه، هم‌ردیفِ `tasks`/`calendars`/...) | آرایه‌ی نماهای سفارشیِ تقویمِ ذخیره‌شده: `{id, name, dayCount, taskDetail, zoom, slotMinutes, quadFilter}[]` — بند ۱۹ | ۶ | لاگ ۴.۸ (در حال کار) |
+| `customCalendarViews` (state جدید) | `LifeFlowApp` (سطحِ ریشه، هم‌ردیفِ `tasks`/`calendars`/...) | آرایه‌ی نماهای سفارشیِ تقویمِ ذخیره‌شده: `{id, name, dayCount, taskDetail, zoom, slotMinutes, quadFilter, tagFilter}[]` — بند ۱۹ | ۶ | لاگ ۴.۸ |
 | `scheduling` | `settings` | `{ workingHours:{enabled,periods}, focusTime:{enabled,periods}, focusGoals:{dailyMinutes,weeklyMinutes}, noMeetingWeekdays:number[], bufferMinutes }` — ساعاتِ کاری/ظرفیت (بندهای ۷۸، ۸۰-۸۲)، Focus Time (۸۴)، اهدافِ تمرکز (۸۵/۸۶)، روزِ بدونِ جلسه (۸۷)، زمانِ حائل (۸۸، فقط ذخیره‌سازی هنوز) | ۷ | لاگ ۴.۱۱ |
 | `detail` | `Task.progressLog[]` (ورودیِ لاگِ پیشرفت) | جزئیاتِ اختیاریِ هر ثبتِ پیشرفت (مثلاً «صفحه ۱۰ تا ۱۵») — کاملاً اختیاری، فیلدهای قدیمیِ `progressLog` (بدون `detail`) دست‌نخورده کار می‌کنند؛ هر تسکِ روند‌دار (نه فقط یادگیری) می‌تواند از آن استفاده کند — بند ۲۹ | ۲ | لاگ ۴.۲ |
 | `goal` | `subsection` (زیربخشِ یادگیری، هر عمق) | همان شکلِ `topic.goal` (description/expectedOutcome/targetJy‌Jm‌Jd) ولی حالا روی هر گره — بند ۲۸ | ۲ | لاگ ۴.۲ |
@@ -1616,6 +1616,16 @@ _هنوز جلسه‌ای دیگری در این ساختار ثبت نشده.__
 **فایل‌های لمس‌شده:** `src/app.jsx` (`LifeFlowApp` state، `CalendarViews`، `CalendarHeader`، `CalendarZoomControls` (فقط استخراجِ توابع)، کامپوننتِ تازه‌ی `CustomViewEditorModal`) — همه روی شاخه‌ی `lane6/custom-calendar-views`.
 
 **باقی‌مانده (تا این‌جا):** تستِ دستیِ بیشتر روی رفتارهایِ لبه (مثلاً حذفِ نمایِ فعال، تغییرِ نامِ نما)، و بخش‌هایِ باقی‌مانده‌ی خودِ بندِ ۱۹ که هنوز پوشش داده نشده‌اند (فیلترِ «نوعِ تسک»/برچسب، نه فقط ربع؛ «چه مقدار اطلاعات نمایش داده شود» فراتر از سه‌سطحیِ فعلی؛ امکانِ export/import نماها).
+
+**بندِ ۱۹ — فیلترِ برچسب اضافه شد:**
+
+- `tagFilter` (آرایه‌ای از رشته‌های تگ، یا `null`=همه) به مدلِ نمایِ سفارشی اضافه شد. چون تگ‌ها برخلافِ ربع‌ها یک enum ثابت نیستند، گزینه‌های چیپ از خودِ تسک‌هایِ موجود استخراج می‌شوند (`Array.from(new Set(tasks.map(t=>t.tag).filter(Boolean)))`) — اگر کاربر هنوز هیچ تگی نساخته، این بخشِ فرم اصلاً نشان داده نمی‌شود.
+- هر چیپِ تگ با همان `colorForTag()` (بندِ ۲۲، پاسخِ خودکارِ سؤالِ «دسته‌ها») رنگی می‌شود — یک استفاده‌ی مجددِ مستقیمِ دیگر از کارِ قبلیِ همین لِین.
+- یک کلاسِ Tailwindِ کامپایل‌نشده پیدا شد (`mt-3`) و با `mt-2` (تأییدشده) جایگزین شد — قبل از commit طبقِ عادتِ همیشگی بررسی شد.
+
+`npm run build`، `node --check`، `npx tsc --noEmit`، بررسیِ انکودینگ — تأیید شدند.
+
+**باقی‌مانده:** تستِ دستیِ رفتارهایِ لبه؛ «چه مقدار اطلاعات» فراتر از سه‌سطحیِ فعلی؛ export/import نماها.
 
 **این لِین را کاربر مستقیماً تخصیص داد** («تو شماره‌ی ۸ هستی») — نه خودتخصیصی. قبل از شروع، کدِ فعلیِ نمای لیستِ تسک‌ها و مدلِ تسکِ موجود (`AddTaskModal`) بررسی شد، و شاخه‌ی `feature/task-item-type` (لِین ۱، هنوز merge نشده) چک شد تا معلوم شود فیلدِ `itemType`/ثابتِ `ITEM_TYPES` هنوز فقط آن‌جاست، نه روی `main`. شاخه‌ی `lane8/task-productivity-layer` از `main` ساخته شد.
 
