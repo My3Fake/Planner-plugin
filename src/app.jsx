@@ -34,6 +34,18 @@ var WEEKDAYS = [
 var JALALI_MONTHS_FA = Jalali ? Jalali.MONTH_NAMES_FA : ["\u0641\u0631\u0648\u0631\u062F\u06CC\u0646", "\u0627\u0631\u062F\u06CC\u0628\u0647\u0634\u062A", "\u062E\u0631\u062F\u0627\u062F", "\u062A\u06CC\u0631", "\u0645\u0631\u062F\u0627\u062F", "\u0634\u0647\u0631\u06CC\u0648\u0631", "\u0645\u0647\u0631", "\u0622\u0628\u0627\u0646", "\u0622\u0630\u0631", "\u062F\u06CC", "\u0628\u0647\u0645\u0646", "\u0627\u0633\u0641\u0646\u062F"];
 var RECURRENCE_TYPES = [["none", "\u0628\u062F\u0648\u0646 \u062A\u06A9\u0631\u0627\u0631"], ["daily", "\u0631\u0648\u0632\u0627\u0646\u0647"], ["weekly", "\u0647\u0641\u062A\u06AF\u06CC"], ["monthly", "\u0645\u0627\u0647\u0627\u0646\u0647 (\u0634\u0645\u0633\u06CC)"], ["yearly", "\u0633\u0627\u0644\u0627\u0646\u0647 (\u0634\u0645\u0633\u06CC)"], ["even", "\u0631\u0648\u0632\u0647\u0627\u06CC \u0632\u0648\u062C"], ["odd", "\u0631\u0648\u0632\u0647\u0627\u06CC \u0641\u0631\u062F"]];
 function isTaskDueOn(task, dateObj) {
+  // بند ۷۹ (لِین ۷): زمانِ شروعِ مجاز — اگر تسک notBefore دارد و dateObj
+  // زودتر از آن روز است، due نیست، مستقل از تکرار. مقایسه روی سطحِ روز
+  // انجام می‌شود (نه ساعت) چون notBefore یک تاریخِ خالص است (بدون ساعت).
+  if (task.notBefore) {
+    const nb = new Date(task.notBefore);
+    if (!isNaN(nb.getTime())) {
+      nb.setHours(0, 0, 0, 0);
+      const cmp = new Date(dateObj);
+      cmp.setHours(0, 0, 0, 0);
+      if (cmp < nb) return false;
+    }
+  }
   if (!task.recurrence || task.recurrence === "none") return true;
   if (task.recurrence === "daily") return true;
   if (task.recurrence === "weekly") {
@@ -180,30 +192,75 @@ function runTimeBasedRules(tasks, rules, now) {
   });
   return changed ? next : tasks;
 }
-function playPomodoroChime(kind) {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const notes = kind === "work" ? [880, 1108.73] : [659.25, 987.77];
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      const start = ctx.currentTime + i * 0.14;
-      gain.gain.setValueAtTime(1e-4, start);
-      gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(1e-4, start + 0.32);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(start);
-      osc.stop(start + 0.34);
-    });
-    setTimeout(() => ctx.close().catch(() => {
-    }), 900);
-  } catch (e) {
+function playPomodoroChime(kind, opts = {}) {
+  const volume = Math.max(0, Math.min(1, opts.volume ?? 0.7));
+  const playCount = opts.repeatUntilDismissed ? Infinity : Math.max(1, opts.playCount || 1);
+  let stopped = false;
+  let timeoutId = null;
+  if (opts.customUrl) {
+    let audio = null;
+    let playedCount = 0;
+    const playOnce = () => {
+      if (stopped) return;
+      try {
+        audio = new Audio(opts.customUrl);
+        audio.volume = volume;
+        audio.addEventListener("ended", () => {
+          playedCount += 1;
+          if (!stopped && playedCount < playCount) timeoutId = setTimeout(playOnce, 250);
+        });
+        audio.play().catch(() => {
+        });
+      } catch (e) {
+      }
+    };
+    playOnce();
+    return { stop: () => {
+      stopped = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+      }
+    } };
   }
+  let ctx = null;
+  let playedCount = 0;
+  const playOnce = () => {
+    if (stopped) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      ctx = new Ctx();
+      const notes = kind === "work" ? [880, 1108.73] : [659.25, 987.77];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = ctx.currentTime + i * 0.14;
+        gain.gain.setValueAtTime(1e-4, start);
+        gain.gain.exponentialRampToValueAtTime(Math.max(1e-4, 0.18 * volume * 2), start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(1e-4, start + 0.32);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.34);
+      });
+      setTimeout(() => ctx?.close().catch(() => {
+      }), 900);
+    } catch (e) {
+    }
+    playedCount += 1;
+    if (!stopped && playedCount < playCount) timeoutId = setTimeout(playOnce, 1200);
+  };
+  playOnce();
+  return { stop: () => {
+    stopped = true;
+    if (timeoutId) clearTimeout(timeoutId);
+    if (ctx) ctx.close().catch(() => {
+    });
+  } };
 }
 function parseYouTubeId(url) {
   const patterns = [
@@ -416,6 +473,40 @@ var DEFAULT_FEATURES = {
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
 var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", quadrantColors: DEFAULT_QUADRANT_COLORS };
+// Lane 7 (زمان‌بندی هوشمند و ظرفیت، بندهای ۷۲–۸۸ در PROGRESS.md): پایه‌ی
+// داده‌ایِ «ساعات کاری» — یک یا چند بازه‌ی زمانی که مجموعشان ظرفیت روزانه
+// را می‌سازد (بند ۷۸: چند بازه کاری در یک روز). فعلاً یک مجموعه‌ی واحد
+// برای همه‌ی روزهای هفته (بدون تفاوتِ آخرهفته/روزهای کاری) — ساده‌ترین
+// نسخه‌ی قابل‌استفاده؛ اگر نیاز به تنظیمِ جداگانه به‌ازای هر روز هفته شد،
+// این شکل به‌راحتی قابل‌گسترش است بدون شکستن داده‌ی موجود (هر روز می‌تواند
+// در آینده override اختیاری خودش را روی همین ساختار پایه اضافه کند).
+// Mirrors settings-tab.ts's DEFAULT_SETTINGS.scheduling exactly (kept
+// separate since settings-tab.ts is plain TS, not part of this React tree
+// — same low-divergence-risk duplication already used for QUADRANTS etc.).
+var DEFAULT_WORKING_HOURS_PERIODS = [{ id: "default-1", start: "09:00", end: "17:00" }];
+// بندهای ۸۴-۸۸ (لِین ۷، جلسه‌ی ۳): چهار مفهومِ مستقلِ دیگرِ همین خوشه —
+// عمداً همه زیرِ یک ثابتِ `DEFAULT_SCHEDULING` واحد نگه داشته شدند (نه
+// چهار ثابتِ پراکنده) چون همه از یک تنظیماتِ کاربریِ واحد («زمان‌بندی
+// هوشمند و ظرفیت») می‌آیند و در `mergeScheduling` یک‌جا merge می‌شوند:
+//  - focusTime: دقیقاً هم‌شکلِ workingHours (بازه‌های زمانی) — بندِ ۸۴.
+//    پیش‌فرض خاموش/خالی چون برخلافِ ساعاتِ کاری، «زمانِ تمرکز» یک مفهومِ
+//    opt-in است، نه چیزی که همه بخواهند از روزِ اول داشته باشند.
+//  - focusGoals: دو عددِ ساده (دقیقه) — بندهای ۸۵/۸۶. صفر یعنی «هدفی
+//    تنظیم نشده» (نه «هدفِ صفردقیقه‌ای»)، مصرف‌کننده باید این را چک کند.
+//  - noMeetingWeekdays: آرایه‌ای از اعدادِ ۰-۶ هم‌قراردادِ `Date.getDay()`
+//    (۰=یکشنبه در جاوااسکریپت) — بندِ ۸۷. پیش‌فرض خالی.
+//  - bufferMinutes: یک عددِ سراسریِ ساده — بندِ ۸۸. پیش‌فرض صفر (بدونِ
+//    زمانِ حائل). نسخه‌ی v1: یک مقدارِ ثابتِ سراسری، نه قابلِ‌تنظیم به‌ازای
+//    هر فعالیت — چون اِعمالِ واقعیِ حائل (درجِ خودکار در برنامه) بخشی از
+//    موتورِ زمان‌بندیِ خودکار (بندهای ۷۲-۷۶) است که هنوز شروع نشده؛ فعلاً
+//    فقط مقدارِ خواسته‌شده ذخیره می‌شود.
+var DEFAULT_SCHEDULING = {
+  workingHours: { enabled: true, periods: DEFAULT_WORKING_HOURS_PERIODS },
+  focusTime: { enabled: false, periods: [] },
+  focusGoals: { dailyMinutes: 0, weeklyMinutes: 0 },
+  noMeetingWeekdays: [],
+  bufferMinutes: 0
+};
 // Mirrors settings-tab.ts's FONT_OPTIONS keys/order (kept separate since
 // settings-tab.ts is plain TS, not part of this React tree) — same
 // low-divergence-risk duplication already used for QUADRANTS/PRIORITIES/
@@ -446,6 +537,23 @@ function mergeFeatures(f) {
 function mergeAppearance(a) {
   return { ...DEFAULT_APPEARANCE, ...(a || {}), quadrantColors: { ...DEFAULT_QUADRANT_COLORS, ...((a || {}).quadrantColors || {}) }, exerciseTypeColors: { ...DEFAULT_EXERCISE_TYPE_COLORS, ...((a || {}).exerciseTypeColors || {}) } };
 }
+// workingHours.periods is an array, so — like features.tabs/appearance.quadrantColors
+// above — it needs its own nested merge: a flat spread would let a saved
+// `scheduling` object with no `workingHours` key at all (e.g. from before
+// this Lane 7 feature existed) silently end up with `workingHours: undefined`
+// instead of falling back to the default. periods itself is taken wholesale
+// from the saved value when present (not merged item-by-item) since it's a
+// user-edited list, not a fixed set of named keys like quadrantColors.
+function mergeScheduling(s) {
+  const src = s || {};
+  return {
+    ...DEFAULT_SCHEDULING,
+    ...src,
+    workingHours: { ...DEFAULT_SCHEDULING.workingHours, ...(src.workingHours || {}) },
+    focusTime: { ...DEFAULT_SCHEDULING.focusTime, ...(src.focusTime || {}) },
+    focusGoals: { ...DEFAULT_SCHEDULING.focusGoals, ...(src.focusGoals || {}) }
+  };
+}
 // Mutates the shared QUADRANTS array's `color` fields in place so every one
 // of its many existing read sites (QUADRANTS.find/.map, scattered across
 // the whole file — the matrix, task rows, kanban, day/week planners,
@@ -466,13 +574,13 @@ function loadSettings() {
   try {
     const raw = storage.get(SETTINGS_KEY);
     if (!raw) {
-      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING };
     } else {
       const parsed = JSON.parse(raw);
-      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance) };
+      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance), scheduling: mergeScheduling(parsed.scheduling) };
     }
   } catch (e) {
-    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE };
+    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING };
   }
   applyQuadrantColors(result.appearance.quadrantColors);
   applyExerciseTypeColors(result.appearance.exerciseTypeColors);
@@ -1128,6 +1236,11 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
   const [time, setTime] = useState(initialTask ? initialTask.time || "" : prefillTime || ""), [duration, setDuration] = useState(initialTask ? initialTask.duration : defaults.duration);
   const [recurrence, setRecurrence] = useState(initialTask ? initialTask.recurrence : "none"), [reminder, setReminder] = useState(initialTask ? initialTask.reminder : false);
+  // بند ۷۹ (لِین ۷، PROGRESS.md): «زمان شروع مجاز» — تاریخی که پیش از آن این
+  // فعالیت اصلاً due/قابل‌زمان‌بندی نیست. مقدار به‌فرمتِ همان رشته‌ی ایزوی
+  // خامِ "YYYY-MM-DD" که JalaliDateTimePicker می‌دهد ذخیره می‌شود (مثل الگوی
+  // ذخیره‌سازیِ AddVideoModal/AddPodcastModal — بدون مهاجرتِ فرمت).
+  const [notBefore, setNotBefore] = useState(initialTask ? initialTask.notBefore || "" : "");
   const [progressType, setProgressType] = useState(initialTask ? initialTask.progressType || "binary" : "binary");
   const [progressUnit, setProgressUnit] = useState(initialTask && initialTask.progressUnit || "");
   const [progressTarget, setProgressTarget] = useState(initialTask && initialTask.progressTarget || 10);
@@ -1147,7 +1260,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   };
   const setSubtaskColor = (id, color) => setSubtasks((prev) => prev.map((s) => s.id === id ? { ...s, color } : s));
   const removeSubtask = (id) => setSubtasks((prev) => prev.filter((s) => s.id !== id));
-  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive");
+  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive" || initialTask.notBefore);
   const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime || !isEdit && !!defaults.advancedOpenByDefault);
   const submit = () => {
     if (!title.trim()) return;
@@ -1166,6 +1279,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
       duration,
       recurrence,
       reminder,
+      notBefore: notBefore || null,
       recurrenceWeekdays: recurrence === "weekly" ? weekdays : void 0,
       recurrenceDay: recurrence === "monthly" || recurrence === "yearly" ? monthDay : void 0,
       recurrenceMonth: recurrence === "yearly" ? yearMonth : void 0,
@@ -1240,6 +1354,16 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
           placeholder: "\u062F\u0642\u06CC\u0642\u0647"
         }
       ))),
+      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0632\u0645\u0627\u0646 \u0634\u0631\u0648\u0639 \u0645\u062C\u0627\u0632 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC) \u2014 \u067E\u06CC\u0634 \u0627\u0632 \u0627\u06CC\u0646 \u062A\u0627\u0631\u06CC\u062E \u0627\u06CC\u0646 \u0641\u0639\u0627\u0644\u06CC\u062A due/\u0642\u0627\u0628\u0644\u200C\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0646\u06CC\u0633\u062A"),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement(JalaliDateTimePicker, { value: notBefore, onChange: setNotBefore, includeTime: false, placeholder: "\u0628\u062F\u0648\u0646 \u0645\u062D\u062F\u0648\u062F\u06CC\u062A" })), notBefore && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => setNotBefore(""),
+          className: "shrink-0 text-[11px] text-slate-500 hover:text-slate-300 px-2 py-1"
+        },
+        "\u062D\u0630\u0641"
+      )),
       /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0646\u0648\u0639 \u062A\u0633\u06A9"),
       /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3" }, /* @__PURE__ */ React.createElement(Chip, { active: progressType === "binary", onClick: () => setProgressType("binary") }, "\u0633\u0627\u062F\u0647 (\u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F/\u0646\u0634\u062F)"), /* @__PURE__ */ React.createElement(Chip, { active: progressType === "progressive", color: "#22D3EE", onClick: () => setProgressType("progressive") }, t("progress_task", "fa"))),
       progressType === "progressive" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3 flex gap-2 items-end" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-1" }, "\u0648\u0627\u062D\u062F \u067E\u06CC\u0634\u0631\u0641\u062A \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647\u060C \u062F\u0642\u06CC\u0642\u0647"), /* @__PURE__ */ React.createElement(
@@ -3015,6 +3139,84 @@ function buildMonthlyMarkdownReport({ tasks, projects, pomodoro }) {
   lines.push("", `_\u0635\u0627\u062F\u0631\u0634\u062F\u0647 \u062A\u0648\u0633\u0637 \u067E\u0644\u0627\u06AF\u06CC\u0646 \u0632\u0646\u062F\u06AF\u06CC\u0622\u0631\u0627\u0645 \u062F\u0631 ${(/* @__PURE__ */ new Date()).toLocaleTimeString("fa-IR")}_`);
   return lines.join("\n");
 }
+function buildRangeMarkdownReport({ tasks, projects, pomodoro, numDays }) {
+  const trimmedDays = String(numDays).trim();
+  const parsedDays = trimmedDays === "" ? NaN : Number(trimmedDays);
+  const n = Number.isFinite(parsedDays) ? Math.max(1, Math.min(366, Math.round(parsedDays))) : 14;
+  const end = /* @__PURE__ */ new Date();
+  end.setHours(0, 0, 0, 0);
+  const days = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - i);
+    days.push(d);
+  }
+  const startKey = dateKeyOf(days[0]);
+  const endKey = dateKeyOf(days[days.length - 1]);
+  let totalDue = 0;
+  let totalDone = 0;
+  const doneCountByTitle = {};
+  days.forEach((d) => {
+    const key = dateKeyOf(d);
+    const dueThatDay = (tasks || []).filter((tk) => isTaskDueOn(tk, d));
+    const doneThatDay = dueThatDay.filter((tk) => tk.status === "done" && tk.completedDate === key);
+    totalDue += dueThatDay.length;
+    totalDone += doneThatDay.length;
+    doneThatDay.forEach((tk) => {
+      doneCountByTitle[tk.title] = (doneCountByTitle[tk.title] || 0) + 1;
+    });
+  });
+  const sessions = (pomodoro && pomodoro.sessions || []).filter((s) => {
+    if (!s.startedAt) return false;
+    const k = dateKeyOf(new Date(s.startedAt));
+    return k >= startKey && k <= endKey;
+  });
+  const completedWork = sessions.filter((s) => s.type === "work" && s.completedAt);
+  const focusedMinutes = completedWork.reduce((sum, s) => sum + (s.durationMin || 0), 0);
+  const learningRows = [];
+  (projects || []).forEach((topic) => {
+    (topic.subsections || []).forEach((sec) => {
+      if (!sec.quotaPerPeriod) return;
+      const task = (tasks || []).find((tk) => tk.id === sec.linkedTaskId);
+      if (!task) return;
+      let dueDays = 0;
+      days.forEach((d) => {
+        if (isTrackDueOn(sec, topic, d)) dueDays += 1;
+      });
+      const rangeQuota = dueDays * sec.quotaPerPeriod;
+      const rangeSum = (task.progressLog || []).filter((e) => e.date >= startKey && e.date <= endKey).reduce((s, e) => s + e.amount, 0);
+      if (rangeQuota === 0 && rangeSum === 0) return;
+      learningRows.push({ topicTitle: topic.title, trackTitle: sec.title, unit: sec.unit, rangeSum, rangeQuota });
+    });
+  });
+  const lines = [];
+  lines.push(`# \u06AF\u0632\u0627\u0631\u0634 ${Jalali.toFaDigits(n)} \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631 \u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645 \u2014 ${formatDateKeyFa(startKey)} \u062A\u0627 ${formatDateKeyFa(endKey)}`, "");
+  lines.push("## \u062A\u0633\u06A9\u200C\u0647\u0627", `${totalDone} \u0627\u0632 ${totalDue} \u062A\u0633\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0634\u062F\u0647 \u062F\u0631 \u0627\u06CC\u0646 \u0628\u0627\u0632\u0647 \u0627\u0646\u062C\u0627\u0645 \u0634\u062F.`, "");
+  const titles = Object.keys(doneCountByTitle);
+  if (titles.length === 0) {
+    lines.push("_\u0647\u06CC\u0686 \u062A\u0633\u06A9\u06CC \u062F\u0631 \u0627\u06CC\u0646 \u0628\u0627\u0632\u0647 \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647 \u062B\u0628\u062A \u0646\u0634\u062F\u0647._");
+  } else {
+    titles.sort((a, b) => doneCountByTitle[b] - doneCountByTitle[a]).forEach((title) => {
+      lines.push(`- ${title}: ${doneCountByTitle[title]} \u0628\u0627\u0631`);
+    });
+  }
+  lines.push("", "## \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648", `- \u062F\u0648\u0631\u0647\u0627\u06CC \u06A9\u0627\u0631\u06CC \u06A9\u0627\u0645\u0644\u200C\u0634\u062F\u0647: ${completedWork.length}`, `- \u0645\u062C\u0645\u0648\u0639 \u0632\u0645\u0627\u0646 \u062A\u0645\u0631\u06A9\u0632: ${focusedMinutes} \u062F\u0642\u06CC\u0642\u0647`, "");
+  lines.push("## \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC");
+  if (learningRows.length === 0) {
+    lines.push("_\u0627\u06CC\u0646 \u0628\u0627\u0632\u0647 \u067E\u06CC\u0634\u0631\u0641\u062A\u06CC \u0628\u0631\u0627\u06CC \u0645\u0633\u06CC\u0631\u0647\u0627\u06CC \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u062B\u0628\u062A \u0646\u0634\u062F\u0647._");
+  } else {
+    learningRows.forEach((r) => {
+      const diff = r.rangeQuota - r.rangeSum;
+      let diffText = "";
+      if (diff > 0) diffText = ` \u2014 \u0639\u0642\u0628: ${diff} ${r.unit}`;
+      else if (diff < 0) diffText = ` \u2014 \u062C\u0644\u0648: ${-diff} ${r.unit}`;
+      else diffText = " \u2014 \u0645\u0637\u0627\u0628\u0642 \u0628\u0631\u0646\u0627\u0645\u0647";
+      lines.push(`- ${r.topicTitle} \u2014 ${r.trackTitle}: ${r.rangeSum} \u0627\u0632 ${r.rangeQuota} ${r.unit}${diffText}`);
+    });
+  }
+  lines.push("", `_\u0635\u0627\u062F\u0631\u0634\u062F\u0647 \u062A\u0648\u0633\u0637 \u067E\u0644\u0627\u06AF\u06CC\u0646 \u0632\u0646\u062F\u06AF\u06CC\u0622\u0631\u0627\u0645 \u062F\u0631 ${(/* @__PURE__ */ new Date()).toLocaleTimeString("fa-IR")}_`);
+  return lines.join("\n");
+}
 function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
   const [exportMsg, setExportMsg] = useState("");
   const [exportErr, setExportErr] = useState("");
@@ -3022,6 +3224,9 @@ function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
   const [weeklyErr, setWeeklyErr] = useState("");
   const [monthlyMsg, setMonthlyMsg] = useState("");
   const [monthlyErr, setMonthlyErr] = useState("");
+  const [rangeDays, setRangeDays] = useState("14");
+  const [rangeMsg, setRangeMsg] = useState("");
+  const [rangeErr, setRangeErr] = useState("");
   const exportReport = async () => {
     setExportErr("");
     setExportMsg("");
@@ -3073,7 +3278,53 @@ function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
       setMonthlyErr("\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u06AF\u0632\u0627\u0631\u0634.");
     }
   };
+  const exportRangeReport = async () => {
+    setRangeErr("");
+    setRangeMsg("");
+    try {
+      const plugin = typeof window !== "undefined" && window.__lifeflowPlugin;
+      if (!plugin || typeof plugin.exportDailyReport !== "function") {
+        setRangeErr("\u0627\u06CC\u0646 \u0642\u0627\u0628\u0644\u06CC\u062A \u0641\u0642\u0637 \u062F\u0627\u062E\u0644 \u062E\u0648\u062F \u067E\u0644\u0627\u06AF\u06CC\u0646 Obsidian \u06A9\u0627\u0631 \u0645\u06CC\u200C\u06A9\u0646\u062F.");
+        return;
+      }
+      const trimmedDays = String(rangeDays).trim();
+      const parsedDays = trimmedDays === "" ? NaN : Number(trimmedDays);
+      const n = Number.isFinite(parsedDays) ? Math.max(1, Math.min(366, Math.round(parsedDays))) : 14;
+      const content = buildRangeMarkdownReport({ tasks, projects, pomodoro, numDays: n });
+      const path = await plugin.exportDailyReport(`last-${n}-days-${todayKey()}.md`, content);
+      setRangeMsg(`\u0630\u062E\u06CC\u0631\u0647 \u0634\u062F \u062F\u0631: ${path}`);
+      setTimeout(() => setRangeMsg(""), 4e3);
+    } catch (e) {
+      setRangeErr("\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u06AF\u0632\u0627\u0631\u0634.");
+    }
+  };
   const exportButton = /* @__PURE__ */ React.createElement("div", { className: "mb-1 space-y-2" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: exportReport, className: "w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-normal)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "download", size: 14 }), "\u062E\u0631\u0648\u062C\u06CC \u06AF\u0632\u0627\u0631\u0634 \u0627\u0645\u0631\u0648\u0632 (Markdown \u062F\u0627\u062E\u0644 \u0648\u0644\u062A)"), exportMsg && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5", style: { color: "var(--text-success, #7fbb6e)" } }, exportMsg), exportErr && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5 text-rose-400" }, exportErr), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: exportWeeklyReport, className: "w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-normal)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "download", size: 14 }), "\u062E\u0631\u0648\u062C\u06CC \u06AF\u0632\u0627\u0631\u0634 \u0647\u0641\u062A\u06AF\u06CC (\u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631)"), weeklyMsg && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5", style: { color: "var(--text-success, #7fbb6e)" } }, weeklyMsg), weeklyErr && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5 text-rose-400" }, weeklyErr), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: exportMonthlyReport, className: "w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-normal)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "download", size: 14 }), "\u062E\u0631\u0648\u062C\u06CC \u06AF\u0632\u0627\u0631\u0634 \u0645\u0627\u0647\u0627\u0646\u0647 (\u06F3\u06F0 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631)"), monthlyMsg && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5", style: { color: "var(--text-success, #7fbb6e)" } }, monthlyMsg), monthlyErr && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] mt-1.5 text-rose-400" }, monthlyErr));
+  const rangeReportSection = React.createElement(
+    "div",
+    { className: "mb-1 p-3 rounded-xl border", style: { borderColor: "var(--background-modifier-border)" } },
+    React.createElement("p", { className: "text-[11px] mb-1.5", style: { color: "var(--text-muted)" } }, "\u06AF\u0632\u0627\u0631\u0634 \u0628\u0627\u0632\u0647\u200C\u06CC \u062F\u0644\u062E\u0648\u0627\u0647 \u2014 \u0622\u062E\u0631\u06CC\u0646:"),
+    React.createElement(
+      "div",
+      { className: "flex items-center gap-2" },
+      React.createElement("input", {
+        type: "number",
+        min: "1",
+        max: "366",
+        value: rangeDays,
+        onChange: (e) => setRangeDays(e.target.value),
+        className: "w-20 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none"
+      }),
+      React.createElement("span", { className: "text-[11px]", style: { color: "var(--text-muted)" } }, "\u0631\u0648\u0632"),
+      React.createElement(
+        "button",
+        { type: "button", onClick: exportRangeReport, className: "flex-1 flex items-center justify-center gap-2 rounded-xl py-2 text-xs font-bold border", style: { borderColor: "var(--background-modifier-border)", color: "var(--text-normal)" } },
+        React.createElement(Ic, { name: "download", size: 13 }),
+        "\u062E\u0631\u0648\u062C\u06CC \u06AF\u0632\u0627\u0631\u0634"
+      )
+    ),
+    rangeMsg && React.createElement("p", { className: "text-[11px] mt-1.5", style: { color: "var(--text-success, #7fbb6e)" } }, rangeMsg),
+    rangeErr && React.createElement("p", { className: "text-[11px] mt-1.5 text-rose-400" }, rangeErr)
+  );
   const rows = [];
   projects.forEach((topic) => {
     (topic.subsections || []).forEach((sec) => {
@@ -3088,6 +3339,7 @@ function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
       "div",
       { className: "space-y-3" },
       exportButton,
+      rangeReportSection,
       React.createElement(PlannedVsActualStats, { tasks, pomodoro }),
       React.createElement(
         GlassCard,
@@ -3102,6 +3354,7 @@ function DailyReportView({ projects, tasks, pomodoro, onAddProgress }) {
     "div",
     { className: "space-y-3" },
     exportButton,
+    rangeReportSection,
     React.createElement(PlannedVsActualStats, { tasks, pomodoro }),
     React.createElement("p", { className: "text-[11px]", style: { color: "var(--text-faint)" } }, "\u0628\u0631\u0627\u06CC \u0647\u0631 \u0645\u0633\u06CC\u0631\u060C \u0645\u0642\u062F\u0627\u0631\u06CC \u06A9\u0647 \u0627\u0645\u0631\u0648\u0632 \u0627\u0646\u062C\u0627\u0645 \u062F\u0627\u062F\u06CC\u062F \u0631\u0627 \u062B\u0628\u062A \u06A9\u0646\u06CC\u062F \u2014 \u06A9\u0645\u062A\u0631/\u0628\u06CC\u0634\u062A\u0631 \u0627\u0632 \u0633\u0647\u0645\u06CC\u0647 \u0647\u0645 \u0627\u06CC\u0631\u0627\u062F \u0646\u06CC\u0633\u062A، \u0641\u0642\u0637 \u062F\u0631 \u0628\u0627\u0644\u0627\u0646\u0633 \u0631\u0648\u0632 \u0628\u0639\u062F \u0644\u062D\u0627\u0638 \u0645\u06CC\u200C\u0634\u0648\u062F."),
     rows.map(({ topic, sec, task }) => React.createElement(DailyReportTrackRow, { key: sec.id, subsection: sec, topic, task, onAddProgress }))
@@ -3964,11 +4217,26 @@ function computeEqualShares(n) {
   const remainder = 100 - base * n;
   return Array.from({ length: n }, (_, i) => base + (i < remainder ? 1 : 0));
 }
+function deriveInitialTimer(pomodoro, settings) {
+  const at = pomodoro.activeTimer;
+  const durations = { work: settings.work, short: settings.shortBreak, long: settings.longBreak };
+  if (!at || typeof at.mode !== "string" || !(at.mode in durations)) {
+    return { mode: "work", secondsLeft: settings.work * 60, running: false };
+  }
+  let secondsLeft = at.secondsLeftAtAnchor;
+  if (at.running && at.anchorAt) {
+    const elapsedSec = Math.floor((Date.now() - new Date(at.anchorAt).getTime()) / 1e3);
+    secondsLeft = Math.max(0, at.secondsLeftAtAnchor - elapsedSec);
+  }
+  return { mode: at.mode, secondsLeft, running: !!at.running };
+}
 function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings, onFocusChange }) {
   const { settings } = pomodoro;
-  const [mode, setMode] = useState("work");
-  const [secondsLeft, setSecondsLeft] = useState(settings.work * 60);
-  const [running, setRunning] = useState(false);
+  const term = settings.termFa || "\u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648";
+  const initialTimer = deriveInitialTimer(pomodoro, settings);
+  const [mode, setMode] = useState(initialTimer.mode);
+  const [secondsLeft, setSecondsLeft] = useState(initialTimer.secondsLeft);
+  const [running, setRunning] = useState(initialTimer.running);
   const [cycle, setCycle] = useState(0);
   const [taskId, setTaskId] = useState("");
   const [multiMode, setMultiMode] = useState(false);
@@ -3976,8 +4244,13 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const [multiProgress, setMultiProgress] = useState({});
   const [askProgress, setAskProgress] = useState(null);
   const [progressInput, setProgressInput] = useState("");
-  const startedAtRef = useRef(null);
+  const [focusRating, setFocusRating] = useState(null);
+  const [sessionNote, setSessionNote] = useState("");
   const durations = { work: settings.work, short: settings.shortBreak, long: settings.longBreak };
+  const startedAtRef = useRef(
+    initialTimer.running ? new Date(Date.now() - (durations[initialTimer.mode] * 60 - initialTimer.secondsLeft) * 1e3).toISOString() : null
+  );
+  const chimeHandleRef = useRef(null);
   const activeTasks = tasks.filter((t2) => t2.status !== "done");
   const progressiveActiveTasks = activeTasks.filter((t2) => t2.progressType === "progressive");
   const activeTask = tasks.find((t2) => t2.id === taskId);
@@ -4002,23 +4275,35 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
         running: isRunning,
         totalSeconds: durations[m] * 60,
         secondsLeftAtAnchor: secLeft,
-        anchorAt: isRunning ? (/* @__PURE__ */ new Date()).toISOString() : null
+        anchorAt: isRunning ? (/* @__PURE__ */ new Date()).toISOString() : null,
+        taskLabel: taskLabelRef.current
       }
     }));
   };
   const modeRef = useRef(mode);
   const secondsLeftRef = useRef(secondsLeft);
   const runningRef = useRef(running);
+  const taskLabelRef = useRef(null);
+  useEffect(() => {
+    if (multiMode && multiTaskIds.length > 0) {
+      taskLabelRef.current = multiTaskIds.length === 1 ? tasks.find((t2) => t2.id === multiTaskIds[0])?.title || null : `${toFa(multiTaskIds.length)} \u0645\u0633\u06CC\u0631`;
+    } else {
+      taskLabelRef.current = activeTask ? activeTask.title : null;
+    }
+  }, [multiMode, multiTaskIds, taskId, tasks]);
   useEffect(() => {
     modeRef.current = mode;
     secondsLeftRef.current = secondsLeft;
     runningRef.current = running;
   }, [mode, secondsLeft, running]);
   useEffect(() => {
-    // Mount: a freshly-mounted timer widget always starts at running=false
-    // (see the useState(false) above), so pushing false here is always
-    // correct, not a placeholder.
-    pushActiveTimer(modeRef.current, false, secondsLeftRef.current);
+    // Mount: since state is now hydrated from the persisted activeTimer
+    // (see deriveInitialTimer/item 36) rather than always starting fresh,
+    // running can legitimately be true here (the user left an active timer
+    // and came back) — push the real hydrated value, not a hardcoded false,
+    // or we'd immediately stomp the correct snapshot back to "not running"
+    // the instant this view remounts.
+    pushActiveTimer(modeRef.current, runningRef.current, secondsLeftRef.current);
     return () => {
       // Unmount (e.g. user switches to a different nav tab): MUST reflect
       // whatever the timer's actual running state was at that moment, not
@@ -4031,6 +4316,10 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       // defeating the feature it was implementing. Caught while reviewing
       // this commit, not by a test; see PROGRESS.md Lane 4 notes.
       pushActiveTimer(modeRef.current, runningRef.current, secondsLeftRef.current);
+      if (chimeHandleRef.current) {
+        chimeHandleRef.current.stop();
+        chimeHandleRef.current = null;
+      }
     };
   }, []);
   // Report "actively running a work session" up to LifeFlowApp so it can
@@ -4075,16 +4364,27 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const finishSession = (completed) => {
     setRunning(false);
     const entry = logSession(completed);
-    if (completed && settings.sound !== false) playPomodoroChime(mode);
+    if (completed && settings.sound !== false) {
+      chimeHandleRef.current = playPomodoroChime(mode, {
+        volume: settings.alarmVolume,
+        customUrl: settings.alarmCustomUrl,
+        playCount: settings.alarmPlayCount,
+        repeatUntilDismissed: !!settings.alarmRepeatUntilDismissed
+      });
+    }
     if (completed && typeof Notification !== "undefined" && Notification.permission === "granted" && notifSettings && notifSettings.pomodoroEnd !== false) {
       try {
-        new Notification(mode === "work" ? "\u23F0 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648 \u062A\u0645\u0627\u0645 \u0634\u062F" : "\u23F0 \u0627\u0633\u062A\u0631\u0627\u062D\u062A \u062A\u0645\u0627\u0645 \u0634\u062F", { body: mode === "work" ? "\u0648\u0642\u062A \u0627\u0633\u062A\u0631\u0627\u062D\u062A\u0647" : "\u0628\u0631\u06AF\u0631\u062F \u0633\u0631 \u06A9\u0627\u0631" });
+        new Notification(mode === "work" ? `\u23F0 ${term} \u062A\u0645\u0627\u0645 \u0634\u062F` : "\u23F0 \u0627\u0633\u062A\u0631\u0627\u062D\u062A \u062A\u0645\u0627\u0645 \u0634\u062F", { body: mode === "work" ? "\u0648\u0642\u062A \u0627\u0633\u062A\u0631\u0627\u062D\u062A\u0647" : "\u0628\u0631\u06AF\u0631\u062F \u0633\u0631 \u06A9\u0627\u0631" });
       } catch (e) {
       }
     }
-    if (completed && mode === "work" && (activeTask && activeTask.progressType === "progressive" || entry.taskAllocations)) {
+    const hasProgressTargets = !!(activeTask && activeTask.progressType === "progressive") || !!entry.taskAllocations;
+    if (completed && mode === "work" && (hasProgressTargets || settings.askReviewEveryTime !== false)) {
       setAskProgress(entry);
-      if (entry.taskAllocations) setMultiProgress({});
+      setMultiProgress({});
+      setProgressInput("");
+      setFocusRating(null);
+      setSessionNote("");
     }
     let nextMode = "work";
     if (completed && mode === "work") {
@@ -4136,19 +4436,51 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     setSecondsLeft(durations[m] * 60);
     pushActiveTimer(m, false, durations[m] * 60);
   };
+  const handleAudioUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmCustomUrl: reader.result } }));
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+  const testChime = () => {
+    if (chimeHandleRef.current) chimeHandleRef.current.stop();
+    chimeHandleRef.current = playPomodoroChime(mode, {
+      volume: settings.alarmVolume,
+      customUrl: settings.alarmCustomUrl,
+      playCount: 1,
+      repeatUntilDismissed: false
+    });
+  };
+  const dismissReview = () => {
+    if (chimeHandleRef.current) {
+      chimeHandleRef.current.stop();
+      chimeHandleRef.current = null;
+    }
+    setAskProgress(null);
+    setMultiProgress({});
+    setProgressInput("");
+    setFocusRating(null);
+    setSessionNote("");
+  };
   const submitProgress = () => {
     if (askProgress && askProgress.taskAllocations) {
       askProgress.taskAllocations.forEach((a) => {
         const n = parseFaNumber(multiProgress[a.taskId] || "");
         if (n > 0) onAddProgress(a.taskId, n);
       });
-      setMultiProgress({});
-    } else {
+    } else if (askProgress && askProgress.taskId) {
       const n = Number(progressInput);
-      if (askProgress && askProgress.taskId && n > 0) onAddProgress(askProgress.taskId, n);
+      if (n > 0) onAddProgress(askProgress.taskId, n);
     }
-    setAskProgress(null);
-    setProgressInput("");
+    if (askProgress && (focusRating || sessionNote.trim())) {
+      const noteVal = sessionNote.trim() || null;
+      setPomodoro((p) => ({ ...p, sessions: p.sessions.map((s) => s.id === askProgress.id ? { ...s, focusRating, note: noteVal } : s) }));
+    }
+    dismissReview();
   };
   const total = durations[mode] * 60;
   const pct = Math.round((total - secondsLeft) / total * 100);
@@ -4202,49 +4534,103 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     })
   );
   const taskPickerBody = multiMode ? multiPicker : singlePicker;
-  const askProgressSection = askProgress ? (askProgress.taskAllocations ? React.createElement(
-    GlassCard,
-    { className: "p-4 space-y-2" },
-    React.createElement("p", { className: "text-sm text-slate-200 mb-1" }, "\u067E\u06CC\u0634\u0631\u0641\u062A \u0647\u0631 \u06A9\u062F\u0627\u0645 \u0631\u0627 \u062C\u062F\u0627 \u062B\u0628\u062A \u06A9\u0646 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u0628\u0645\u0627\u0646):"),
-    askProgress.taskAllocations.map((a) => {
-      const tk = tasks.find((x) => x.id === a.taskId);
-      if (!tk) return null;
-      return React.createElement(
-        "div",
-        { key: a.taskId, className: "flex items-center gap-2" },
-        React.createElement("span", { className: "text-xs text-slate-400 flex-1 truncate" }, tk.title, ` \u2014 ${toFa(a.sharePct)}\u066A`),
-        React.createElement("input", {
-          type: "text",
-          inputMode: "decimal",
-          dir: "ltr",
-          value: multiProgress[a.taskId] || "",
-          onChange: (e) => setMultiProgress((p) => ({ ...p, [a.taskId]: e.target.value })),
-          placeholder: `\u0645\u0642\u062F\u0627\u0631 ${tk.progressUnit || ""}`,
-          className: "w-24 text-center bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none"
-        })
-      );
-    }),
+  const focusOptions = [[4, "\u0639\u0627\u0644\u06CC"], [3, "\u062E\u0648\u0628"], [2, "\u0645\u062A\u0648\u0633\u0637"], [1, "\u0636\u0639\u06CC\u0641"]];
+  const focusSection = React.createElement(
+    "div",
+    { className: "pt-2 mt-1 border-t border-white/10" },
+    React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u062A\u0645\u0631\u06A9\u0632 \u0627\u06CC\u0646 \u062C\u0644\u0633\u0647 \u0686\u0637\u0648\u0631 \u0628\u0648\u062F\u061F (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"),
     React.createElement(
       "div",
-      { className: "flex gap-2 pt-2" },
-      React.createElement("button", { type: "button", onClick: submitProgress, className: "flex-1 rounded-xl text-white text-sm font-bold py-2", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A \u0647\u0645\u0647"),
-      React.createElement("button", { type: "button", onClick: () => {
-        setAskProgress(null);
-        setMultiProgress({});
-      }, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")
-    )
-  ) : React.createElement(GlassCard, { className: "p-4" }, React.createElement("p", { className: "text-sm text-slate-200 mb-2" }, "\u0627\u06CC\u0646 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648 \u0686\u0642\u062F\u0631 \u0631\u0648 \xAB", activeTask?.title, "\xBB \u067E\u06CC\u0634\u0631\u0641\u062A \u06A9\u0631\u062F\u06CC\u061F"), React.createElement("form", { className: "flex gap-2", onSubmit: (e) => {
-    e.preventDefault();
-    submitProgress();
-  } }, React.createElement("input", {
-    autoFocus: true,
-    type: "number",
-    min: "0",
-    value: progressInput,
-    onChange: (e) => setProgressInput(e.target.value),
-    placeholder: `\u062A\u0639\u062F\u0627\u062F ${activeTask?.progressUnit || ""}`,
-    className: "flex-1 bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none"
-  }), React.createElement("button", { type: "submit", className: "px-5 rounded-xl text-white text-sm font-bold", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A"), React.createElement("button", { type: "button", onClick: () => setAskProgress(null), className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")))) : null;
+      { className: "flex gap-1.5 mb-2" },
+      focusOptions.map(([value, label]) => React.createElement(
+        "button",
+        {
+          key: value,
+          type: "button",
+          onClick: () => setFocusRating((r) => r === value ? null : value),
+          className: "flex-1 rounded-lg py-1.5 text-[11px] font-medium border",
+          style: {
+            borderColor: focusRating === value ? "var(--interactive-accent)" : "var(--background-modifier-border)",
+            color: focusRating === value ? "var(--text-accent)" : "var(--text-muted)",
+            background: focusRating === value ? "var(--background-modifier-hover)" : "transparent"
+          }
+        },
+        label
+      ))
+    ),
+    React.createElement("input", {
+      type: "text",
+      value: sessionNote,
+      onChange: (e) => setSessionNote(e.target.value),
+      placeholder: "\u06CC\u0627\u062F\u062F\u0627\u0634\u062A\u06CC \u062F\u0631\u0628\u0627\u0631\u0647\u200C\u06CC \u0627\u06CC\u0646 \u062C\u0644\u0633\u0647 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)",
+      className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white text-xs outline-none"
+    })
+  );
+  let askProgressSection = null;
+  if (askProgress && askProgress.taskAllocations) {
+    askProgressSection = React.createElement(
+      GlassCard,
+      { className: "p-4 space-y-2" },
+      React.createElement("p", { className: "text-sm text-slate-200 mb-1" }, "\u067E\u06CC\u0634\u0631\u0641\u062A \u0647\u0631 \u06A9\u062F\u0627\u0645 \u0631\u0627 \u062C\u062F\u0627 \u062B\u0628\u062A \u06A9\u0646 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u0628\u0645\u0627\u0646):"),
+      askProgress.taskAllocations.map((a) => {
+        const tk = tasks.find((x) => x.id === a.taskId);
+        if (!tk) return null;
+        return React.createElement(
+          "div",
+          { key: a.taskId, className: "flex items-center gap-2" },
+          React.createElement("span", { className: "text-xs text-slate-400 flex-1 truncate" }, tk.title, ` \u2014 ${toFa(a.sharePct)}\u066A`),
+          React.createElement("input", {
+            type: "text",
+            inputMode: "decimal",
+            dir: "ltr",
+            value: multiProgress[a.taskId] || "",
+            onChange: (e) => setMultiProgress((p) => ({ ...p, [a.taskId]: e.target.value })),
+            placeholder: `\u0645\u0642\u062F\u0627\u0631 ${tk.progressUnit || ""}`,
+            className: "w-24 text-center bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none"
+          })
+        );
+      }),
+      focusSection,
+      React.createElement(
+        "div",
+        { className: "flex gap-2 pt-2" },
+        React.createElement("button", { type: "button", onClick: submitProgress, className: "flex-1 rounded-xl text-white text-sm font-bold py-2", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A \u0647\u0645\u0647"),
+        React.createElement("button", { type: "button", onClick: dismissReview, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")
+      )
+    );
+  } else if (askProgress && askProgress.taskId) {
+    askProgressSection = React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      React.createElement("p", { className: "text-sm text-slate-200 mb-2" }, `\u0627\u06CC\u0646 ${term} \u0686\u0642\u062F\u0631 \u0631\u0648 \xAB`, activeTask?.title, "\xBB \u067E\u06CC\u0634\u0631\u0641\u062A \u06A9\u0631\u062F\u06CC\u061F"),
+      React.createElement("form", { className: "flex gap-2", onSubmit: (e) => {
+        e.preventDefault();
+        submitProgress();
+      } }, React.createElement("input", {
+        autoFocus: true,
+        type: "number",
+        min: "0",
+        value: progressInput,
+        onChange: (e) => setProgressInput(e.target.value),
+        placeholder: `\u062A\u0639\u062F\u0627\u062F ${activeTask?.progressUnit || ""}`,
+        className: "flex-1 bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none"
+      }), React.createElement("button", { type: "submit", className: "px-5 rounded-xl text-white text-sm font-bold", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A"), React.createElement("button", { type: "button", onClick: dismissReview, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")),
+      focusSection
+    );
+  } else if (askProgress) {
+    askProgressSection = React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      React.createElement("p", { className: "text-sm text-slate-200 mb-1" }, "\u0627\u06CC\u0646 \u062C\u0644\u0633\u0647 \u0686\u0637\u0648\u0631 \u067E\u06CC\u0634 \u0631\u0641\u062A\u061F"),
+      focusSection,
+      React.createElement(
+        "div",
+        { className: "flex gap-2 pt-2" },
+        React.createElement("button", { type: "button", onClick: submitProgress, className: "flex-1 rounded-xl text-white text-sm font-bold py-2", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u062B\u0628\u062A"),
+        React.createElement("button", { type: "button", onClick: dismissReview, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-sm" }, "\u0631\u062F \u0634\u062F\u0646")
+      )
+    );
+  }
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, [["work", t("pomodoro_work", "fa")], ["short", t("pomodoro_short_break", "fa")], ["long", t("pomodoro_long_break", "fa")]].map(([m, label]) => /* @__PURE__ */ React.createElement(Chip, { key: m, active: mode === m, color: m === "work" ? "#DB2777" : m === "short" ? "#22D3EE" : "#C026D3", onClick: () => switchMode(m) }, label))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-6 flex flex-col items-center" }, /* @__PURE__ */ React.createElement("svg", { width: 200, height: 200, viewBox: "0 0 200 200" }, /* @__PURE__ */ React.createElement("circle", { cx: "100", cy: "100", r, fill: "none", stroke: "var(--background-modifier-border)", strokeWidth: "12" }), /* @__PURE__ */ React.createElement(
     "circle",
     {
@@ -4260,7 +4646,16 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       transform: "rotate(-90 100 100)",
       style: { filter: `drop-shadow(0 0 8px ${modeColor}88)`, transition: "stroke-dashoffset .3s linear" }
     }
-  ), /* @__PURE__ */ React.createElement("text", { x: "100", y: "94", textAnchor: "middle", fontSize: "34", fontWeight: "800", fill: "var(--text-normal)" }, pad2(Math.floor(secondsLeft / 60)), ":", pad2(secondsLeft % 60)), /* @__PURE__ */ React.createElement("text", { x: "100", y: "118", textAnchor: "middle", fontSize: "11", fill: "var(--text-muted)" }, "\u062F\u0648\u0631 ", cycle + 1)), /* @__PURE__ */ React.createElement("div", { className: "w-full mt-4" }, taskPickerHeader, taskPickerBody), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 w-full mt-4" }, !running ? /* @__PURE__ */ React.createElement("button", { onClick: start, className: "flex-1 rounded-xl py-3 font-bold text-sm text-white", style: { background: `linear-gradient(135deg,${modeColor},#C026D3)` } }, t("pomodoro_start", "fa")) : /* @__PURE__ */ React.createElement("button", { onClick: pause, className: "flex-1 rounded-xl py-3 font-bold text-sm bg-white/[0.08] text-white" }, t("pomodoro_pause", "fa")), /* @__PURE__ */ React.createElement("button", { onClick: reset, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 16 })), /* @__PURE__ */ React.createElement("button", { onClick: skip, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 text-xs font-medium" }, t("pomodoro_skip", "fa")))), askProgressSection, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, t("pomodoro_settings", "fa")), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-3 gap-2" }, [["work", "\u06A9\u0627\u0631 (\u062F)"], ["shortBreak", "\u0627\u0633\u062A\u0631\u0627\u062D\u062A \u06A9\u0648\u062A\u0627\u0647"], ["longBreak", "\u0627\u0633\u062A\u0631\u0627\u062D\u062A \u0628\u0644\u0646\u062F"]].map(([key, label]) => /* @__PURE__ */ React.createElement("div", { key }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, label), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("text", { x: "100", y: "94", textAnchor: "middle", fontSize: "34", fontWeight: "800", fill: "var(--text-normal)" }, pad2(Math.floor(secondsLeft / 60)), ":", pad2(secondsLeft % 60)), /* @__PURE__ */ React.createElement("text", { x: "100", y: "118", textAnchor: "middle", fontSize: "11", fill: "var(--text-muted)" }, "\u062F\u0648\u0631 ", cycle + 1)), /* @__PURE__ */ React.createElement("div", { className: "w-full mt-4" }, taskPickerHeader, taskPickerBody), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 w-full mt-4" }, !running ? /* @__PURE__ */ React.createElement("button", { onClick: start, className: "flex-1 rounded-xl py-3 font-bold text-sm text-white", style: { background: `linear-gradient(135deg,${modeColor},#C026D3)` } }, t("pomodoro_start", "fa")) : /* @__PURE__ */ React.createElement("button", { onClick: pause, className: "flex-1 rounded-xl py-3 font-bold text-sm bg-white/[0.08] text-white" }, t("pomodoro_pause", "fa")), /* @__PURE__ */ React.createElement("button", { onClick: reset, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 16 })), /* @__PURE__ */ React.createElement("button", { onClick: skip, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 text-xs font-medium" }, t("pomodoro_skip", "fa")))), askProgressSection, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, `\u062A\u0646\u0638\u06CC\u0645\u0627\u062A ${term}`), /* @__PURE__ */ React.createElement("div", { className: "mb-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0646\u0627\u0645 \u0627\u06CC\u0646 \u0648\u06CC\u0698\u06AF\u06CC \u062F\u0631 \u0631\u0627\u0628\u0637 \u06A9\u0627\u0631\u0628\u0631\u06CC"), /* @__PURE__ */ React.createElement("input", {
+    type: "text",
+    value: settings.termFa || "",
+    onChange: (e) => setPomodoro((p) => ({ ...p, settings: { ...p.settings, termFa: e.target.value } })),
+    onBlur: (e) => {
+      if (!e.target.value.trim()) setPomodoro((p) => ({ ...p, settings: { ...p.settings, termFa: "\u062F\u0648\u0631 \u062A\u0645\u0631\u06A9\u0632" } }));
+    },
+    placeholder: "\u062F\u0648\u0631 \u062A\u0645\u0631\u06A9\u0632",
+    className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-3 py-2 text-white text-xs outline-none"
+  })), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-3 gap-2" }, [["work", "\u06A9\u0627\u0631 (\u062F)"], ["shortBreak", "\u0627\u0633\u062A\u0631\u0627\u062D\u062A \u06A9\u0648\u062A\u0627\u0647"], ["longBreak", "\u0627\u0633\u062A\u0631\u0627\u062D\u062A \u0628\u0644\u0646\u062F"]].map(([key, label]) => /* @__PURE__ */ React.createElement("div", { key }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, label), /* @__PURE__ */ React.createElement(
     "input",
     {
       type: "number",
@@ -4274,21 +4669,38 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     "div",
     { className: "flex items-center gap-2 mt-3 flex-wrap" },
     /* @__PURE__ */ React.createElement(Chip, { active: !!settings.autoStartNext, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, autoStartNext: !p.settings.autoStartNext } })) }, "\u0634\u0631\u0648\u0639 \u062E\u0648\u062F\u06A9\u0627\u0631 \u062F\u0648\u0631 \u0628\u0639\u062F"),
-    /* @__PURE__ */ React.createElement(Chip, { active: settings.sound !== false, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, sound: p.settings.sound === false } })) }, "\u0635\u062F\u0627\u06CC \u067E\u0627\u06CC\u0627\u0646 \u062A\u0627\u06CC\u0645\u0631")
-  )));
+    /* @__PURE__ */ React.createElement(Chip, { active: settings.sound !== false, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, sound: p.settings.sound === false } })) }, "\u0635\u062F\u0627\u06CC \u067E\u0627\u06CC\u0627\u0646 \u062A\u0627\u06CC\u0645\u0631"),
+    /* @__PURE__ */ React.createElement(Chip, { active: settings.askReviewEveryTime !== false, color: "#22D3EE", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, askReviewEveryTime: p.settings.askReviewEveryTime === false } })) }, "\u0628\u0639\u062F \u0627\u0632 \u0647\u0631 \u062C\u0644\u0633\u0647 \u062A\u0645\u0631\u06A9\u0632/\u06CC\u0627\u062F\u062F\u0627\u0634\u062A \u0628\u067E\u0631\u0633")
+  )), settings.sound !== false && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, "\u0635\u062F\u0627 \u0648 \u0622\u0644\u0627\u0631\u0645"), /* @__PURE__ */ React.createElement("div", { className: "mb-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, "\u0634\u062F\u062A \u0635\u062F\u0627"), /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500" }, toFa(Math.round((settings.alarmVolume ?? 0.7) * 100)), "\u066A")), /* @__PURE__ */ React.createElement("input", {
+    type: "range",
+    min: "0",
+    max: "100",
+    value: Math.round((settings.alarmVolume ?? 0.7) * 100),
+    onChange: (e) => setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmVolume: Number(e.target.value) / 100 } })),
+    className: "w-full"
+  })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-3 flex-wrap" }, /* @__PURE__ */ React.createElement(Chip, { active: !!settings.alarmRepeatUntilDismissed, color: "#DB2777", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmRepeatUntilDismissed: !p.settings.alarmRepeatUntilDismissed } })) }, "\u0622\u0644\u0627\u0631\u0645 \u062A\u0627 \u062A\u0623\u06CC\u06CC\u062F \u0645\u0646 \u0627\u062F\u0627\u0645\u0647 \u06CC\u0627\u0628\u062F"), !settings.alarmRepeatUntilDismissed && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500" }, "\u062A\u0639\u062F\u0627\u062F \u062A\u06A9\u0631\u0627\u0631"), /* @__PURE__ */ React.createElement("input", {
+    type: "number",
+    min: "1",
+    max: "10",
+    value: settings.alarmPlayCount ?? 1,
+    onChange: (e) => setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmPlayCount: Math.max(1, Math.min(10, Number(e.target.value) || 1)) } })),
+    className: "w-16 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none"
+  }))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("label", { className: "px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/10 text-slate-300 text-xs cursor-pointer" }, settings.alarmCustomUrl ? "\u062A\u0639\u0648\u06CC\u0636 \u0635\u062F\u0627\u06CC \u062F\u0644\u062E\u0648\u0627\u0647" : "\u0635\u062F\u0627\u06CC \u062F\u0644\u062E\u0648\u0627\u0647", /* @__PURE__ */ React.createElement("input", { type: "file", accept: "audio/*", onChange: handleAudioUpload, className: "hidden" })), settings.alarmCustomUrl && /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setPomodoro((p) => ({ ...p, settings: { ...p.settings, alarmCustomUrl: "" } })), className: "px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/10 text-slate-400 text-xs" }, "\u0628\u0627\u0632\u06AF\u0634\u062A \u0628\u0647 \u0635\u062F\u0627\u06CC \u067E\u06CC\u0634\u200C\u0641\u0631\u0636"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: testChime, className: "px-3 py-1.5 rounded-lg text-white text-xs font-medium", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u067E\u062E\u0634 \u0622\u0632\u0645\u0627\u06CC\u0634\u06CC"))));
 }
 function PomodoroReportView({ pomodoro, tasks }) {
+  const term = pomodoro.settings.termFa || "\u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648";
   const stats = pomodoroStatsFor(pomodoro.sessions, 7);
   const chartData = stats.keys.map((k, i) => ({ day: lastNDays(7)[i].label, count: stats.byDay[k] }));
   const perTaskRows = Object.entries(stats.perTask).map(([tid, minutes]) => ({
     name: tasks.find((t2) => t2.id === Number(tid) || t2.id === tid)?.title || "\u0628\u062F\u0648\u0646 \u062A\u0633\u06A9",
     minutes
   })).sort((a, b) => b.minutes - a.minutes).slice(0, 8);
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clock", label: "\u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648\u06CC \u0627\u0645\u0631\u0648\u0632", value: stats.todayCount, color: "#DB2777" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "flame", label: "\u062F\u0642\u06CC\u0642\u0647\u200C\u06CC \u0627\u0645\u0631\u0648\u0632", value: stats.todayMinutes, color: "#22D3EE" })), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, "\u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648\u06CC \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647 \u2014 \u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631"), /* @__PURE__ */ React.createElement(SimpleBarChart, { data: chartData, xKey: "day", yKey: "count", color: "#DB2777", height: 140 })), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, "\u0632\u0645\u0627\u0646 \u0635\u0631\u0641\u200C\u0634\u062F\u0647 \u0628\u0647 \u062A\u0641\u06A9\u06CC\u06A9 \u062A\u0633\u06A9"), perTaskRows.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648\u06CC\u06CC \u0628\u0627 \u062A\u0633\u06A9 \u062B\u0628\u062A \u0646\u0634\u062F\u0647"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, perTaskRows.map((r, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "flex justify-between text-xs text-slate-300" }, /* @__PURE__ */ React.createElement("span", { className: "truncate flex-1" }, r.name), /* @__PURE__ */ React.createElement("span", { className: "text-fuchsia-300 font-bold shrink-0 mr-2" }, r.minutes, " \u062F"))))), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 text-center" }, "\u0645\u062C\u0645\u0648\u0639 \u06A9\u0644: ", stats.totalMinutes, " \u062F\u0642\u06CC\u0642\u0647 \u062F\u0631 ", pomodoro.sessions.filter((s) => s.type === "work" && s.completedAt).length, " \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648\u06CC \u06A9\u0627\u0645\u0644\u200C\u0634\u062F\u0647"));
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clock", label: `${term}\u06CC \u0627\u0645\u0631\u0648\u0632`, value: stats.todayCount, color: "#DB2777" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "flame", label: "\u062F\u0642\u06CC\u0642\u0647\u200C\u06CC \u0627\u0645\u0631\u0648\u0632", value: stats.todayMinutes, color: "#22D3EE" })), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, `${term}\u06CC \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647 \u2014 \u06F7 \u0631\u0648\u0632 \u0627\u062E\u06CC\u0631`), /* @__PURE__ */ React.createElement(SimpleBarChart, { data: chartData, xKey: "day", yKey: "count", color: "#DB2777", height: 140 })), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, "\u0632\u0645\u0627\u0646 \u0635\u0631\u0641\u200C\u0634\u062F\u0647 \u0628\u0647 \u062A\u0641\u06A9\u06CC\u06A9 \u062A\u0633\u06A9"), perTaskRows.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, `\u0647\u0646\u0648\u0632 ${term}\u06CC\u06CC \u0628\u0627 \u062A\u0633\u06A9 \u062B\u0628\u062A \u0646\u0634\u062F\u0647`), /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, perTaskRows.map((r, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "flex justify-between text-xs text-slate-300" }, /* @__PURE__ */ React.createElement("span", { className: "truncate flex-1" }, r.name), /* @__PURE__ */ React.createElement("span", { className: "text-fuchsia-300 font-bold shrink-0 mr-2" }, r.minutes, " \u062F"))))), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 text-center" }, "\u0645\u062C\u0645\u0648\u0639 \u06A9\u0644: ", stats.totalMinutes, " \u062F\u0642\u06CC\u0642\u0647 \u062F\u0631 ", pomodoro.sessions.filter((s) => s.type === "work" && s.completedAt).length, ` ${term}\u06CC \u06A9\u0627\u0645\u0644\u200C\u0634\u062F\u0647`));
 }
 function PomodoroHub({ pomodoro, setPomodoro, tasks, onAddProgress, onToggle, lang, notifSettings, onFocusChange }) {
   const [sub, setSub] = useState("timer");
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["timer", t("pomodoro_timer", lang), "clock"], ["report", t("pomodoro_report", lang), "trending-up"]] }), sub === "timer" && /* @__PURE__ */ React.createElement(PomodoroTimerView, { pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings, onFocusChange }), sub === "report" && /* @__PURE__ */ React.createElement(PomodoroReportView, { pomodoro, tasks }));
+  const term = pomodoro.settings.termFa || "\u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648";
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement(SubTabs, { value: sub, onChange: setSub, options: [["timer", `\u062A\u0627\u06CC\u0645\u0631 ${term}`, "clock"], ["report", `\u06AF\u0632\u0627\u0631\u0634 ${term}`, "trending-up"]] }), sub === "timer" && /* @__PURE__ */ React.createElement(PomodoroTimerView, { pomodoro, setPomodoro, tasks, onAddProgress, onToggle, notifSettings, onFocusChange }), sub === "report" && /* @__PURE__ */ React.createElement(PomodoroReportView, { pomodoro, tasks }));
 }
 // Lane 6 / Task 23 (Zoom + time scale): the visible planning window is always
 // 06:00-24:00 (1080 minutes), regardless of how finely it's divided. Slot
@@ -4323,6 +4735,272 @@ function minutesToHHMM(mins) {
 function timeToMinutes(hhmm) {
   const [h, m] = (hhmm || "00:00").split(":").map(Number);
   return h * 60 + m;
+}
+// --- Lane 7 (زمان‌بندی هوشمند و ظرفیت) — PROGRESS.md بندهای ۷۸، ۸۰-۸۲ ---
+// خروجی مثال‌های خودِ مشخصات ("۵ ساعت و ۴۰ دقیقه") را عیناً می‌سازد.
+function formatDurationFa(mins) {
+  const total = Math.max(0, Math.round(mins || 0));
+  const h = Math.floor(total / 60), r = total % 60;
+  if (h <= 0) return `${r} \u062F\u0642\u06CC\u0642\u0647`;
+  if (r === 0) return `${h} \u0633\u0627\u0639\u062A`;
+  return `${h} \u0633\u0627\u0639\u062A \u0648 ${r} \u062F\u0642\u06CC\u0642\u0647`;
+}
+// بند ۷۸ (چند بازه‌ی کاری در یک روز): ظرفیت = مجموع طول بازه‌ها. بازه‌های
+// نامعتبر/صفر/معکوس (پایان <= شروع — مثلاً هنگام ویرایش نیمه‌کاره در
+// تنظیمات) بی‌صدا نادیده گرفته می‌شوند تا یک ورودی موقتاً ناقص کل محاسبه‌ی
+// ظرفیت را خراب نکند.
+function workingHoursCapacityMinutes(scheduling) {
+  const periods = scheduling && scheduling.workingHours && scheduling.workingHours.periods || [];
+  return periods.reduce((sum, p) => {
+    const start = timeToMinutes(p.start), end = timeToMinutes(p.end);
+    return end > start ? sum + (end - start) : sum;
+  }, 0);
+}
+// بندِ ۷۷ (لِین ۷) — نسخه‌ی «آگاهی»، نه «جلوگیری»: آیا یک ساعتِ مشخص
+// داخلِ یکی از بازه‌های کاری تعریف‌شده می‌افتد یا نه. اِعمالِ واقعیِ
+// جلوگیری (بلاک‌کردنِ drop هنگامِ درگ دستی در DayPlannerView/WeekHourlyView)
+// عمداً این جلسه انجام نشد — آن نیازمندِ لمسِ توابعِ startMove/startResize
+// است که همین الان بینِ لِین‌های ۳ و ۶ به‌شدت فعال است؛ این تابع فقط
+// می‌گوید «آیا این ساعت بیرون از ساعاتِ کاری است»، تا لایه‌ی نمایشی
+// بتواند بدونِ لمسِ منطقِ درگ، این آگاهی را نشان دهد.
+function isTimeWithinWorkingHours(hhmm, scheduling) {
+  const periods = scheduling && scheduling.workingHours && scheduling.workingHours.periods || [];
+  const mins = timeToMinutes(hhmm);
+  return periods.some((p) => {
+    const start = timeToMinutes(p.start), end = timeToMinutes(p.end);
+    return end > start && mins >= start && mins < end;
+  });
+}
+// بندهای ۷۲ (زمان‌بندی خودکار) و ۷۶ (هشدار کمبود ظرفیت) — لِین ۷. تابعی
+// خالص (بدون React، بدون خواندن/نوشتنِ هیچ state ای) که تسک‌های
+// بدونِ‌ساعتِ یک روز را با یک الگوریتمِ حریصانه‌ی first-fit در شکاف‌های
+// خالیِ بازه‌های کاری جا می‌دهد:
+//  ۱. بازه‌های اشغال‌شده (تسک‌های ازقبل زمان‌بندی‌شده‌ی همان روز) با
+//     bufferMinutes (بندِ ۸۸) در دو طرف بزرگ‌تر و merge می‌شوند — این
+//     اولین جایی است که bufferMinutes واقعاً «اِعمال» می‌شود، نه فقط
+//     ذخیره؛ قبلاً (جلسه‌ی ۳) فقط تنظیم‌شدنی بود.
+//  ۲. بازه‌های کاری منهای بازه‌های اشغال‌شده = شکاف‌های آزاد.
+//  ۳. تسک‌ها به ترتیبِ اولویت (بحرانی=۴ اول، چون در PRIORITIES عددِ
+//     بزرگ‌تر یعنی فوری‌تر) سپس طولانی‌تر-اول (جاگیریِ بهتر) در اولین
+//     شکافِ به‌اندازه‌کافی‌بزرگ جا می‌شوند.
+//  ۴. هر تسکی که در هیچ شکافی جا نشود در unplaced برمی‌گردد — این خودِ
+//     بندِ ۷۶ است: علتِ نشدن دقیقاً «کمبودِ ظرفیت» است، نه چیزِ دیگر.
+// تست: ۱۰ سناریوی مستقل (اسکریپتِ Node، پایینِ کامیت) — ۱۲/۱۲ assertion.
+function computeAutoSchedule(unscheduledTasks, scheduledTasks, scheduling, bufferMinutes) {
+  bufferMinutes = Math.max(0, bufferMinutes || 0);
+  const periods = (scheduling && scheduling.workingHours && scheduling.workingHours.periods || []).map((p) => [timeToMinutes(p.start), timeToMinutes(p.end)]).filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
+  const occupied = (scheduledTasks || []).filter((t) => t.time).map((t) => {
+    const s = timeToMinutes(t.time);
+    return [Math.max(0, s - bufferMinutes), s + (t.duration || 0) + bufferMinutes];
+  }).sort((a, b) => a[0] - b[0]);
+  const mergedOccupied = [];
+  for (const [s, e] of occupied) {
+    const last = mergedOccupied[mergedOccupied.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else mergedOccupied.push([s, e]);
+  }
+  let freeGaps = [];
+  for (const [ps, pe] of periods) {
+    let cursor = ps;
+    for (const [os, oe] of mergedOccupied) {
+      if (oe <= cursor || os >= pe) continue;
+      if (os > cursor) freeGaps.push([cursor, Math.min(os, pe)]);
+      cursor = Math.max(cursor, oe);
+    }
+    if (cursor < pe) freeGaps.push([cursor, pe]);
+  }
+  freeGaps = freeGaps.filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
+  const queue = [...unscheduledTasks].sort((a, b) => (b.priority || 0) - (a.priority || 0) || (b.duration || 0) - (a.duration || 0));
+  const placements = [];
+  const unplaced = [];
+  for (const task of queue) {
+    const dur = task.duration || 0;
+    let placedIdx = -1;
+    for (let i = 0; i < freeGaps.length; i++) {
+      if (freeGaps[i][1] - freeGaps[i][0] >= dur) {
+        placedIdx = i;
+        break;
+      }
+    }
+    if (placedIdx === -1) {
+      unplaced.push(task.id);
+      continue;
+    }
+    const [gapStart, gapEnd] = freeGaps[placedIdx];
+    placements.push({ id: task.id, time: minutesToHHMM(gapStart) });
+    const newStart = gapStart + dur + bufferMinutes;
+    if (newStart >= gapEnd) freeGaps.splice(placedIdx, 1);
+    else freeGaps[placedIdx] = [newStart, gapEnd];
+  }
+  return { placements, unplaced };
+}
+// بندهای ۸۰ (نمایش مجموع زمان برنامه‌ریزی‌شده) و ۸۱-۸۲ (نمایش ظرفیت روز +
+// هشدار بیش‌برنامه‌ریزی). عمداً کامپوننتی جدا و خوداتکاست (فقط دو عدد و
+// یک پرچمِ enabled می‌گیرد) تا هم در DayPlannerView و هم بعداً در
+// نماهای دیگر تقویم (WeekHourlyView و مشابه — قلمروِ لِین‌های ۳/۶، این
+// جلسه لمس نشدند) با کمترین تغییر قابل‌استفاده‌ی مجدد باشد. اگر کاربر
+// ساعات کاری را غیرفعال کرده باشد (`workingHours.enabled === false`)
+// چیزی رندر نمی‌شود — نه خط ظرفیت، نه هشدار — چون بدون ظرفیتِ تعریف‌شده
+// «بیش‌برنامه‌ریزی» بی‌معنی است.
+function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, scheduledTasks, onApplyAutoSchedule }) {
+  const enabled = !scheduling || !scheduling.workingHours || scheduling.workingHours.enabled !== false;
+  const [runResult, setRunResult] = useState(null);
+  const [confirmingReschedule, setConfirmingReschedule] = useState(false);
+  if (!enabled) return null;
+  const capacityMinutes = workingHoursCapacityMinutes(scheduling);
+  const over = capacityMinutes > 0 && scheduledMinutes > capacityMinutes;
+  // بندِ ۷۷ (نیمه‌ی آگاهی): تسک‌هایی که ساعتِ‌مشخص دارند ولی آن ساعت
+  // بیرون از همه‌ی بازه‌های کاریِ تعریف‌شده می‌افتد. فقط وقتی حداقل یک
+  // بازه‌ی کاریِ معتبر تعریف شده معنا دارد (capacityMinutes>0) — وگرنه
+  // «بیرون از ساعاتِ کاری» یعنی «همه‌چیز»، که هشدارِ بی‌فایده‌ای می‌شود.
+  const outOfHoursTasks = capacityMinutes > 0 ? (scheduledTasks || []).filter((t) => t.time && !isTimeWithinWorkingHours(t.time, scheduling)) : [];
+  const canAutoSchedule = !!onApplyAutoSchedule && unscheduledTasks && unscheduledTasks.length > 0;
+  const runAutoSchedule = () => {
+    const { placements, unplaced } = computeAutoSchedule(unscheduledTasks, scheduledTasks || [], scheduling, (scheduling && scheduling.bufferMinutes) || 0);
+    if (placements.length > 0) onApplyAutoSchedule(placements);
+    // بندِ ۷۶: اگر تسکی جا نشد، دلیلش دقیقاً کمبودِ ظرفیت است — همین‌جا
+    // به‌صراحت گفته می‌شود، نه یک شکستِ بی‌توضیح.
+    setRunResult(
+      unplaced.length === 0 ? `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F.` : `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F\u060C ${unplaced.length} \u062A\u0633\u06A9 \u0628\u0647\u200C\u062F\u0644\u06CC\u0644 \u06A9\u0645\u0628\u0648\u062F \u0638\u0631\u0641\u06CC\u062A \u062C\u0627 \u0646\u0634\u062F.`
+    );
+  };
+  // بندِ ۷۳ (برنامه‌ریزیِ مجددِ خودکار): وقتی روز already بیش‌برنامه‌ریزی
+  // شده (over===true)، «دوباره‌چینیِ کلِ روز» یعنی هر دو دسته‌ی تسکِ
+  // زمان‌بندی‌شده و نشده را یک‌جا به‌عنوانِ ورودیِ «بدونِ‌ساعت» به همان
+  // computeAutoSchedule تست‌شده بدهیم (نه یک الگوریتمِ تازه) — نتیجه:
+  // کلِ روز از نو، به‌ترتیبِ اولویت، بازچیده می‌شود. چون این کارِ
+  // مخرب‌تری از «فقط جاهای خالی را پر کن» است (زمانِ تسک‌هایی را که
+  // کاربر دستی گذاشته عوض می‌کند)، پشتِ یک تأییدِ دوقدمی گذاشته شده —
+  // فقط وقتی واقعاً لازم است (over) نمایش داده می‌شود، نه همیشه.
+  const canReschedule = over && !!onApplyAutoSchedule && (scheduledTasks && scheduledTasks.length > 0);
+  const runReschedule = () => {
+    const allDayTasks = [...(scheduledTasks || []), ...(unscheduledTasks || [])];
+    const { placements, unplaced } = computeAutoSchedule(allDayTasks, [], scheduling, (scheduling && scheduling.bufferMinutes) || 0);
+    if (placements.length > 0) onApplyAutoSchedule(placements);
+    setRunResult(
+      unplaced.length === 0 ? `\u0628\u0631\u0646\u0627\u0645\u0647‌\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F: ${placements.length} \u062A\u0633\u06A9 \u062C\u0627\u0628\u0647‌\u062C\u0627 \u0634\u062F.` : `\u0628\u0631\u0646\u0627\u0645\u0647‌\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F: ${placements.length} \u062C\u0627\u0628\u0647‌\u062C\u0627 \u0634\u062F\u060C ${unplaced.length} \u0628\u0627\u0632 \u0647\u0645 \u062C\u0627 \u0646\u0634\u062F (\u0638\u0631\u0641\u06CC\u062A \u06A9\u0627\u0641\u06CC \u0646\u06CC\u0633\u062A).`
+    );
+    setConfirmingReschedule(false);
+  };
+  return /* @__PURE__ */ React.createElement(
+    GlassCard,
+    { className: "p-3" },
+    /* @__PURE__ */ React.createElement(
+      "div",
+      { className: "flex items-center justify-between gap-2 flex-wrap" },
+      /* @__PURE__ */ React.createElement(
+        "span",
+        { className: "text-[11px] text-slate-400" },
+        "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC\u200C\u0634\u062F\u0647: ",
+        /* @__PURE__ */ React.createElement("b", { style: { color: over ? "#F87171" : "var(--text-normal)" } }, formatDurationFa(scheduledMinutes)),
+        capacityMinutes > 0 && " \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A ",
+        capacityMinutes > 0 && /* @__PURE__ */ React.createElement("b", { style: { color: "var(--text-normal)" } }, formatDurationFa(capacityMinutes))
+      ),
+      over && /* @__PURE__ */ React.createElement("span", { className: "text-[11px] font-bold shrink-0", style: { color: "#F87171" } }, "\u26A0\uFE0F \u0628\u06CC\u0634 \u0627\u0632 \u0638\u0631\u0641\u06CC\u062A"),
+      canAutoSchedule && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: runAutoSchedule,
+          className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 shrink-0"
+        },
+        "\u26A1 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062E\u0648\u062F\u06A9\u0627\u0631"
+      ),
+      canReschedule && !confirmingReschedule && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => setConfirmingReschedule(true),
+          className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 shrink-0"
+        },
+        "\u{1F504} \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F \u06A9\u0644 \u0631\u0648\u0632"
+      ),
+      canReschedule && confirmingReschedule && /* @__PURE__ */ React.createElement(
+        "span",
+        { className: "flex items-center gap-1.5 shrink-0" },
+        /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setConfirmingReschedule(false),
+            className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5"
+          },
+          "\u0627\u0646\u0635\u0631\u0627\u0641"
+        ),
+        /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: runReschedule,
+            className: "text-[11px] font-bold text-white bg-rose-500 rounded-lg px-2.5 py-1.5"
+          },
+          "\u0645\u0637\u0645\u0626\u0646\u06CC\u061F \u0633\u0627\u0639\u062A\u200C\u0647\u0627\u06CC \u062F\u0633\u062A\u06CC \u0647\u0645 \u0639\u0648\u0636 \u0645\u06CC\u200C\u0634\u0648\u0646\u062F"
+        )
+      )
+    ),
+    runResult && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mt-2" }, runResult),
+    outOfHoursTasks.length > 0 && /* @__PURE__ */ React.createElement(
+      "p",
+      { className: "text-[11px] mt-2", style: { color: "#FBBF24" } },
+      "\u23F0 \u0628\u06CC\u0631\u0648\u0646 \u0627\u0632 \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC: ",
+      outOfHoursTasks.map((t) => t.title).join("\u060C ")
+    )
+  );
+}
+// بند ۸۳ (لِین ۷): «توازن کار بین روزهای هفته». نسخه‌ی v1 عمداً فقط
+// اطلاع‌رسانی است، نه اتوماتیک — سیستم هیچ تسکی را جابه‌جا نمی‌کند، فقط
+// نشان می‌دهد کدام روزها نسبت به بقیه سنگین‌ترند تا کاربر خودش دستی
+// جابه‌جا کند. توازنِ خودکارِ واقعی (جابه‌جاییِ تسک‌ها) طبیعتاً بخشی از
+// موتورِ زمان‌بندیِ خودکار (بندهای ۷۲-۷۶) است که هنوز شروع نشده.
+// عمداً یک کامپوننتِ کاملاً مستقل/جدا (نه چیزی افزوده‌شده داخلِ
+// DayPlannerView/WeekHourlyView که همین الان بینِ سه لِین مشترک است) —
+// فقط از یک دکمه‌ی تکی در CalendarViews صدا زده می‌شود، برای کمینه‌کردنِ
+// ریسکِ برخورد.
+function WeeklyLoadModal({ cursor, tasks, scheduling, onClose }) {
+  const capacityMinutes = workingHoursCapacityMinutes(scheduling);
+  const weekStart = Jalali ? Jalali.jalaliStartOfWeek(cursor) : cursor;
+  const days = Array.from({ length: 7 }, (_, i) => Jalali ? Jalali.addDays(weekStart, i) : cursor);
+  const rows = days.map((d) => {
+    const scheduledMinutes = tasks.filter((tsk) => isTaskDueOn(tsk, d) && tsk.time).reduce((s, tsk) => s + (tsk.duration || 0), 0);
+    return {
+      date: d,
+      // WEEKDAY_SHORT_FA is indexed by Date.getDay() (همان قراردادِ خودِ
+      // jalali.js، نه ترتیبِ نمایشِ ستون‌ها) — دیدنِ formatJalali برای تأیید.
+      label: Jalali ? Jalali.WEEKDAY_SHORT_FA[d.getDay()] : "",
+      minutes: scheduledMinutes,
+      over: capacityMinutes > 0 && scheduledMinutes > capacityMinutes
+    };
+  });
+  const overDays = rows.filter((r) => r.over);
+  const chartData = rows.map((r) => ({ day: r.label, minutes: r.minutes }));
+  const closeFooter = /* @__PURE__ */ React.createElement(
+    "button",
+    { type: "button", onClick: onClose, className: "mod-cta rounded-xl py-3 font-bold text-sm w-full" },
+    "\u0628\u0633\u062A\u0646"
+  );
+  return ModalShell(
+    {
+      title: "\u0628\u0627\u0631 \u06A9\u0627\u0631\u06CC \u0647\u0641\u062A\u0647",
+      onClose,
+      footer: closeFooter
+    },
+    /* @__PURE__ */ React.createElement(
+      "p",
+      { className: "text-[11px] text-slate-400 mb-3" },
+      capacityMinutes > 0 ? `\u0645\u0642\u0627\u06CC\u0633\u0647\u0654 \u0647\u0631 \u0631\u0648\u0632 \u0646\u0633\u0628\u062A \u0628\u0647 \u0638\u0631\u0641\u06CC\u062A\u06CC \u0627\u0633\u062A \u06A9\u0647 \u062F\u0631 \u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u062A\u0639\u0631\u06CC\u0641 \u06A9\u0631\u062F\u0647\u200C\u0627\u06CC\u062F (${formatDurationFa(capacityMinutes)} \u062F\u0631 \u0631\u0648\u0632).` : "\u0628\u0631\u0627\u06CC \u0645\u0642\u0627\u06CC\u0633\u0647 \u0628\u0627 \u06CC\u06A9 \u0638\u0631\u0641\u06CC\u062A \u062B\u0627\u0628\u062A، \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC \u0631\u0627 \u0627\u0632 \u0628\u062E\u0634 \u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u0641\u0639\u0627\u0644 \u06A9\u0646\u06CC\u062F — \u0641\u0639\u0644\u0627\u064B \u0641\u0642\u0637 \u0628\u0627\u0631ِ \u0646\u0633\u0628\u06CC \u0631\u0648\u0632\u0647\u0627 \u0646\u0633\u0628\u062A \u0628\u0647 \u0647\u0645 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F."
+    ),
+    /* @__PURE__ */ React.createElement(SimpleBarChart, { data: chartData, xKey: "day", yKey: "minutes", color: "#22D3EE", height: 130 }),
+    overDays.length > 0 && /* @__PURE__ */ React.createElement(
+      "div",
+      { className: "mt-2 p-3 rounded-xl", style: { background: "rgba(248,113,113,.1)", border: "1px solid rgba(248,113,113,.25)" } },
+      /* @__PURE__ */ React.createElement(
+        "p",
+        { className: "text-[11px] font-bold", style: { color: "#F87171" } },
+        "\u26A0\uFE0F \u0631\u0648\u0632\u0647\u0627\u06CC \u0628\u06CC\u0634\u200C\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0634\u062F\u0647: ",
+        overDays.map((r) => `${r.label} (${formatDurationFa(r.minutes)})`).join("\u060C ")
+      )
+    )
+  );
 }
 function AgendaView({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }) {
   if (!Jalali) return null;
@@ -4437,95 +5115,20 @@ function CalendarZoomControls({ zoom, slotMinutes, taskDetail, onZoomChange, onS
     /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
   )));
 }
-// بند ۱۹ (نماهای کاملاً سفارشی): فرمِ ساخت/ویرایشِ یک نمای ذخیره‌شده.
-// عمداً از همان کنترل‌های بندهای ۲۰/۲۳ (چیپ‌های سطحِ جزئیات/مقیاسِ زمانی،
-// دکمه‌های زوم) استفاده مجدد شده - این‌ها همان زبانِ بصری‌ای‌اند که کاربر
-// از قبل در تولبارِ اصلیِ تقویم دیده، پس یادگیریِ تازه‌ای لازم ندارد.
-function CustomViewEditorModal({ initial, tasks, onClose, onSave }) {
-  const [name, setName] = useState(initial.name || "");
-  const [dayCount, setDayCount] = useState(initial.dayCount || 3);
-  const [taskDetail, setTaskDetail] = useState(initial.taskDetail || "full");
-  const [zoom, setZoom] = useState(initial.zoom || 1);
-  const [slotMinutes, setSlotMinutes] = useState(initial.slotMinutes || 30);
-  const [quadFilter, setQuadFilter] = useState(initial.quadFilter || null);
-  const [tagFilter, setTagFilter] = useState(initial.tagFilter || null);
-  const [typeFilter, setTypeFilter] = useState(initial.typeFilter || null);
-  // بند ۱۹: تگ‌ها آزادند (نه یک enum ثابت مثلِ ربع‌ها)، پس گزینه‌ها از خودِ
-  // تسک‌هایِ موجود استخراج می‌شوند - اگر کاربر هنوز هیچ تگی استفاده نکرده،
-  // این بخش اصلاً نشان داده نمی‌شود (به‌جایِ یک فرمِ خالیِ گیج‌کننده).
-  const availableTags = Array.from(new Set(tasks.map((t2) => t2.tag).filter(Boolean)));
-  const toggleQuad = (id) => setQuadFilter((prev) => {
-    const cur = Array.isArray(prev) ? prev : [];
-    return cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-  });
-  const toggleTag = (t2) => setTagFilter((prev) => {
-    const cur = Array.isArray(prev) ? prev : [];
-    return cur.includes(t2) ? cur.filter((x) => x !== t2) : [...cur, t2];
-  });
-  const toggleType = (t2) => setTypeFilter((prev) => {
-    const cur = Array.isArray(prev) ? prev : [];
-    return cur.includes(t2) ? cur.filter((x) => x !== t2) : [...cur, t2];
-  });
-  const submit = () => {
-    onSave({
-      ...initial,
-      // isNew فقط یک پرچمِ یک‌بارمصرف برایِ تشخیصِ «ساخت جدید در برابرِ ویرایش»
-      // در CalendarViews است - اگر این‌جا در دیتایِ ذخیره‌شده باقی بماند،
-      // دفعه‌ی بعد که همین نما دوباره باز شود، به‌اشتباه به‌عنوانِ «تازه»
-      // تلقی می‌شود و onAddCustomView (به‌جایِ onUpdateCustomView) صدا زده
-      // می‌شود - یعنی هر ویرایش یک کپیِ تازه می‌سازد، به‌جایِ اصلاحِ همان نما.
-      isNew: false,
-      name: name.trim() || "\u0628\u06CC\u200C\u0646\u0627\u0645",
-      dayCount: Math.max(1, Math.min(14, dayCount)),
-      taskDetail,
-      zoom,
-      slotMinutes,
-      quadFilter: Array.isArray(quadFilter) && quadFilter.length > 0 ? quadFilter : null,
-      tagFilter: Array.isArray(tagFilter) && tagFilter.length > 0 ? tagFilter : null,
-      typeFilter: Array.isArray(typeFilter) && typeFilter.length > 0 ? typeFilter : null
-    });
-  };
-  return /* @__PURE__ */ React.createElement(
-    ModalShell,
-    { title: initial.isNew ? "\u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC \u062A\u0627\u0632\u0647" : "\u0648\u06CC\u0631\u0627\u06CC\u0634 \u0646\u0645\u0627", onClose, onSubmit: submit, submitLabel: "\u0630\u062E\u06CC\u0631\u0647" },
-    /* @__PURE__ */ React.createElement(TextInput, {
-      value: name,
-      onChange: (e) => setName(e.target.value),
-      placeholder: "\u0646\u0627\u0645 \u0646\u0645\u0627 \u2014 \u0645\u062B\u0644 \u0628\u0631\u0631\u0633\u06CC \u0647\u0641\u062A\u06AF\u06CC"
-    }),
-    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u062A\u0639\u062F\u0627\u062F \u0631\u0648\u0632"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, /* @__PURE__ */ React.createElement(
-      "button",
-      { onClick: () => setDayCount((d) => Math.max(1, d - 1)), className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300" },
-      /* @__PURE__ */ React.createElement(Ic, { name: "minus", size: 13 })
-    ), /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-300 w-9 text-center" }, toFa(dayCount), " \u0631\u0648\u0632"), /* @__PURE__ */ React.createElement(
-      "button",
-      { onClick: () => setDayCount((d) => Math.min(14, d + 1)), className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300" },
-      /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
-    ))),
-    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u0633\u0637\u062D \u062C\u0632\u0626\u06CC\u0627\u062A"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_TASK_DETAIL_OPTIONS.map((d) => /* @__PURE__ */ React.createElement(
-      "button",
-      { key: d, onClick: () => setTaskDetail(d), className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${taskDetail === d ? "bg-white/10 text-white" : "text-slate-400"}` },
-      calDetailLabel(d)
-    )))),
-    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u0645\u0642\u06CC\u0627\u0633 \u0632\u0645\u0627\u0646\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_SLOT_OPTIONS.map((m) => /* @__PURE__ */ React.createElement(
-      "button",
-      { key: m, onClick: () => setSlotMinutes(m), className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${slotMinutes === m ? "bg-white/10 text-white" : "text-slate-400"}` },
-      calSlotLabel(m)
-    )))),
-    /* @__PURE__ */ React.createElement("div", { className: "mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0631\u0628\u0639\u200C\u0647\u0627 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: Array.isArray(quadFilter) && quadFilter.includes(q.id), onClick: () => toggleQuad(q.id), color: q.color }, q.label)))),
-    /* @__PURE__ */ React.createElement("div", { className: "mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0646\u0648\u0639 \u062A\u0633\u06A9 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, /* @__PURE__ */ React.createElement(Chip, { active: Array.isArray(typeFilter) && typeFilter.includes("binary"), onClick: () => toggleType("binary") }, "\u0633\u0627\u062F\u0647"), /* @__PURE__ */ React.createElement(Chip, { active: Array.isArray(typeFilter) && typeFilter.includes("progressive"), onClick: () => toggleType("progressive"), color: "#22D3EE" }, "\u0631\u0648\u0646\u062F\u062F\u0627\u0631"))),
-    availableTags.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "mb-1 mt-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, availableTags.map((t2) => /* @__PURE__ */ React.createElement(Chip, { key: t2, active: Array.isArray(tagFilter) && tagFilter.includes(t2), onClick: () => toggleTag(t2), color: colorForTag(t2) }, t2))))
-  );
-}
-function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
+function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
   const unscheduled = dayTasks.filter((tsk) => !tsk.time);
   const scheduled = dayTasks.filter((tsk) => tsk.time);
+  // بند ۸۰ (Lane 7): «زمان‌بندی‌شده» طبق تعریفِ همین ویو یعنی تسک‌هایی که
+  // ساعت مشخص دارند (بالا، `scheduled`) — نه هر تسکِ بدون‌تکرارِ due-هرروز؛
+  // این‌طوری تسک‌های شناور بدون ساعت (که isTaskDueOn برای آن‌ها همیشه true
+  // برمی‌گرداند) عدد ظرفیت را کاذب زیاد نمی‌کنند.
+  const scheduledMinutes = scheduled.reduce((s, tsk) => s + (tsk.duration || 0), 0);
   // rowH is "pixels per 30 real minutes" - scaling it by `zoom` is the whole
-  // zoom mechanism. topFor/minutesFromClientY/drag deltas below were already
-  // written purely in terms of rowH, so they automatically respect zoom with
-  // no other changes. slotMinutes only changes the *visual* grid below (see
-  // gridRows), never this positioning math.
+  // zoom mechanism (Lane 6). topFor/minutesFromClientY/drag deltas below were
+  // already written purely in terms of rowH, so they automatically respect
+  // zoom with no other changes. slotMinutes only changes the *visual* grid
+  // below (see gridRows), never this positioning math.
   const rowH = 26 * zoom;
   const topFor = (hhmm) => (timeToMinutes(hhmm) - 360) / 30 * rowH;
   const gridRows = calSlots(slotMinutes);
@@ -4682,7 +5285,13 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const createAt = (mins) => {
     if (onCreateAt) onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling, unscheduledTasks: unscheduled, scheduledTasks: scheduled, onApplyAutoSchedule: (placements) => placements.forEach(({ id, time }) => {
+    // dayTasks (نه فقط unscheduled) چون این callback هم برای بندِ ۷۲
+    // (فقط تسک‌های بدونِ‌ساعت) و هم بندِ ۷۳ (کلِ روز، شاملِ تسک‌هایی که
+    // قبلاً ساعت داشتند) صدا زده می‌شود.
+    const tsk = dayTasks.find((t) => t.id === id);
+    if (tsk) onSchedule(id, time, tsk.duration);
+  }) }), unscheduled.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-400 mb-2" }, "\u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC\u200C\u0646\u0634\u062F\u0647 \u2014 \u0628\u06A9\u0634 \u0648 \u0631\u0648\u06CC \u0633\u0627\u0639\u062A \u0645\u0648\u0631\u062F\u0646\u0638\u0631 \u0631\u0647\u0627 \u06A9\u0646"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, unscheduled.map((tsk) => {
     const q = QUADRANTS.find((x) => x.id === tsk.quad) || QUADRANTS[1];
     return /* @__PURE__ */ React.createElement(
       "div",
@@ -4984,7 +5593,7 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
-function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, appearance, onChangeAppearance, customViews = [], onAddCustomView, onUpdateCustomView, onDeleteCustomView }) {
+function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, scheduling, appearance, onChangeAppearance, customViews = [], onAddCustomView, onUpdateCustomView, onDeleteCustomView }) {
   const [view, setView] = useState("day");
   const [weekSubView, setWeekSubView] = useState("cards");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
@@ -4995,6 +5604,10 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   const [activeCustomViewId, setActiveCustomViewId] = useState(null);
   const [editingCustomView, setEditingCustomView] = useState(null);
   const activeCustomView = customViews.find((v) => v.id === activeCustomViewId) || null;
+  // بند ۸۳ (لِین ۷): «بار کاری هفته» — دکمه‌ی تکی که یک مودالِ مستقل و
+  // اطلاع‌رسانیِ‌محضِ WeeklyLoadModal را باز می‌کند؛ عمداً هیچ نمای موجودِ
+  // تقویم (DayPlannerView/WeekHourlyView/...) را تغییر نمی‌دهد.
+  const [showWeeklyLoad, setShowWeeklyLoad] = useState(false);
   const zoom = appearance?.calendarZoom ?? 1;
   const slotMinutes = appearance?.calendarSlotMinutes ?? 30;
   const taskDetail = appearance?.calendarTaskDetail ?? "full";
@@ -5115,7 +5728,22 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       setEditingCustomView(null);
     }
   }) : null;
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }), view === "custom" && customToolbar, view === "custom" && customContent, customViewModal);
+  // بند ۸۳ (لِین ۷): دکمه‌ی تکیِ «بار کاری هفته» که WeeklyLoadModal را باز
+  // می‌کند - مستقلِ کاملاً از نماهایِ سفارشیِ بندِ ۱۹، هردو با هم سازگارند.
+  const weeklyLoadButton = /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "flex justify-end" },
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setShowWeeklyLoad(true),
+        className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5"
+      },
+      "\u{1F4CA} \u0628\u0627\u0631 \u06A9\u0627\u0631\u06CC \u0647\u0641\u062A\u0647"
+    )
+  );
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), weeklyLoadButton, view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }), view === "custom" && customToolbar, view === "custom" && customContent, customViewModal, showWeeklyLoad && /* @__PURE__ */ React.createElement(WeeklyLoadModal, { cursor, tasks, scheduling, onClose: () => setShowWeeklyLoad(false) }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
@@ -5129,7 +5757,7 @@ var NAV = [
   { id: "notes", labelKey: "nav_notes", icon: "check-square" }
 ];
 var DEFAULT_POMODORO = {
-  settings: { work: 25, shortBreak: 5, longBreak: 15, cyclesUntilLong: 4, autoStartNext: false, sound: true },
+  settings: { work: 25, shortBreak: 5, longBreak: 15, cyclesUntilLong: 4, autoStartNext: false, sound: true, askReviewEveryTime: true, alarmVolume: 0.7, alarmPlayCount: 1, alarmRepeatUntilDismissed: false, alarmCustomUrl: "", termFa: "\u062F\u0648\u0631 \u062A\u0645\u0631\u06A9\u0632" },
   sessions: []
   // { id, type: 'work'|'short'|'long', taskId, startedAt, durationMin, completedAt, interrupted, progressAdded }
 };
@@ -5480,7 +6108,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })), customViews: customCalendarViews, onAddCustomView: addCustomCalendarView, onUpdateCustomView: updateCustomCalendarView, onDeleteCustomView: deleteCustomCalendarView }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })), customViews: customCalendarViews, onAddCustomView: addCustomCalendarView, onUpdateCustomView: updateCustomCalendarView, onDeleteCustomView: deleteCustomCalendarView }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",

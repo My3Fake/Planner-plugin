@@ -1,4 +1,4 @@
-import { ItemView, Modal, Plugin, WorkspaceLeaf } from "obsidian";
+import { ItemView, Modal, Plugin, WorkspaceLeaf, setIcon } from "obsidian";
 import * as React from "react";
 import * as ReactDOMClient from "react-dom/client";
 import LifeFlowApp from "./app.jsx";
@@ -151,6 +151,20 @@ export default class LifeFlowPlugin extends Plugin {
 		};
 		this.updatePomodoroStatusBar();
 		this.registerInterval(window.setInterval(() => this.updatePomodoroStatusBar(), 1000));
+		// Item 44: the bar and the timer must never visibly disagree. The 1s
+		// poll above is enough for a smoothly-ticking display, but a
+		// start/pause/skip/finish should be reflected the instant it
+		// happens, not up to ~1s later. app.jsx already calls
+		// window.__lifeflowOnStateChange(fullState) on every state save
+		// (originally added for other sync purposes) — reuse it here rather
+		// than inventing a second channel.
+		(window as any).__lifeflowOnStateChange = (fullState: any) => {
+			try {
+				this.renderPomodoroStatus(this.computePomodoroStatus({ pomodoro: fullState?.pomodoro }));
+			} catch (e) {
+				// ignore — the next 1s poll will self-correct either way
+			}
+		};
 	}
 
 	onunload() {
@@ -230,51 +244,71 @@ export default class LifeFlowPlugin extends Plugin {
 		return modal;
 	}
 
-	/** Derives "seconds left right now" for the active pomodoro timer (if any)
-	 * from the activeTimer snapshot PomodoroTimerView writes into `pomodoro`
-	 * (part of the same lifeflow_data_v1 blob everything else persists to),
-	 * and updates the status-bar text. Reading this straight from data.json
-	 * (rather than relying on the React tree being mounted) is what lets the
-	 * indicator work while the user has a different nav tab or Obsidian pane
-	 * focused — see DATA_KEY's comment for why this approach was chosen over
-	 * lifting the timer's own tick loop.
+	/** Derives the current pomodoro status (icon/text/tooltip) from the
+	 * activeTimer snapshot PomodoroTimerView writes into `pomodoro` (part of
+	 * the same lifeflow_data_v1 blob everything else persists to). Returns
+	 * null when there's nothing meaningfully active to show (idle at full
+	 * duration). Kept as a pure function of `parsed` — no DOM access — so it
+	 * can be called both from the 1s poll (reads data.json) and from the
+	 * instant __lifeflowOnStateChange hook (reads the fresh in-memory state
+	 * directly, item 44's "zero-lag" sync) without duplicating the logic.
 	 *
-	 * Known limitation (documented in PROGRESS.md, not fixed by this feature):
-	 * if the timer reaches 00:00 while the LifeFlow view isn't open, this
-	 * will correctly show "۰۰:۰۰" but won't itself log the session, play the
-	 * chime, or advance to the next mode — those side effects live inside
-	 * PomodoroTimerView's own interval and only run once that view remounts.
+	 * Known limitation (documented in PROGRESS.md, not fixed by this
+	 * feature): if the timer reaches 00:00 while the LifeFlow view isn't
+	 * open, this will correctly show "۰۰:۰۰" but won't itself log the
+	 * session, play the chime, or advance to the next mode — those side
+	 * effects live inside PomodoroTimerView's own interval and only run
+	 * once that view remounts.
 	 */
+	private computePomodoroStatus(parsed: any): { icon: string; text: string; tooltip: string } | null {
+		const at = parsed?.pomodoro?.activeTimer;
+		if (!at || typeof at.mode !== "string" || typeof at.totalSeconds !== "number") return null;
+		let secondsLeft: number = at.secondsLeftAtAnchor;
+		if (at.running && at.anchorAt) {
+			const elapsedSec = Math.floor((Date.now() - new Date(at.anchorAt).getTime()) / 1000);
+			secondsLeft = Math.max(0, at.secondsLeftAtAnchor - elapsedSec);
+		}
+		// Idle at the mode's full duration (fresh mount / reset / switched
+		// mode without starting) — nothing meaningfully "active" to show.
+		if (!at.running && secondsLeft >= at.totalSeconds) return null;
+		const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+		const ss = String(secondsLeft % 60).padStart(2, "0");
+		// Vector icon names (Lucide, via Obsidian's setIcon) — item 43
+		// explicitly calls out replacing the emoji this status bar launched
+		// with (🍅/☕/🛋️) with proper vector icons.
+		const icon = at.mode === "work" ? "zap" : at.mode === "short" ? "coffee" : "moon";
+		const modeLabel = at.mode === "work" ? "کار" : at.mode === "short" ? "استراحت کوتاه" : "استراحت بلند";
+		const taskPart = typeof at.taskLabel === "string" && at.taskLabel ? ` — ${at.taskLabel}` : "";
+		const suffix = at.running ? "" : " (متوقف)";
+		return { icon, text: `${mm}:${ss}${suffix}`, tooltip: `${modeLabel}${taskPart}` };
+	}
+
+	/** Paints a computed status (or clears the bar) into the actual DOM
+	 * element. Separate from computePomodoroStatus so both the polling path
+	 * and the instant state-change path share one rendering implementation —
+	 * item 44 wants the bar and the timer to never visibly disagree, so
+	 * there must be exactly one code path that decides what's on screen. */
+	private renderPomodoroStatus(status: { icon: string; text: string; tooltip: string } | null) {
+		if (!this.pomodoroStatusBarEl) return;
+		this.pomodoroStatusBarEl.empty();
+		if (!status) {
+			this.pomodoroStatusBarEl.removeAttribute("aria-label");
+			return;
+		}
+		setIcon(this.pomodoroStatusBarEl, status.icon);
+		this.pomodoroStatusBarEl.createSpan({ text: " " + status.text, cls: "lifeflow-pomodoro-status-text" });
+		this.pomodoroStatusBarEl.setAttribute("aria-label", status.tooltip);
+	}
+
 	private updatePomodoroStatusBar() {
 		if (!this.pomodoroStatusBarEl) return;
 		try {
 			const raw = this.getDataValue(DATA_KEY);
 			if (!raw) {
-				this.pomodoroStatusBarEl.setText("");
+				this.renderPomodoroStatus(null);
 				return;
 			}
-			const parsed = JSON.parse(raw);
-			const at = parsed?.pomodoro?.activeTimer;
-			if (!at || typeof at.mode !== "string" || typeof at.totalSeconds !== "number") {
-				this.pomodoroStatusBarEl.setText("");
-				return;
-			}
-			let secondsLeft: number = at.secondsLeftAtAnchor;
-			if (at.running && at.anchorAt) {
-				const elapsedSec = Math.floor((Date.now() - new Date(at.anchorAt).getTime()) / 1000);
-				secondsLeft = Math.max(0, at.secondsLeftAtAnchor - elapsedSec);
-			}
-			// Idle at the mode's full duration (fresh mount / reset / switched
-			// mode without starting) — nothing meaningfully "active" to show.
-			if (!at.running && secondsLeft >= at.totalSeconds) {
-				this.pomodoroStatusBarEl.setText("");
-				return;
-			}
-			const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
-			const ss = String(secondsLeft % 60).padStart(2, "0");
-			const modeIcon = at.mode === "work" ? "🍅" : at.mode === "short" ? "☕" : "🛋️";
-			const suffix = at.running ? "" : " (متوقف)";
-			this.pomodoroStatusBarEl.setText(`${modeIcon} ${mm}:${ss}${suffix}`);
+			this.renderPomodoroStatus(this.computePomodoroStatus(JSON.parse(raw)));
 		} catch (e) {
 			// Malformed/missing data — fail silently rather than break the
 			// status bar or throw on every tick.
