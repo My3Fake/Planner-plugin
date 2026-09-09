@@ -1241,6 +1241,10 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   // خامِ "YYYY-MM-DD" که JalaliDateTimePicker می‌دهد ذخیره می‌شود (مثل الگوی
   // ذخیره‌سازیِ AddVideoModal/AddPodcastModal — بدون مهاجرتِ فرمت).
   const [notBefore, setNotBefore] = useState(initialTask ? initialTask.notBefore || "" : "");
+  // بند ۷۵ (لِین ۷): جلوگیری از تقسیمِ خودکار — پرچمی که computeSplitSchedule
+  // همیشه قبل از هر تلاشی برای تقسیمِ این تسک چک می‌کند (کارهایی که فقط
+  // در یک نشست معنا دارند، مثل یک جلسه یا یک بلاکِ عمیقِ کار).
+  const [noSplit, setNoSplit] = useState(initialTask ? !!initialTask.noSplit : false);
   const [progressType, setProgressType] = useState(initialTask ? initialTask.progressType || "binary" : "binary");
   const [progressUnit, setProgressUnit] = useState(initialTask && initialTask.progressUnit || "");
   const [progressTarget, setProgressTarget] = useState(initialTask && initialTask.progressTarget || 10);
@@ -1260,7 +1264,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   };
   const setSubtaskColor = (id, color) => setSubtasks((prev) => prev.map((s) => s.id === id ? { ...s, color } : s));
   const removeSubtask = (id) => setSubtasks((prev) => prev.filter((s) => s.id !== id));
-  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive" || initialTask.notBefore);
+  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive" || initialTask.notBefore || initialTask.noSplit);
   const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime || !isEdit && !!defaults.advancedOpenByDefault);
   const submit = () => {
     if (!title.trim()) return;
@@ -1280,6 +1284,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
       recurrence,
       reminder,
       notBefore: notBefore || null,
+      noSplit,
       recurrenceWeekdays: recurrence === "weekly" ? weekdays : void 0,
       recurrenceDay: recurrence === "monthly" || recurrence === "yearly" ? monthDay : void 0,
       recurrenceMonth: recurrence === "yearly" ? yearMonth : void 0,
@@ -1364,6 +1369,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
         },
         "\u062D\u0630\u0641"
       )),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, "\u062C\u0644\u0648\u06AF\u06CC\u0631\u06CC \u0627\u0632 \u062A\u0642\u0633\u06CC\u0645 \u062E\u0648\u062F\u06A9\u0627\u0631"), /* @__PURE__ */ React.createElement(ToggleSwitch, { on: noSplit, onClick: () => setNoSplit((v) => !v) })),
       /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0646\u0648\u0639 \u062A\u0633\u06A9"),
       /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3" }, /* @__PURE__ */ React.createElement(Chip, { active: progressType === "binary", onClick: () => setProgressType("binary") }, "\u0633\u0627\u062F\u0647 (\u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F/\u0646\u0634\u062F)"), /* @__PURE__ */ React.createElement(Chip, { active: progressType === "progressive", color: "#22D3EE", onClick: () => setProgressType("progressive") }, t("progress_task", "fa"))),
       progressType === "progressive" && /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl p-3 flex gap-2 items-end" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-500 text-[11px] mb-1" }, "\u0648\u0627\u062D\u062F \u067E\u06CC\u0634\u0631\u0641\u062A \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647\u060C \u062F\u0642\u06CC\u0642\u0647"), /* @__PURE__ */ React.createElement(
@@ -4786,10 +4792,14 @@ function isTimeWithinWorkingHours(hhmm, scheduling) {
 //  ۴. هر تسکی که در هیچ شکافی جا نشود در unplaced برمی‌گردد — این خودِ
 //     بندِ ۷۶ است: علتِ نشدن دقیقاً «کمبودِ ظرفیت» است، نه چیزِ دیگر.
 // تست: ۱۰ سناریوی مستقل (اسکریپتِ Node، پایینِ کامیت) — ۱۲/۱۲ assertion.
-function computeAutoSchedule(unscheduledTasks, scheduledTasks, scheduling, bufferMinutes) {
+// استخراج‌شده از computeAutoSchedule (بدونِ تغییرِ رفتار — صرفاً جدا شد
+// تا computeSplitSchedule هم بتواند همین منطقِ محاسبه‌ی شکاف‌های آزاد را
+// دوباره استفاده کند، به‌جای کپیِ دوم). بازه‌های کاری منهای بازه‌های
+// اشغال‌شده (+ bufferMinutes در دو طرف، merge‌شده) = شکاف‌های آزاد.
+function computeFreeGaps(occupiedTasks, scheduling, bufferMinutes) {
   bufferMinutes = Math.max(0, bufferMinutes || 0);
   const periods = (scheduling && scheduling.workingHours && scheduling.workingHours.periods || []).map((p) => [timeToMinutes(p.start), timeToMinutes(p.end)]).filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
-  const occupied = (scheduledTasks || []).filter((t) => t.time).map((t) => {
+  const occupied = (occupiedTasks || []).filter((t) => t.time).map((t) => {
     const s = timeToMinutes(t.time);
     return [Math.max(0, s - bufferMinutes), s + (t.duration || 0) + bufferMinutes];
   }).sort((a, b) => a[0] - b[0]);
@@ -4809,7 +4819,11 @@ function computeAutoSchedule(unscheduledTasks, scheduledTasks, scheduling, buffe
     }
     if (cursor < pe) freeGaps.push([cursor, pe]);
   }
-  freeGaps = freeGaps.filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
+  return freeGaps.filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0]);
+}
+function computeAutoSchedule(unscheduledTasks, scheduledTasks, scheduling, bufferMinutes) {
+  bufferMinutes = Math.max(0, bufferMinutes || 0);
+  let freeGaps = computeFreeGaps(scheduledTasks, scheduling, bufferMinutes);
   const queue = [...unscheduledTasks].sort((a, b) => (b.priority || 0) - (a.priority || 0) || (b.duration || 0) - (a.duration || 0));
   const placements = [];
   const unplaced = [];
@@ -4834,6 +4848,59 @@ function computeAutoSchedule(unscheduledTasks, scheduledTasks, scheduling, buffe
   }
   return { placements, unplaced };
 }
+// بندهای ۷۴ (تقسیمِ خودکارِ تسکِ بزرگ) و ۷۵ (پرچمِ جلوگیری از تقسیم).
+// عمداً کاملاً جدا از computeAutoSchedule نگه داشته شد — نه داخلِ حلقه‌ی
+// آن — تا رفتارِ تست‌شده‌ی همان تابع دست‌نخورده بماند؛ این فقط به‌عنوانِ
+// یک قدمِ دومِ صریح، روی تسک‌هایی که در پاسِ اول جا نشدند (`unplaced`)
+// صدا زده می‌شود. سیاستِ v1: «همه یا هیچ» — یا کلِ طولِ تسک بینِ چند
+// شکاف (هرکدام حداقل minChunkMinutes) توزیع می‌شود، یا اصلاً دست‌نخورده
+// unplaced برمی‌گردد؛ حالتِ «نیمه‌تقسیم‌شده» عمداً وجود ندارد چون یک
+// state جدید و پیچیده برای بقیه‌ی اپ می‌ساخت. بعد از هر تسکِ موفق،
+// بخش‌هایش به‌عنوانِ اشغال‌شده به `virtualOccupied` اضافه می‌شوند تا
+// شکاف‌های آزاد برای تسکِ بعدی در همین اجرا درست دوباره محاسبه شود —
+// عمداً با یک فراخوانیِ تازه‌ی computeFreeGaps (نه splice دستیِ ایندکس‌دار)
+// چون درستی اینجا مهم‌تر از سرعت است و این مسیر پرتکرار/حساسِ زمانی
+// نیست (یک اکشنِ دستیِ کاربر است، نه چیزی که در حلقه‌ی رندر اجرا شود).
+function computeSplitSchedule(unplacedTasks, occupiedTasks, scheduling, bufferMinutes, minChunkMinutes) {
+  minChunkMinutes = Math.max(5, minChunkMinutes || 20);
+  let virtualOccupied = [...(occupiedTasks || [])];
+  const queue = [...unplacedTasks].sort((a, b) => (b.priority || 0) - (a.priority || 0) || (b.duration || 0) - (a.duration || 0));
+  const splits = [];
+  const unplaced = [];
+  for (const task of queue) {
+    if (task.noSplit) {
+      unplaced.push(task.id);
+      continue;
+    }
+    const totalDuration = task.duration || 0;
+    // کمتر از دو تکه‌ی حداقلی، ارزشِ تقسیم‌شدن ندارد.
+    if (totalDuration < minChunkMinutes * 2) {
+      unplaced.push(task.id);
+      continue;
+    }
+    const freeGaps = computeFreeGaps(virtualOccupied, scheduling, bufferMinutes);
+    let remaining = totalDuration;
+    const chunks = [];
+    for (const [gs, ge] of freeGaps) {
+      if (remaining <= 0) break;
+      const gapSize = ge - gs;
+      if (gapSize < minChunkMinutes) continue;
+      const take = Math.min(gapSize, remaining);
+      chunks.push({ time: minutesToHHMM(gs), duration: take });
+      remaining -= take;
+    }
+    // اگر کلِ طول جا نشد، یا نهایتاً فقط یک تکه شد (یعنی اصلاً تقسیمی
+    // رخ نداد — این را computeAutoSchedule خودش قبلاً باید گرفته باشد)،
+    // طبقِ سیاستِ همه‌یا‌هیچ، unplaced می‌ماند.
+    if (remaining > 0 || chunks.length < 2) {
+      unplaced.push(task.id);
+      continue;
+    }
+    splits.push({ id: task.id, chunks });
+    chunks.forEach((c) => virtualOccupied.push({ time: c.time, duration: c.duration }));
+  }
+  return { splits, unplaced };
+}
 // بندهای ۸۰ (نمایش مجموع زمان برنامه‌ریزی‌شده) و ۸۱-۸۲ (نمایش ظرفیت روز +
 // هشدار بیش‌برنامه‌ریزی). عمداً کامپوننتی جدا و خوداتکاست (فقط دو عدد و
 // یک پرچمِ enabled می‌گیرد) تا هم در DayPlannerView و هم بعداً در
@@ -4842,10 +4909,15 @@ function computeAutoSchedule(unscheduledTasks, scheduledTasks, scheduling, buffe
 // ساعات کاری را غیرفعال کرده باشد (`workingHours.enabled === false`)
 // چیزی رندر نمی‌شود — نه خط ظرفیت، نه هشدار — چون بدون ظرفیتِ تعریف‌شده
 // «بیش‌برنامه‌ریزی» بی‌معنی است.
-function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, scheduledTasks, onApplyAutoSchedule }) {
+function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, scheduledTasks, onApplyAutoSchedule, onSaveTask }) {
   const enabled = !scheduling || !scheduling.workingHours || scheduling.workingHours.enabled !== false;
   const [runResult, setRunResult] = useState(null);
   const [confirmingReschedule, setConfirmingReschedule] = useState(false);
+  // بندهای ۷۴/۷۵ (تقسیمِ خودکارِ تسکِ بزرگ): فقط تسک‌هایی که آخرین اجرای
+  // «زمان‌بندی خودکار» جا نداد، کاندیدِ تقسیم می‌شوند — عمداً از خروجیِ
+  // reschedule (بندِ ۷۳) تغذیه نمی‌شود چون آن می‌تواند شاملِ تسک‌هایی باشد
+  // که قبلاً دستی زمان‌بندی شده بودند و تقسیمِ خودکارشان ریسکِ بیشتری دارد.
+  const [splitCandidates, setSplitCandidates] = useState([]);
   if (!enabled) return null;
   const capacityMinutes = workingHoursCapacityMinutes(scheduling);
   const over = capacityMinutes > 0 && scheduledMinutes > capacityMinutes;
@@ -4858,10 +4930,36 @@ function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, sc
   const runAutoSchedule = () => {
     const { placements, unplaced } = computeAutoSchedule(unscheduledTasks, scheduledTasks || [], scheduling, (scheduling && scheduling.bufferMinutes) || 0);
     if (placements.length > 0) onApplyAutoSchedule(placements);
+    const unplacedTasks = (unscheduledTasks || []).filter((t) => unplaced.includes(t.id));
+    setSplitCandidates(unplacedTasks);
     // بندِ ۷۶: اگر تسکی جا نشد، دلیلش دقیقاً کمبودِ ظرفیت است — همین‌جا
-    // به‌صراحت گفته می‌شود، نه یک شکستِ بی‌توضیح.
+    // به‌صراحت گفته می‌شود، نه یک شکستِ بی‌توضیح. اگر onSaveTask در دسترس
+    // است (یعنی تقسیمِ خودکار ممکن است)، همین‌جا هم گفته می‌شود.
     setRunResult(
-      unplaced.length === 0 ? `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F.` : `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F\u060C ${unplaced.length} \u062A\u0633\u06A9 \u0628\u0647\u200C\u062F\u0644\u06CC\u0644 \u06A9\u0645\u0628\u0648\u062F \u0638\u0631\u0641\u06CC\u062A \u062C\u0627 \u0646\u0634\u062F.`
+      unplaced.length === 0 ? `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F.` : `${placements.length} \u062A\u0633\u06A9 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0634\u062F\u060C ${unplaced.length} \u062A\u0633\u06A9 \u0628\u0647\u200C\u062F\u0644\u06CC\u0644 \u06A9\u0645\u0628\u0648\u062F \u0638\u0631\u0641\u06CC\u062A \u062C\u0627 \u0646\u0634\u062F.${onSaveTask ? " \u0645\u06CC\u200C\u062E\u0648\u0627\u06CC\u06CC \u062A\u0642\u0633\u06CC\u0645\u0634\u0627\u0646 \u06A9\u0646\u06CC\u061F" : ""}`
+    );
+  };
+  // بندهای ۷۴/۷۵: کاندیدهای جا‌نشده را روی همان شکاف‌های باقی‌مانده (منهای
+  // چیزهایی که قبلاً زمان‌بندی شده‌اند) با computeSplitSchedule امتحان
+  // می‌کند. تسکِ اصلی فقط ساعت/طول/عنوانش عوض می‌شود (اولین تکه)؛ تکه‌های
+  // بعدی، کلونِ تازه‌ای از همان تسک با id نو می‌شوند — از همان `onSaveTask`
+  // (=`saveTask`ِ خودِ LifeFlowApp) هم برای به‌روزرسانی هم برای ساختن
+  // استفاده می‌شود، چون آن تابع هردو را با یک امضا پوشش می‌دهد.
+  const canSplit = !!onSaveTask && splitCandidates.length > 0;
+  const runSplit = () => {
+    const { splits, unplaced: stillUnplaced } = computeSplitSchedule(splitCandidates, scheduledTasks || [], scheduling, (scheduling && scheduling.bufferMinutes) || 0, 20);
+    splits.forEach(({ id, chunks }) => {
+      const original = splitCandidates.find((t) => t.id === id);
+      if (!original) return;
+      const total = chunks.length;
+      onSaveTask({ ...original, time: chunks[0].time, duration: chunks[0].duration, title: `${original.title} (\u0628\u062E\u0634 1 \u0627\u0632 ${total})`, splitGroupId: original.id });
+      chunks.slice(1).forEach((c, idx) => {
+        onSaveTask({ ...original, id: uid(), time: c.time, duration: c.duration, title: `${original.title} (\u0628\u062E\u0634 ${idx + 2} \u0627\u0632 ${total})`, splitGroupId: original.id, status: "todo", completedDate: null });
+      });
+    });
+    setSplitCandidates([]);
+    setRunResult(
+      stillUnplaced.length === 0 ? `${splits.length} \u062A\u0633\u06A9 \u062A\u0642\u0633\u06CC\u0645 \u0648 \u062C\u0627\u06AF\u0630\u0627\u0631\u06CC \u0634\u062F.` : `${splits.length} \u062A\u0633\u06A9 \u062A\u0642\u0633\u06CC\u0645 \u0634\u062F، ${stillUnplaced.length} \u062A\u0633\u06A9 \u0628\u0627\u0632\u0647\u0645 \u062C\u0627 \u0646\u0634\u062F.`
     );
   };
   // بندِ ۷۳ (برنامه‌ریزیِ مجددِ خودکار): وقتی روز already بیش‌برنامه‌ریزی
@@ -4905,6 +5003,15 @@ function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, sc
           className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 shrink-0"
         },
         "\u26A1 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u062E\u0648\u062F\u06A9\u0627\u0631"
+      ),
+      canSplit && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: runSplit,
+          className: "text-[11px] text-slate-400 bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 shrink-0"
+        },
+        `\u{1F52A} \u062A\u0642\u0633\u06CC\u0645 ${splitCandidates.length} \u062A\u0633\u06A9\u06CC \u06A9\u0647 \u062C\u0627 \u0646\u0634\u062F`
       ),
       canReschedule && !confirmingReschedule && /* @__PURE__ */ React.createElement(
         "button",
@@ -5105,7 +5212,7 @@ function CalendarZoomControls({ zoom, slotMinutes, taskDetail, onZoomChange, onS
     /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
   )));
 }
-function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
+function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, onSaveTask, scheduling, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
   const dayTasks = tasks.filter((tsk) => isTaskDueOn(tsk, cursor));
   const unscheduled = dayTasks.filter((tsk) => !tsk.time);
   const scheduled = dayTasks.filter((tsk) => tsk.time);
@@ -5275,7 +5382,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const createAt = (mins) => {
     if (onCreateAt) onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling, unscheduledTasks: unscheduled, scheduledTasks: scheduled, onApplyAutoSchedule: (placements) => placements.forEach(({ id, time }) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling, unscheduledTasks: unscheduled, scheduledTasks: scheduled, onSaveTask, onApplyAutoSchedule: (placements) => placements.forEach(({ id, time }) => {
     // dayTasks (نه فقط unscheduled) چون این callback هم برای بندِ ۷۲
     // (فقط تسک‌های بدونِ‌ساعت) و هم بندِ ۷۳ (کلِ روز، شاملِ تسک‌هایی که
     // قبلاً ساعت داشتند) صدا زده می‌شود.
@@ -5583,7 +5690,7 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
-function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, scheduling, appearance, onChangeAppearance }) {
+function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, onSaveTask, scheduling, appearance, onChangeAppearance }) {
   const [view, setView] = useState("day");
   const [weekSubView, setWeekSubView] = useState("cards");
   const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
@@ -5674,7 +5781,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       "\u{1F4CA} \u0628\u0627\u0631 \u06A9\u0627\u0631\u06CC \u0647\u0641\u062A\u0647"
     )
   );
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), weeklyLoadButton, blockedNotice && /* @__PURE__ */ React.createElement("div", { className: "text-[11px] font-bold rounded-lg px-2.5 py-1.5", style: { color: "#F87171", background: "rgba(248,113,113,.1)", border: "1px solid rgba(248,113,113,.25)" } }, blockedNotice), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule: guardedOnSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule: guardedOnSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule: guardedOnSchedule, onDelete, onEdit, onAddProgress }), showWeeklyLoad && /* @__PURE__ */ React.createElement(WeeklyLoadModal, { cursor, tasks, scheduling, onClose: () => setShowWeeklyLoad(false) }));
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), weeklyLoadButton, blockedNotice && /* @__PURE__ */ React.createElement("div", { className: "text-[11px] font-bold rounded-lg px-2.5 py-1.5", style: { color: "#F87171", background: "rgba(248,113,113,.1)", border: "1px solid rgba(248,113,113,.25)" } }, blockedNotice), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule: guardedOnSchedule, onToggle, onDelete, onEdit, onCreateAt, onSaveTask, scheduling, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule: guardedOnSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule: guardedOnSchedule, onDelete, onEdit, onAddProgress }), showWeeklyLoad && /* @__PURE__ */ React.createElement(WeeklyLoadModal, { cursor, tasks, scheduling, onClose: () => setShowWeeklyLoad(false) }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
@@ -6030,7 +6137,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, onSaveTask: saveTask, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
