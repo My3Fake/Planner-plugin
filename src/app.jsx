@@ -1268,7 +1268,7 @@ function colorForTag(tag) {
   for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
   return INSTANCE_COLOR_PALETTE[h % INSTANCE_COLOR_PALETTE.length];
 }
-function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, calendars, customActionButtons, onRunAction }) {
+function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, calendars, customActionButtons, onRunAction, selectMode, selected, onToggleSelect }) {
   const q = QUADRANTS.find((x) => x.id === task.quad) || QUADRANTS[1];
   // Lane 9 (بند ۹۷): وقتی کاربر بیش از یک تقویم دارد، رنگ/نام تقویمِ
   // تسک را کنارِ بقیه‌ی برچسب‌ها نشان می‌دهیم. `calendars` اختیاری است —
@@ -1281,7 +1281,20 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
   const [openActions, setOpenActions] = useState(false);
   const hasActionButtons = customActionButtons && customActionButtons.length > 0;
   const isProgressive = task.progressType === "progressive";
-  return /* @__PURE__ */ React.createElement("div", { className: "py-2.5 border-b border-white/[0.05] last:border-0" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 px-1" }, isProgressive ? /* @__PURE__ */ React.createElement("span", { className: "w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0", style: { borderColor: task.status === "done" ? "#22D3EE" : "rgba(255,255,255,.25)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "trending-up", size: 12, className: "text-cyan-300" })) : /* @__PURE__ */ React.createElement(
+  // بند ۱۳۰-۱۳۳: در حالتِ انتخاب، دایره‌ی toggle-وضعیت جایش را به یک
+  // چک‌باکسِ انتخاب می‌دهد (نه این‌که کنارش اضافه شود) — چون هدفِ این
+  // حالت مرور/انتخاب است، نه تغییرِ وضعیتِ تک‌تکِ تسک‌ها.
+  const selectionCircle = selectMode ? /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => onToggleSelect(task.id),
+      className: "w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0",
+      style: { borderColor: selected ? "#22D3EE" : "rgba(255,255,255,.25)", background: selected ? "#22D3EE" : "transparent" },
+      "aria-label": "\u0627\u0646\u062A\u062E\u0627\u0628 \u062A\u0633\u06A9"
+    },
+    selected && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
+  ) : null;
+  return /* @__PURE__ */ React.createElement("div", { className: "py-2.5 border-b border-white/[0.05] last:border-0" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 px-1" }, selectionCircle || (isProgressive ? /* @__PURE__ */ React.createElement("span", { className: "w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0", style: { borderColor: task.status === "done" ? "#22D3EE" : "rgba(255,255,255,.25)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "trending-up", size: 12, className: "text-cyan-300" })) : /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => onToggle(task.id),
@@ -1289,7 +1302,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
       style: { borderColor: task.status === "done" ? q.color : "rgba(255,255,255,.25)", background: task.status === "done" ? q.color : "transparent" }
     },
     task.status === "done" && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm flex items-center gap-1.5 ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.icon && /* @__PURE__ */ React.createElement(Ic, { name: task.icon, size: 12, className: "shrink-0 text-slate-400" }), task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
+  )), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm flex items-center gap-1.5 ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.icon && /* @__PURE__ */ React.createElement(Ic, { name: task.icon, size: 12, className: "shrink-0 text-slate-400" }), task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => setOpenSched((v) => !v),
@@ -1332,7 +1345,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
     }
   ))));
 }
-function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, calendars, customItemTypes }) {
+function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, calendars, customItemTypes, allTasks }) {
   const isEdit = !!initialTask;
   const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
   // Lane 9 (بند ۹۴): اگر تسک قبلاً به تقویمی نسبت داده شده همان انتخاب
@@ -1355,6 +1368,14 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   const [quad, setQuad] = useState(initialTask ? initialTask.quad : defaults.quad), [priority, setPriority] = useState(initialTask ? initialTask.priority : defaults.priority);
   const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
   const [time, setTime] = useState(initialTask ? initialTask.time || "" : prefillTime || ""), [duration, setDuration] = useState(initialTask ? initialTask.duration : defaults.duration);
+  // Lane 9 (بند ۱۳۲/۱۳۳): چون تسک‌ها به‌جایِ یک تاریخِ ثابت، بر اساسِ
+  // recurrence مشخص می‌کنند کِی سررسیده‌اند، «همان روز» در این‌جا یعنی
+  // «امروز» — تقریبی صادقانه، نه دقیقِ صددرصد برایِ تسکِ تکرارشونده‌ای
+  // که هنوز امروز سررسیده نشده. `allTasks` اختیاری است (نبودنش یعنی
+  // هیچ هشدارِ تعارضی نشان داده نمی‌شود، نه خطا).
+  const todaysOtherTasks = allTasks ? allTasks.filter((t2) => (!isEdit || t2.id !== initialTask.id) && isTaskDueOn(t2, /* @__PURE__ */ new Date())) : [];
+  const timeConflicts = time ? findConflictingTasks(time, duration, todaysOtherTasks) : [];
+  const suggestedFreeTime = timeConflicts.length ? suggestAlternativeTime(time, duration, todaysOtherTasks) : null;
   const [recurrence, setRecurrence] = useState(initialTask ? initialTask.recurrence : "none"), [reminder, setReminder] = useState(initialTask ? initialTask.reminder : false);
   // بند ۷۹ (لِین ۷، PROGRESS.md): «زمان شروع مجاز» — تاریخی که پیش از آن این
   // فعالیت اصلاً due/قابل‌زمان‌بندی نیست. مقدار به‌فرمتِ همان رشته‌ی ایزوی
@@ -1478,6 +1499,15 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
           placeholder: "\u062F\u0642\u06CC\u0642\u0647"
         }
       ))),
+      timeConflicts.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4 text-xs bg-amber-500/10 border border-amber-400/30 rounded-xl px-3 py-2 text-amber-200" }, /* @__PURE__ */ React.createElement(Ic, { name: "zap", size: 13, className: "shrink-0" }), /* @__PURE__ */ React.createElement("span", { className: "flex-1" }, `\u062A\u062F\u0627\u062E\u0644 \u0628\u0627 ${timeConflicts.length} \u062A\u0633\u06A9 \u062F\u06CC\u06AF\u0631 \u0627\u0645\u0631\u0648\u0632 (${timeConflicts.map((t2) => t2.title).join("\u060C ")})`), suggestedFreeTime && /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => setTime(suggestedFreeTime),
+          className: "shrink-0 text-[11px] font-bold underline decoration-dotted"
+        },
+        `\u0627\u0633\u062A\u0641\u0627\u062F\u0647 \u0627\u0632 ${suggestedFreeTime}`
+      )),
       /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "\u0632\u0645\u0627\u0646 \u0634\u0631\u0648\u0639 \u0645\u062C\u0627\u0632 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC) \u2014 \u067E\u06CC\u0634 \u0627\u0632 \u0627\u06CC\u0646 \u062A\u0627\u0631\u06CC\u062E \u0627\u06CC\u0646 \u0641\u0639\u0627\u0644\u06CC\u062A due/\u0642\u0627\u0628\u0644\u200C\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0646\u06CC\u0633\u062A"),
       /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement(JalaliDateTimePicker, { value: notBefore, onChange: setNotBefore, includeTime: false, placeholder: "\u0628\u062F\u0648\u0646 \u0645\u062D\u062F\u0648\u062F\u06CC\u062A" })), notBefore && /* @__PURE__ */ React.createElement(
         "button",
@@ -4460,6 +4490,86 @@ function AutomationRulesModal({ onClose, rules, calendars, onAdd, onToggleEnable
     ))
   );
 }
+// Lane 9 (بندِ ۱۳۰/۱۳۱): نوارِ چسبانِ عملیاتِ گروهی — فقط وقتی حداقل یک
+// تسک انتخاب شده باشد نمایش داده می‌شود. هر دکمه فقط `onOpenPreview` را
+// با نوعِ عمل صدا می‌زند؛ اعمالِ واقعی همیشه از مودالِ Preview رد می‌شود
+// (بندِ ۱۳۰) — هیچ دکمه‌ای مستقیم چیزی را عوض نمی‌کند.
+function BulkActionBar({ count, calendars, onOpenPreview, onCancel }) {
+  return /* @__PURE__ */ React.createElement("div", { className: "sticky top-0 z-10 flex items-center gap-2 flex-wrap bg-slate-900/95 backdrop-blur border border-white/10 rounded-xl px-3 py-2.5 mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs font-bold text-cyan-300 shrink-0" }, count, " \u062A\u0633\u06A9 \u0627\u0646\u062A\u062E\u0627\u0628\u200C\u0634\u062F\u0647"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap flex-1" }, (calendars || []).length > 1 && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 flex-wrap" }, calendars.map((c) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: c.id,
+      type: "button",
+      onClick: () => onOpenPreview({ type: "move_to_calendar", value: c.id }),
+      className: "text-[11px] px-2 py-1 rounded-lg border border-white/10 flex items-center gap-1",
+      style: { color: c.color }
+    },
+    /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full shrink-0", style: { background: c.color } }),
+    c.name
+  ))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1" }, [1, 2, 3].map((p) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: p,
+      type: "button",
+      onClick: () => onOpenPreview({ type: "set_priority", value: p }),
+      className: "text-[11px] px-2 py-1 rounded-lg border border-white/10 text-slate-300"
+    },
+    "\u0627\u0648\u0644\u0648\u06CC\u062A ",
+    p
+  ))), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      type: "button",
+      onClick: () => onOpenPreview({ type: "delete" }),
+      className: "text-[11px] px-2 py-1 rounded-lg border border-rose-400/30 bg-rose-500/10 text-rose-300"
+    },
+    "\u062D\u0630\u0641"
+  )), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      type: "button",
+      onClick: onCancel,
+      className: "shrink-0 text-slate-400 hover:text-slate-200",
+      "aria-label": "\u0627\u0646\u0635\u0631\u0627\u0641"
+    },
+    /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 16 })
+  ));
+}
+// Lane 9 (بندِ ۱۳۰): پیش‌نمایشِ عملیاتِ گروهی قبل از اعمالِ واقعی — هر
+// تسکِ متأثر را با مقدارِ قبل/بعد نشان می‌دهد تا کاربر دقیقاً بداند چه
+// چیزی قرار است عوض شود، پیش از تأیید.
+function BulkPreviewModal({ preview, onConfirm, onCancel }) {
+  const isDelete = preview.action.type === "delete";
+  const actionLabel = isDelete ? "\u062D\u0630\u0641" : AUTOMATION_ACTIONS.find((a) => a.id === preview.action.type)?.label || "";
+  return /* @__PURE__ */ React.createElement(
+    ModalShell,
+    { title: isDelete ? "\u062D\u0630\u0641 \u06AF\u0631\u0648\u0647\u06CC" : "\u067E\u06CC\u0634\u200C\u0646\u0645\u0627\u06CC\u0634 \u062A\u063A\u06CC\u06CC\u0631\u0627\u062A", onClose: onCancel },
+    /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-3 leading-5" }, isDelete ? `${preview.items.length} \u062A\u0633\u06A9 \u0628\u0631\u0627\u06CC \u0647\u0645\u06CC\u0634\u0647 \u062D\u0630\u0641 \u0645\u06CC\u200C\u0634\u0648\u0646\u062F. \u0627\u06CC\u0646 \u0639\u0645\u0644 \u0631\u0627 \u0645\u06CC\u200C\u0634\u0648\u062F \u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646\u062F (\u062F\u06A9\u0645\u0647\u200C\u06CC \u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646\u06CC \u0628\u0639\u062F \u0627\u0632 \u062D\u0630\u0641 \u0638\u0627\u0647\u0631 \u0645\u06CC\u200C\u0634\u0648\u062F).` : `${preview.items.length} \u062A\u0633\u06A9 \u062A\u063A\u06CC\u06CC\u0631 \u0645\u06CC\u200C\u06A9\u0646\u0646\u062F: ${actionLabel}.`),
+    /* @__PURE__ */ React.createElement("div", { className: "space-y-1.5 mb-4 max-h-64 overflow-y-auto" }, preview.items.map((it) => /* @__PURE__ */ React.createElement(
+      "div",
+      { key: it.id, className: "flex items-center justify-between gap-2 bg-white/[0.03] border border-white/10 rounded-lg px-3 py-2 text-xs" },
+      /* @__PURE__ */ React.createElement("span", { className: "truncate text-slate-200" }, it.title),
+      !isDelete && /* @__PURE__ */ React.createElement("span", { className: "shrink-0 text-slate-500" }, String(it.before), " \u2192 ", /* @__PURE__ */ React.createElement("span", { className: "text-cyan-300" }, String(it.after)))
+    ))),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: onCancel,
+        className: "flex-1 rounded-xl py-2.5 font-bold text-sm text-slate-300 bg-white/[0.05] border border-white/10"
+      },
+      "\u0627\u0646\u0635\u0631\u0627\u0641"
+    ), /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: onConfirm,
+        className: `flex-1 rounded-xl py-2.5 font-bold text-sm text-white ${isDelete ? "bg-rose-500" : "mod-cta"}`
+      },
+      "\u062A\u0623\u06CC\u06CC\u062F"
+    ))
+  );
+}
 var NOTE_COLORS = ["#C026D3", "#22D3EE", "#F59E0B", "#10B981", "#DB2777", "#3B82F6"];
 function NewListModal({ onClose, onCreate }) {
   const [title, setTitle] = useState("");
@@ -6178,6 +6288,33 @@ function LifeFlowApp() {
   const addCustomActionButton = (btn) => setCustomActionButtons((p) => [...p, btn]);
   const deleteCustomActionButton = (id) => setCustomActionButtons((p) => p.filter((b) => b.id !== id));
   const runCustomActionButton = (taskId, action) => setTasks((p) => p.map((t2) => t2.id === taskId ? applyAutomationAction(t2, action) : t2));
+  // --- Lane 9 (بندهای ۱۳۰/۱۳۱): انتخابِ گروهی + Preview + Undo ----------
+  // فقط در تبِ لیست فعال می‌شود (دامنه‌ی عمدیِ محدود، هم‌سو با بندِ ۹۷/۹۸
+  // که هم فقط همان سطح را پوشش داد) — ماتریس/کانبان/تقویم فعلاً بی‌خبرند.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState([]);
+  const toggleSelectTask = (id) => setSelectedTaskIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedTaskIds([]);
+  };
+  const [bulkPreview, setBulkPreview] = useState(null);
+  const openBulkPreview = (action) => setBulkPreview({ action, items: buildBulkPreview(tasks, selectedTaskIds, action) });
+  const [bulkUndo, setBulkUndo] = useState(null);
+  const confirmBulkAction = () => {
+    if (!bulkPreview) return;
+    const { action } = bulkPreview;
+    const snapshot = computeBulkUndoSnapshot(tasks, selectedTaskIds);
+    setTasks((p) => applyBulkAction(p, selectedTaskIds, action));
+    setBulkUndo({ snapshot, wasDelete: action.type === "delete", count: selectedTaskIds.length });
+    setBulkPreview(null);
+    exitSelectMode();
+  };
+  const undoBulkAction = () => {
+    if (!bulkUndo) return;
+    setTasks((p) => restoreBulkUndo(p, bulkUndo.snapshot, bulkUndo.wasDelete));
+    setBulkUndo(null);
+  };
   const [pomodoro, setPomodoro] = useState(savedData.pomodoro || DEFAULT_POMODORO);
   // Tracks whether an active pomodoro *work* session is currently running, so
   // the notification effects below can suppress other notices (DND) while
@@ -6423,7 +6560,24 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, visibleTasks.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "flex justify-end mb-2" }, !selectMode ? /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setSelectMode(true),
+        className: "text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1"
+      },
+      /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 12 }),
+      "\u0627\u0646\u062A\u062E\u0627\u0628 \u0686\u0646\u062F\u062A\u0627\u06CC\u06CC"
+    ) : /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: exitSelectMode,
+        className: "text-[11px] text-slate-400 hover:text-slate-200"
+      },
+      "\u0627\u0646\u0635\u0631\u0627\u0641 \u0627\u0632 \u0627\u0646\u062A\u062E\u0627\u0628"
+    )), selectMode && selectedTaskIds.length > 0 && /* @__PURE__ */ React.createElement(BulkActionBar, { count: selectedTaskIds.length, calendars, onOpenPreview: openBulkPreview, onCancel: exitSelectMode }), tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton, selectMode, selected: selectedTaskIds.includes(t2.id), onToggleSelect: toggleSelectTask }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
@@ -6445,7 +6599,7 @@ function LifeFlowApp() {
       setShowAdd(false);
       setEditingTask(null);
       setPrefillTime(null);
-    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, customItemTypes: settings.customItemTypes, prefillTime, calendars }),
+    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, customItemTypes: settings.customItemTypes, prefillTime, calendars, allTasks: tasks }),
     searchOpen && /* @__PURE__ */ React.createElement(
       GlobalSearchModal,
       {
@@ -6505,7 +6659,9 @@ function LifeFlowApp() {
         onAddButton: addCustomActionButton,
         onDeleteButton: deleteCustomActionButton
       }
-    )
+    ),
+    bulkPreview && /* @__PURE__ */ React.createElement(BulkPreviewModal, { preview: bulkPreview, onConfirm: confirmBulkAction, onCancel: () => setBulkPreview(null) }),
+    bulkUndo && /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-slate-800 border border-white/10 rounded-xl px-4 py-2.5 shadow-lg" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-200" }, bulkUndo.count, " \u062A\u0633\u06A9 ", bulkUndo.wasDelete ? "\u062D\u0630\u0641" : "\u062A\u063A\u06CC\u06CC\u0631", " \u0634\u062F"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: undoBulkAction, className: "text-xs font-bold text-cyan-300 underline" }, "\u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646\u062F\u0646"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setBulkUndo(null), className: "text-slate-500 hover:text-slate-300", "aria-label": "\u0628\u0633\u062A\u0646" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 13 })))
   );
 }
 export default LifeFlowApp;
