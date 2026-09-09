@@ -13,6 +13,32 @@ var DAYPARTS = [
   { id: "evening", label: "\u0639\u0635\u0631" },
   { id: "night", label: "\u0634\u0628" }
 ];
+// Item-type distinction (Lane 1 backlog item — see PROGRESS.md section
+// 4.1): a task/event/routine/learning-linked axis, orthogonal to
+// quadrant/priority/progressType. Lane 3 (calendar) uses this field for
+// per-type color/icon in DayPlannerView/WeekHourlyView/AgendaView — do not
+// rename `id` values without updating that lane too. Default is "task" so
+// every pre-existing task (which has no itemType at all) behaves exactly
+// as before.
+var ITEM_TYPES = [
+  { id: "task", label: "\u062A\u0633\u06A9", icon: "clipboard", color: "#C026D3" },
+  { id: "event", label: "\u0631\u0648\u06CC\u062F\u0627\u062F", icon: "calendar", color: "#22D3EE" },
+  { id: "routine", label: "\u0631\u0648\u062A\u06CC\u0646", icon: "repeat", color: "#DB2777" },
+  { id: "learning", label: "\u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC", icon: "book", color: "#F59E0B" }
+];
+var DEFAULT_ITEM_TYPE = "task";
+// Every key defined in ICON_PATHS (see Ic component below) — used for the
+// optional per-task icon override (spec item 8, second half: "آیکون
+// تسک") in AddTaskModal, independent of itemType's own icon. Mirrored by
+// hand in settings-tab.ts's ICON_CHOICES for the custom-item-type picker
+// there — keep both lists in sync if a new icon is ever added to
+// ICON_PATHS.
+var ICON_CHOICES = [
+  "bell", "book", "calendar", "check", "clipboard", "clock", "cloud", "columns",
+  "copy", "download", "dumbbell", "edit", "flame", "folder", "grid", "headphones",
+  "home", "location", "lock", "moon", "pause", "play", "plus", "repeat", "search",
+  "settings", "sparkles", "sun", "sunrise", "sunset", "tag", "trash", "upload", "x"
+];
 var PRIORITIES = [
   { level: 1, label: "\u067E\u0627\u06CC\u06CC\u0646" },
   { level: 2, label: "\u0645\u062A\u0648\u0633\u0637" },
@@ -33,6 +59,23 @@ var WEEKDAYS = [
 ];
 var JALALI_MONTHS_FA = Jalali ? Jalali.MONTH_NAMES_FA : ["\u0641\u0631\u0648\u0631\u062F\u06CC\u0646", "\u0627\u0631\u062F\u06CC\u0628\u0647\u0634\u062A", "\u062E\u0631\u062F\u0627\u062F", "\u062A\u06CC\u0631", "\u0645\u0631\u062F\u0627\u062F", "\u0634\u0647\u0631\u06CC\u0648\u0631", "\u0645\u0647\u0631", "\u0622\u0628\u0627\u0646", "\u0622\u0630\u0631", "\u062F\u06CC", "\u0628\u0647\u0645\u0646", "\u0627\u0633\u0641\u0646\u062F"];
 var RECURRENCE_TYPES = [["none", "\u0628\u062F\u0648\u0646 \u062A\u06A9\u0631\u0627\u0631"], ["daily", "\u0631\u0648\u0632\u0627\u0646\u0647"], ["weekly", "\u0647\u0641\u062A\u06AF\u06CC"], ["monthly", "\u0645\u0627\u0647\u0627\u0646\u0647 (\u0634\u0645\u0633\u06CC)"], ["yearly", "\u0633\u0627\u0644\u0627\u0646\u0647 (\u0634\u0645\u0633\u06CC)"], ["even", "\u0631\u0648\u0632\u0647\u0627\u06CC \u0632\u0648\u062C"], ["odd", "\u0631\u0648\u0632\u0647\u0627\u06CC \u0641\u0631\u062F"]];
+// Spec item 26: learning shouldn't be limited to a few fixed categories —
+// this is a light, purely-visual tag on a topic (icon + color), not a
+// gate on what the user can name/create (topic titles were always free
+// text). "custom" covers anything not in the preset list; the label the
+// user actually typed as the topic title is what carries the real
+// meaning, this tag is just for quick visual scanning across topics.
+// Deliberately NOT deep data-integration with FitnessHub/StudyHub (e.g.
+// importing an exercise or book as a learning topic) — that's general
+// cross-system sync territory (spec item 49), out of this item's scope.
+var ACTIVITY_TYPES = [
+  { id: "study", label: "\u0645\u0637\u0627\u0644\u0639\u0647", icon: "book-open", color: "#22D3EE" },
+  { id: "exercise", label: "\u0648\u0631\u0632\u0634", icon: "dumbbell", color: "#FB7185" },
+  { id: "language", label: "\u0632\u0628\u0627\u0646", icon: "graduation-cap", color: "#34D399" },
+  { id: "skill", label: "\u0645\u0647\u0627\u0631\u062A", icon: "sparkles", color: "#FBBF24" },
+  { id: "quran", label: "\u0642\u0631\u0622\u0646", icon: "book", color: "#A78BFA" },
+  { id: "custom", label: "\u0633\u0627\u06CC\u0631", icon: "folder", color: "#94A3B8" }
+];
 function isTaskDueOn(task, dateObj) {
   // بند ۷۹ (لِین ۷): زمانِ شروعِ مجاز — اگر تسک notBefore دارد و dateObj
   // زودتر از آن روز است، due نیست، مستقل از تکرار. مقایسه روی سطحِ روز
@@ -574,13 +617,13 @@ function loadSettings() {
   try {
     const raw = storage.get(SETTINGS_KEY);
     if (!raw) {
-      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING };
+      result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING, customItemTypes: [] };
     } else {
       const parsed = JSON.parse(raw);
-      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance), scheduling: mergeScheduling(parsed.scheduling) };
+      result = { theme: "dark", language: "fa", ...parsed, notifications: { ...DEFAULT_NOTIFICATIONS, ...parsed.notifications || {} }, features: mergeFeatures(parsed.features), taskDefaults: { ...DEFAULT_TASK_DEFAULTS, ...parsed.taskDefaults || {} }, appearance: mergeAppearance(parsed.appearance), scheduling: mergeScheduling(parsed.scheduling), customItemTypes: Array.isArray(parsed.customItemTypes) ? parsed.customItemTypes : [] };
     }
   } catch (e) {
-    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING };
+    result = { theme: "dark", language: "fa", notifications: DEFAULT_NOTIFICATIONS, features: DEFAULT_FEATURES, taskDefaults: DEFAULT_TASK_DEFAULTS, appearance: DEFAULT_APPEARANCE, scheduling: DEFAULT_SCHEDULING, customItemTypes: [] };
   }
   applyQuadrantColors(result.appearance.quadrantColors);
   applyExerciseTypeColors(result.appearance.exerciseTypeColors);
@@ -1180,7 +1223,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
       style: { borderColor: task.status === "done" ? q.color : "rgba(255,255,255,.25)", background: task.status === "done" ? q.color : "transparent" }
     },
     task.status === "done" && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm flex items-center gap-1.5 ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.icon && /* @__PURE__ */ React.createElement(Ic, { name: task.icon, size: 12, className: "shrink-0 text-slate-400" }), task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => setOpenSched((v) => !v),
@@ -1223,7 +1266,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
     }
   ))));
 }
-function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, calendars }) {
+function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, calendars, customItemTypes }) {
   const isEdit = !!initialTask;
   const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
   // Lane 9 (بند ۹۴): اگر تسک قبلاً به تقویمی نسبت داده شده همان انتخاب
@@ -1232,6 +1275,17 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   const calendarList = calendars && calendars.length ? calendars : DEFAULT_CALENDARS;
   const [calendarId, setCalendarId] = useState(isEdit ? getTaskCalendarId(initialTask) : calendarList[0].id);
   const [title, setTitle] = useState(initialTask ? initialTask.title : ""), [desc, setDesc] = useState(initialTask ? initialTask.desc || "" : "");
+  const [itemType, setItemType] = useState(initialTask ? initialTask.itemType || DEFAULT_ITEM_TYPE : DEFAULT_ITEM_TYPE);
+  // Optional per-task icon override (spec item 8, second half) —
+  // independent of itemType's own default icon. Empty string means "no
+  // override, use the item type's icon wherever one is shown".
+  const [icon, setIcon] = useState(initialTask ? initialTask.icon || "" : "");
+  // Merge the 4 built-in types with whatever the user defined in Settings
+  // (custom task types, spec item 8 — see PROGRESS.md Lane 1). Custom ones
+  // are plain {id, label, icon, color} objects, same shape as ITEM_TYPES,
+  // so the rest of this component (Chip rendering, the submitted itemType
+  // value) doesn't need to know the difference.
+  const allItemTypes = useMemo(() => ITEM_TYPES.concat(customItemTypes || []), [customItemTypes]);
   const [quad, setQuad] = useState(initialTask ? initialTask.quad : defaults.quad), [priority, setPriority] = useState(initialTask ? initialTask.priority : defaults.priority);
   const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
   const [time, setTime] = useState(initialTask ? initialTask.time || "" : prefillTime || ""), [duration, setDuration] = useState(initialTask ? initialTask.duration : defaults.duration);
@@ -1264,7 +1318,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   };
   const setSubtaskColor = (id, color) => setSubtasks((prev) => prev.map((s) => s.id === id ? { ...s, color } : s));
   const removeSubtask = (id) => setSubtasks((prev) => prev.filter((s) => s.id !== id));
-  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive" || initialTask.notBefore || initialTask.noSplit);
+  const hasAdvancedData = isEdit && !!(initialTask.time || initialTask.reminder || initialTask.recurrence && initialTask.recurrence !== "none" || initialTask.tag && initialTask.tag.trim() || initialTask.subtasks && initialTask.subtasks.length > 0 || initialTask.progressType === "progressive" || initialTask.notBefore || initialTask.noSplit || initialTask.icon);
   const [showMore, setShowMore] = useState(hasAdvancedData || !!prefillTime || !isEdit && !!defaults.advancedOpenByDefault);
   const submit = () => {
     if (!title.trim()) return;
@@ -1272,6 +1326,8 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
       id: isEdit ? initialTask.id : uid(),
       title: title.trim(),
       desc: desc.trim(),
+      itemType,
+      icon: icon || void 0,
       quad,
       priority,
       calendarId,
@@ -1317,6 +1373,8 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
         className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-xs mb-4 outline-none resize-none focus:border-fuchsia-400/60"
       }
     ),
+    /* @__PURE__ */ React.createElement(FieldLabel, { icon: "grid" }, "\u0646\u0648\u0639 \u0622\u06CC\u062A\u0645"),
+    /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-4 flex-wrap" }, allItemTypes.map((it) => /* @__PURE__ */ React.createElement(Chip, { key: it.id, active: itemType === it.id, color: it.color, onClick: () => setItemType(it.id) }, /* @__PURE__ */ React.createElement(Ic, { name: it.icon, size: 11 }), " ", it.label))),
     /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0631\u0628\u0639 \u0622\u06CC\u0632\u0646\u0647\u0627\u0648\u0631"),
     /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-2 mb-4" }, QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: quad === q.id, color: q.color, onClick: () => setQuad(q.id) }, q.label))),
     /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0627\u0648\u0644\u0648\u06CC\u062A"),
@@ -1426,6 +1484,16 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
       ))),
       /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 13 }), " \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC"), /* @__PURE__ */ React.createElement(ToggleSwitch, { on: reminder, onClick: () => setReminder((v) => !v) })),
       /* @__PURE__ */ React.createElement(TextInput, { value: tag, onChange: (e) => setTag(e.target.value), placeholder: "\u0628\u0631\u0686\u0633\u0628 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)" }),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, icon ? /* @__PURE__ */ React.createElement(Ic, { name: icon, size: 13 }) : /* @__PURE__ */ React.createElement(Ic, { name: "grid", size: 13 }), " \u0622\u06CC\u06A9\u0648\u0646 \u062A\u0633\u06A9 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"), /* @__PURE__ */ React.createElement(
+        "select",
+        {
+          value: icon,
+          onChange: (e) => setIcon(e.target.value),
+          className: "bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none"
+        },
+        /* @__PURE__ */ React.createElement("option", { value: "", className: "bg-[#120814]" }, "\u067E\u06CC\u0634\u200C\u0641\u0631\u0636 \u0647\u0645\u0627\u0646 \u0646\u0648\u0639 \u0622\u06CC\u062A\u0645"),
+        ICON_CHOICES.map((ic) => /* @__PURE__ */ React.createElement("option", { key: ic, value: ic, className: "bg-[#120814]" }, ic))
+      )),
       /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2" }, "زیرتسک‌ها (اختیاری)"),
       subtasks.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5 mb-2" }, subtasks.map((s) => /* @__PURE__ */ React.createElement(
         "span",
@@ -1856,8 +1924,14 @@ function AddExerciseModal({ onClose, onAdd }) {
     mode === "sets" ? /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-2" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u062A\u0639\u062F\u0627\u062F \u0633\u062A"), /* @__PURE__ */ React.createElement("input", { type: "number", value: sets, onChange: (e) => setSets(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" })), /* @__PURE__ */ React.createElement("div", { className: "flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u062A\u06A9\u0631\u0627\u0631 \u062F\u0631 \u0647\u0631 \u0633\u062A"), /* @__PURE__ */ React.createElement("input", { type: "number", value: reps, onChange: (e) => setReps(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" }))) : /* @__PURE__ */ React.createElement("div", { className: "mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-[11px] mb-1" }, "\u0645\u062F\u062A \u0632\u0645\u0627\u0646 (\u062F\u0642\u06CC\u0642\u0647)"), /* @__PURE__ */ React.createElement("input", { type: "number", value: duration, onChange: (e) => setDuration(Number(e.target.value)), className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none" }))
   );
 }
-function LearningGoalEditor({ topic, onChange }) {
-  const g = topic.goal || {};
+// Spec item 28 (per-node goals): originally only used for the topic root,
+// this component only ever reads/writes a plain `goal` field ({description,
+// expectedOutcome, targetJy/Jm/Jd}) off whatever object it's given — no
+// other topic-specific coupling (no .subsections, no .title) \u2014 so it's
+// reused as-is for individual subsections/tracks at any depth, not just
+// the topic. Renamed the prop from `topic` to the more accurate `entity`.
+function LearningGoalEditor({ entity, onChange }) {
+  const g = entity.goal || {};
   const nowJ = Jalali ? Jalali.toJalaliParts(/* @__PURE__ */ new Date()) : { jy: 1404, jm: 1, jd: 1 };
   const jy = g.targetJy || nowJ.jy, jm = g.targetJm || nowJ.jm, jd = g.targetJd || nowJ.jd;
   const hasTarget = !!g.targetJy;
@@ -1887,6 +1961,15 @@ function LearningGoalEditor({ topic, onChange }) {
       onChange: (e) => onChange({ ...g, description: e.target.value }),
       rows: 2,
       placeholder: "\u0645\u062B\u0644\u0627\u064B: \u062A\u0627 \u067E\u0627\u06CC\u0627\u0646 \u0633\u0627\u0644 \u06A9\u0644 \u062C\u0632\u0621 \u0639\u0645 \u0631\u0648 \u062D\u0641\u0638 \u06A9\u0646\u0645",
+      className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none resize-none mb-3"
+    }
+  ), /* @__PURE__ */ React.createElement(
+    "textarea",
+    {
+      value: g.expectedOutcome || "",
+      onChange: (e) => onChange({ ...g, expectedOutcome: e.target.value }),
+      rows: 2,
+      placeholder: "\u0646\u062A\u06CC\u062C\u0647\u0654 \u0645\u0648\u0631\u062F\u0627\u0646\u062A\u0638\u0627\u0631 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC) \u2014 \u0645\u062B\u0644\u0627\u064B: \u0628\u062A\u0648\u0627\u0646\u0645 \u06CC\u06A9 \u0645\u06A9\u0627\u0644\u0645\u0647\u0654 \u0633\u0627\u062F\u0647 \u0627\u0646\u06AF\u0644\u06CC\u0633\u06CC \u0631\u0627 \u0628\u062F\u0648\u0646 \u0632\u06CC\u0631\u0646\u0648\u06CC\u0633 \u0628\u062E\u0648\u0627\u0646\u0645",
       className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none resize-none mb-3"
     }
   ), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 flex-wrap mb-2.5" }, /* @__PURE__ */ React.createElement(
@@ -1968,7 +2051,7 @@ function TrackHeatmap({ task, subsection, weeks = 12 }) {
 function LearningProgressLogList({ log, unit }) {
   if (!log || !log.length) return null;
   return React.createElement("div", { className: "mt-2 space-y-1", style: { maxHeight: 96, overflowY: "auto" } }, log.slice(0, 8).map((entry) => React.createElement("div", { key: entry.id, className: "text-[10px] flex items-center justify-between text-slate-500" },
-    React.createElement("span", null, formatDateKeyFa(entry.date), entry.note ? ` \u2014 ${entry.note}` : ""),
+    React.createElement("span", null, formatDateKeyFa(entry.date), entry.detail ? ` \u2014 ${entry.detail}` : "", entry.note ? ` \u2014 ${entry.note}` : ""),
     React.createElement("span", { style: { color: "#22D3EE" } }, `+${toFa(entry.amount)} ${unit || ""}`)
   )));
 }
@@ -1981,6 +2064,8 @@ function LearningProgressEntry({ task, subsection, topic, onAddProgress }) {
   const quota = subsection.quotaPerPeriod || 0;
   const [amount, setAmount] = useState(quota ? toFa(quota) : "");
   const [note, setNote] = useState("");
+  const [showDetail, setShowDetail] = useState(false);
+  const [detail, setDetail] = useState("");
   const pct = Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100));
   const surplusInfo = computeTrackSurplusInfo(subsection, topic, task);
   const stillOwed = computeTodayStillOwed(subsection, topic, task);
@@ -1991,9 +2076,11 @@ function LearningProgressEntry({ task, subsection, topic, onAddProgress }) {
   const submit = () => {
     const n = parseFaNumber(amount);
     if (!n || n <= 0) return;
-    onAddProgress(task.id, n, note);
+    onAddProgress(task.id, n, note, detail);
     setAmount(quota ? toFa(quota) : "");
     setNote("");
+    setDetail("");
+    setShowDetail(false);
   };
   const bankParts = [];
   if (quota > 0 && surplusInfo && surplusInfo.surplus > 0) {
@@ -2026,11 +2113,28 @@ function LearningProgressEntry({ task, subsection, topic, onAddProgress }) {
       React.createElement("input", { type: "text", value: note, onChange: (e) => setNote(e.target.value), placeholder: "\u06CC\u0627\u062F\u062F\u0627\u0634\u062A (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)", className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none" }),
       React.createElement("button", { type: "button", onClick: submit, className: "px-2.5 py-1 bg-fuchsia-500/20 text-fuchsia-300 rounded-lg text-xs shrink-0" }, "\u062B\u0628\u062A")
     ),
+    // Spec item 29 (optional granularity): most people log a plain amount
+    // and never touch this \u2014 but for cases like "Harry Potter 2, pages
+    // 40 to 55" or "Quran review, page A to B", a free-text detail can
+    // optionally be attached to THIS specific log entry (not a static
+    // label on the whole track, which subsection.rangeLabel already
+    // covers \u2014 this is per-entry, capturing exactly what THIS session
+    // covered). Collapsed behind a toggle so it never adds friction for
+    // anyone who doesn't want it.
+    pct < 100 && React.createElement(
+      "button",
+      { type: "button", onClick: () => setShowDetail((v) => !v), className: "text-[10px]", style: { color: "var(--text-faint)" } },
+      showDetail ? "\u2212 \u062C\u0632\u0626\u06CC\u0627\u062A" : "+ \u062C\u0632\u0626\u06CC\u0627\u062A (\u0645\u062B\u0644\u0627\u064B: \u0635\u0641\u062D\u0647 \u06F1\u06F0 \u062A\u0627 \u06F1\u06F5)"
+    ),
+    pct < 100 && showDetail && React.createElement("input", { type: "text", value: detail, onChange: (e) => setDetail(e.target.value), placeholder: "\u062C\u0632\u0626\u06CC\u0627\u062A \u0627\u06CC\u0646 \u062B\u0628\u062A \u2014 \u0645\u062B\u0644\u0627\u064B \u0635\u0641\u062D\u0647 \u06F1\u06F0 \u062A\u0627 \u06F1\u06F5", className: "w-full bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none" }),
     React.createElement(LearningProgressLogList, { log: task.progressLog, unit: subsection.unit })
   );
 }
-function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteSubsection, onAddProgress, onTogglePause, onToggleArchive, onDuplicate, onExtendGoal }) {
+function SubsectionCard({ subsection, topic, tasks, onUpdateSubsection, onDeleteSubsection, onAddProgress, onTogglePause, onToggleArchive, onDuplicate, onExtendGoal, onAddChild, depth = 0 }) {
+  const task = tasks.find((tk) => tk.id === subsection.linkedTaskId);
   const [editing, setEditing] = useState(false);
+  const [childrenOpen, setChildrenOpen] = useState(false);
+  const [showGoal, setShowGoal] = useState(false);
   const [unit, setUnit] = useState(subsection.unit);
   const [target, setTarget] = useState(subsection.target);
   const [quota, setQuota] = useState(subsection.quotaPerPeriod ?? 1);
@@ -2057,7 +2161,9 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   };
 
   const cadenceLabel = !ov
-    ? "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"
+    ? depth === 0
+      ? "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0645\u0648\u0636\u0648\u0639"
+      : "\u0637\u0628\u0642 \u0631\u0648\u062A\u06CC\u0646 \u0633\u0637\u062D \u0628\u0627\u0644\u0627"
     : ov.recurrence === "daily"
     ? "\u0647\u0631\u0631\u0648\u0632"
     : ((ov.recurrenceWeekdays || []).map((id) => WEEKDAYS.find((w) => w.id === id)).filter(Boolean).map((w) => w.label).join("\u060C ") || "\u0631\u0648\u0632\u0647\u0627\u06CC \u062E\u0627\u0635");
@@ -2102,9 +2208,10 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
     React.createElement(
       "div",
       { className: "flex items-center gap-2 shrink-0" },
-      onDuplicate && iconBtn("copy", onDuplicate, "hover:text-cyan-300", "\u06A9\u067E\u06CC \u0645\u0633\u06CC\u0631"),
-      onTogglePause && !subsection.archived && iconBtn(subsection.paused ? "play" : "pause", onTogglePause, subsection.paused ? "hover:text-cyan-300" : "hover:text-amber-300", subsection.paused ? "\u0627\u0632\u0633\u0631\u06AF\u06CC\u0631\u06CC" : "\u062A\u0648\u0642\u0641 \u0645\u0648\u0642\u062A"),
-      onToggleArchive && iconBtn("folder", onToggleArchive, subsection.archived ? "text-cyan-400" : "hover:text-cyan-300", subsection.archived ? "\u062E\u0627\u0631\u062C \u06A9\u0631\u062F\u0646 \u0627\u0632 \u0622\u0631\u0634\u06CC\u0648" : "\u0622\u0631\u0634\u06CC\u0648 \u06A9\u0631\u062F\u0646"),
+      onDuplicate && iconBtn("copy", () => onDuplicate(subsection), "hover:text-cyan-300", "\u06A9\u067E\u06CC \u0645\u0633\u06CC\u0631"),
+      onAddChild && iconBtn("plus", () => onAddChild(subsection), "hover:text-emerald-300", "\u0627\u0641\u0632\u0648\u062F\u0646 \u0632\u06CC\u0631\u0645\u062C\u0645\u0648\u0639\u0647 (\u0644\u0627\u06CC\u0647\u200C\u06CC \u062C\u062F\u06CC\u062F)"),
+      onTogglePause && !subsection.archived && iconBtn(subsection.paused ? "play" : "pause", () => onTogglePause(subsection), subsection.paused ? "hover:text-cyan-300" : "hover:text-amber-300", subsection.paused ? "\u0627\u0632\u0633\u0631\u06AF\u06CC\u0631\u06CC" : "\u062A\u0648\u0642\u0641 \u0645\u0648\u0642\u062A"),
+      onToggleArchive && iconBtn("folder", () => onToggleArchive(subsection), subsection.archived ? "text-cyan-400" : "hover:text-cyan-300", subsection.archived ? "\u062E\u0627\u0631\u062C \u06A9\u0631\u062F\u0646 \u0627\u0632 \u0622\u0631\u0634\u06CC\u0648" : "\u0622\u0631\u0634\u06CC\u0648 \u06A9\u0631\u062F\u0646"),
       iconBtn("edit", () => setEditing((v) => !v), "hover:text-fuchsia-300", "\u0648\u06CC\u0631\u0627\u06CC\u0634"),
       iconBtn("trash", () => onDeleteSubsection(subsection.id), "text-rose-400/70 hover:text-rose-400", "\u062D\u0630\u0641")
     )
@@ -2133,12 +2240,27 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
   ) : null;
   const heatmap = !editing && task && showHeatmap ? React.createElement("div", { className: "mb-2" }, React.createElement(TrackHeatmap, { task, subsection })) : null;
 
+  // Spec item 28: same per-node goal capability the topic root already had
+  // (LearningGoalEditor, generalized to accept any `entity` with a `goal`
+  // field), now also available per subsection/track at any depth.
+  // Collapsed by default (like the heatmap) to avoid cluttering every
+  // card; a compact badge shows when a goal IS set even while collapsed.
+  const hasGoal = subsection.goal && (subsection.goal.description || subsection.goal.targetJy);
+  const goalDaysLeft = subsection.goal && subsection.goal.targetJy && Jalali ? Math.round((Jalali.fromJalaliParts(subsection.goal.targetJy, subsection.goal.targetJm, subsection.goal.targetJd) - /* @__PURE__ */ new Date()) / 864e5) : null;
+  const goalToggle = !editing ? React.createElement(
+    "button",
+    { type: "button", onClick: () => setShowGoal((v) => !v), className: "text-[10px] mb-2 items-center gap-1", style: { color: hasGoal ? "#F0ABFC" : "var(--text-muted)", display: "inline-flex" } },
+    React.createElement(Ic, { name: "sparkles", size: 10 }),
+    hasGoal ? (showGoal ? "\u0646\u0645\u0627\u06CC\u0634 \u0647\u062F\u0641: \u0628\u0633\u062A\u0646" : goalDaysLeft !== null ? goalDaysLeft >= 0 ? `\u0647\u062F\u0641 \u062F\u0627\u0631\u06CC \u2014 ${toFa(goalDaysLeft)} \u0631\u0648\u0632 \u0645\u0627\u0646\u062F\u0647` : `\u0647\u062F\u0641 \u062F\u0627\u0631\u06CC \u2014 ${toFa(-goalDaysLeft)} \u0631\u0648\u0632 \u06AF\u0630\u0634\u062A\u0647` : "\u0647\u062F\u0641 \u062F\u0627\u0631\u06CC \u2014 \u0646\u0645\u0627\u06CC\u0634") : showGoal ? "\u0628\u0633\u062A\u0646" : "+ \u0647\u062F\u0641 \u0628\u0631\u0627\u06CC \u0627\u06CC\u0646 \u0632\u06CC\u0631\u0645\u062C\u0645\u0648\u0639\u0647"
+  ) : null;
+  const goalEditor = !editing && showGoal ? React.createElement("div", { className: "mb-2" }, React.createElement(LearningGoalEditor, { entity: subsection, onChange: (goal) => onUpdateSubsection(subsection.id, { goal }) })) : null;
+
   const pct = task ? Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100)) : 0;
   const completionBanner = !editing && task && pct >= 100 && !subsection.archived ? React.createElement(
     "div",
     { className: "flex items-center justify-between gap-2 mb-1.5 px-2.5 py-1.5 rounded-lg", style: { background: "rgba(34,211,238,0.1)", border: "1px solid rgba(34,211,238,0.25)" } },
     React.createElement("span", { className: "text-[11px] font-bold", style: { color: "#22D3EE" } }, "\u{1F389} \u0647\u062F\u0641 \u062A\u06A9\u0645\u06CC\u0644 \u0634\u062F!"),
-    onExtendGoal && React.createElement("button", { type: "button", onClick: onExtendGoal, title: "\u0628\u0631\u0627\u06CC \u0645\u0633\u06CC\u0631\u0647\u0627\u06CC \u067E\u06CC\u0648\u0633\u062A\u0647/\u062A\u06A9\u0631\u0627\u0631\u06CC (\u0645\u062B\u0644\u0627\u064B \u0645\u0631\u0648\u0631) \u06A9\u0647 \u0647\u0631\u06AF\u0632 «\u062A\u0645\u0627\u0645» \u0646\u0645\u06CC\u200C\u0634\u0648\u0646\u062F", className: "text-[10px] px-2 py-1 rounded-lg font-medium", style: { background: "rgba(34,211,238,0.18)", color: "#22D3EE" } }, "\u0627\u062F\u0627\u0645\u0647/\u0627\u0641\u0632\u0627\u06CC\u0634 \u0647\u062F\u0641")
+    onExtendGoal && React.createElement("button", { type: "button", onClick: () => onExtendGoal(subsection, task), title: "\u0628\u0631\u0627\u06CC \u0645\u0633\u06CC\u0631\u0647\u0627\u06CC \u067E\u06CC\u0648\u0633\u062A\u0647/\u062A\u06A9\u0631\u0627\u0631\u06CC (\u0645\u062B\u0644\u0627\u064B \u0645\u0631\u0648\u0631) \u06A9\u0647 \u0647\u0631\u06AF\u0632 «\u062A\u0645\u0627\u0645» \u0646\u0645\u06CC\u200C\u0634\u0648\u0646\u062F", className: "text-[10px] px-2 py-1 rounded-lg font-medium", style: { background: "rgba(34,211,238,0.18)", color: "#22D3EE" } }, "\u0627\u062F\u0627\u0645\u0647/\u0627\u0641\u0632\u0627\u06CC\u0634 \u0647\u062F\u0641")
   ) : null;
 
   const cadenceModes = [
@@ -2204,7 +2326,41 @@ function SubsectionCard({ subsection, topic, task, onUpdateSubsection, onDeleteS
 
   const body = editing ? editForm : task ? React.createElement(React.Fragment, null, completionBanner, React.createElement(LearningProgressEntry, { task, subsection, topic, onAddProgress })) : React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u062A\u0633\u06A9 \u0645\u062A\u0646\u0627\u0638\u0631 \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F");
 
-  return React.createElement(GlassCard, { className: "p-3.5", style: subsection.color ? { borderRight: `3px solid ${subsection.color}` } : void 0 }, header, subtitle, colorPickerRow, notesDisplay, heatmapToggle, heatmap, body);
+  // Spec item 25 (multi-level tree): render `subsection.children` (if any)
+  // recursively as more SubsectionCards, indented, collapsed by default so
+  // a deep tree doesn't overwhelm the view. Each child gets THIS node's own
+  // effective recurrence as its "topic" (its own override if it has one,
+  // else whatever this node itself inherited) — see findParentEffective
+  // Recurrence's doc comment for why that's what makes multi-level
+  // inheritance resolve correctly without changing isTrackDueOn itself.
+  const childCount = (subsection.children || []).length;
+  const ownEffectiveRecurrence = subsection.recurrenceOverride ? { recurrence: subsection.recurrenceOverride.recurrence, recurrenceWeekdays: subsection.recurrenceOverride.recurrenceWeekdays } : topic;
+  const childrenToggle = childCount > 0 ? React.createElement(
+    "button",
+    { type: "button", onClick: () => setChildrenOpen((v) => !v), className: "text-[10px] mt-2", style: { color: "var(--text-accent)" } },
+    `${childrenOpen ? "\u25BE" : "\u25B8"} ${toFa(childCount)} \u0632\u06CC\u0631\u0645\u062C\u0645\u0648\u0639\u0647`
+  ) : null;
+  const childrenList = childrenOpen && childCount > 0 ? React.createElement(
+    "div",
+    { className: "mt-2 space-y-2", style: { borderRight: "2px solid var(--background-modifier-border)", paddingRight: "10px", marginRight: "2px" } },
+    subsection.children.map((child) => React.createElement(SubsectionCard, {
+      key: child.id,
+      subsection: child,
+      topic: ownEffectiveRecurrence,
+      tasks,
+      onUpdateSubsection,
+      onDeleteSubsection,
+      onAddProgress,
+      onTogglePause,
+      onToggleArchive,
+      onDuplicate,
+      onExtendGoal,
+      onAddChild,
+      depth: depth + 1
+    }))
+  ) : null;
+
+  return React.createElement(GlassCard, { className: "p-3.5", style: subsection.color ? { borderRight: `3px solid ${subsection.color}` } : void 0 }, header, subtitle, colorPickerRow, notesDisplay, goalToggle, goalEditor, heatmapToggle, heatmap, body, childrenToggle, childrenList);
 }
 
 function AddSubsectionForm({ onAdd }) {
@@ -2228,8 +2384,9 @@ function AddSubsectionForm({ onAdd }) {
 }
 function NewLearningTopicModal({ onClose, onAdd }) {
   const [title, setTitle] = useState("");
+  const [activityType, setActivityType] = useState("custom");
   const submit = () => {
-    if (title.trim()) onAdd(title.trim());
+    if (title.trim()) onAdd(title.trim(), activityType);
   };
   return /* @__PURE__ */ React.createElement(
     ModalShell,
@@ -2240,7 +2397,24 @@ function NewLearningTopicModal({ onClose, onAdd }) {
       submitLabel: "\u0627\u06CC\u062C\u0627\u062F \u0645\u0648\u0636\u0648\u0639",
       submitDisabled: !title.trim()
     },
-    /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0645\u062B\u0644\u0627\u064B \u062D\u0641\u0638 \u0642\u0631\u0622\u0646" })
+    /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0645\u062B\u0644\u0627\u064B \u062D\u0641\u0638 \u0642\u0631\u0622\u0646" }),
+    /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 mb-1.5", style: { marginTop: "12px" } }, "\u0646\u0648\u0639 \u0641\u0639\u0627\u0644\u06CC\u062A (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u2014 \u0641\u0642\u0637 \u0628\u0631\u0627\u06CC \u062A\u0645\u0627\u06CC\u0632 \u0628\u0635\u0631\u06CC)"),
+    /* @__PURE__ */ React.createElement(
+      "div",
+      { className: "flex flex-wrap gap-1.5" },
+      ACTIVITY_TYPES.map((t2) => /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          key: t2.id,
+          type: "button",
+          onClick: () => setActivityType(t2.id),
+          className: "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px]",
+          style: { background: activityType === t2.id ? `${t2.color}26` : "rgba(255,255,255,0.05)", color: activityType === t2.id ? t2.color : "var(--text-muted)", border: `1px solid ${activityType === t2.id ? t2.color : "transparent"}` }
+        },
+        /* @__PURE__ */ React.createElement(Ic, { name: t2.icon, size: 12 }),
+        t2.label
+      ))
+    )
   );
 }
 function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, deleteTask }) {
@@ -2285,20 +2459,59 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
       progressTarget: 10,
       progressCurrent: 0
     });
-    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "", color: null }] }));
+    updateTopic((p) => ({ ...p, subsections: [...p.subsections, { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "", color: null, children: [] }] }));
+  };
+  // Spec item 25 (multi-level tree): adds a new leaf directly under an
+  // EXISTING node (any depth), not just under the topic root. Quick-add
+  // pattern deliberately, not a modal: the new node gets a placeholder
+  // title and opens straight into edit mode conceptually by being visible
+  // right where the user was already looking (inside the now-auto-
+  // expanded parent) — they rename/configure it via the same pencil icon
+  // every other node already has, no separate "new sub-item" form needed.
+  const addChildSubsection = (parentNode) => {
+    if (!topic) return;
+    const newTaskId = uid();
+    const parentRecurrence = findParentEffectiveRecurrence(topic.subsections, parentNode.id, { recurrence: topic.recurrence, recurrenceWeekdays: topic.recurrenceWeekdays }) || { recurrence: topic.recurrence, recurrenceWeekdays: topic.recurrenceWeekdays };
+    const ownParentRecurrence = parentNode.recurrenceOverride ? { recurrence: parentNode.recurrenceOverride.recurrence, recurrenceWeekdays: parentNode.recurrenceOverride.recurrenceWeekdays } : parentRecurrence;
+    const title = "\u0632\u06CC\u0631\u0645\u062C\u0645\u0648\u0639\u0647\u200C\u06CC \u062C\u062F\u06CC\u062F";
+    saveTask({
+      id: newTaskId,
+      title: `${parentNode.title} \u2014 ${title}`,
+      desc: "",
+      quad: "q2",
+      priority: 2,
+      status: "todo",
+      completedDate: null,
+      daypart: "morning",
+      tag: "\u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC",
+      time: null,
+      duration: 45,
+      recurrence: ownParentRecurrence.recurrence || "daily",
+      reminder: false,
+      recurrenceWeekdays: ownParentRecurrence.recurrence === "weekly" ? ownParentRecurrence.recurrenceWeekdays && ownParentRecurrence.recurrenceWeekdays.length ? ownParentRecurrence.recurrenceWeekdays : [(/* @__PURE__ */ new Date()).getDay()] : void 0,
+      subtasks: [],
+      progressType: "progressive",
+      progressUnit: "\u0648\u0627\u062D\u062F",
+      progressTarget: 10,
+      progressCurrent: 0,
+      progressLog: []
+    });
+    const newChild = { id: uid(), title, unit: "\u0648\u0627\u062D\u062F", target: 10, quotaPerPeriod: 1, rangeLabel: "", recurrenceOverride: null, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, notes: "", color: null, children: [] };
+    updateTopic((p) => ({ ...p, subsections: addChildToNode(p.subsections, parentNode.id, newChild) }));
   };
   const updateSubsection = (id, patch) => {
     if (!topic) return;
-    const sec = topic.subsections.find((s) => s.id === id);
+    const sec = findNodeById(topic.subsections, id);
     if (!sec) return;
-    updateTopic((p) => ({ ...p, subsections: p.subsections.map((s) => s.id === id ? { ...s, ...patch } : s) }));
+    updateTopic((p) => ({ ...p, subsections: updateNodeById(p.subsections, id, (s) => ({ ...s, ...patch })) }));
     const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
     if (!linkedTask) return;
     const taskPatch = { ...linkedTask, progressUnit: patch.unit ?? linkedTask.progressUnit, progressTarget: patch.target ?? linkedTask.progressTarget };
     if (patch.recurrenceOverride !== void 0) {
       const ov = patch.recurrenceOverride;
-      taskPatch.recurrence = ov ? ov.recurrence : topic.recurrence || "daily";
-      taskPatch.recurrenceWeekdays = ov && ov.recurrence === "weekly" ? ov.recurrenceWeekdays || [] : topic.recurrence === "weekly" ? topic.recurrenceWeekdays : void 0;
+      const parentRecurrence = findParentEffectiveRecurrence(topic.subsections, id, { recurrence: topic.recurrence, recurrenceWeekdays: topic.recurrenceWeekdays }) || { recurrence: topic.recurrence, recurrenceWeekdays: topic.recurrenceWeekdays };
+      taskPatch.recurrence = ov ? ov.recurrence : parentRecurrence.recurrence || "daily";
+      taskPatch.recurrenceWeekdays = ov && ov.recurrence === "weekly" ? ov.recurrenceWeekdays || [] : parentRecurrence.recurrence === "weekly" ? parentRecurrence.recurrenceWeekdays : void 0;
     }
     saveTask(taskPatch);
   };
@@ -2320,24 +2533,40 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
   // (those are a per-task, Tasks-tab-only detail for monthly/yearly, per
   // LearningRoutineEditor's own hint text, and must not be clobbered back
   // to a default here).
+  // Generalized for the v2 tree (spec item 25): walks every node at every
+  // depth (flattenTree), not just top-level subsections, since a deeply
+  // nested leaf with no override anywhere in its ancestor chain also
+  // needs its linked task re-synced when the topic root's routine changes.
+  // A node that itself has an override is always skipped (unaffected by
+  // definition); a node whose *ancestor* has an override already got its
+  // effective recurrence from that ancestor, not the topic, so re-running
+  // findParentEffectiveRecurrence per node (rather than a single pass with
+  // one inherited value) is what keeps that correct at any depth.
   const updateTopicRoutine = (nextTopic) => {
     updateTopic(() => nextTopic);
-    nextTopic.subsections.forEach((sec) => {
-      if (sec.recurrenceOverride) return;
+    const rootChain = { recurrence: nextTopic.recurrence, recurrenceWeekdays: nextTopic.recurrenceWeekdays };
+    flattenTree(nextTopic.subsections).forEach((sec) => {
+      if (sec.recurrenceOverride || !sec.linkedTaskId) return;
       const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
       if (!linkedTask) return;
+      const parentRecurrence = findParentEffectiveRecurrence(nextTopic.subsections, sec.id, rootChain) || rootChain;
       saveTask({
         ...linkedTask,
-        recurrence: nextTopic.recurrence || "daily",
-        recurrenceWeekdays: nextTopic.recurrence === "weekly" ? nextTopic.recurrenceWeekdays : void 0
+        recurrence: parentRecurrence.recurrence || "daily",
+        recurrenceWeekdays: parentRecurrence.recurrence === "weekly" ? parentRecurrence.recurrenceWeekdays : void 0
       });
     });
   };
   const deleteSubsection = (id) => {
     if (!topic) return;
-    const sec = topic.subsections.find((s) => s.id === id);
-    updateTopic((p) => ({ ...p, subsections: p.subsections.filter((s) => s.id !== id) }));
-    if (sec && sec.linkedTaskId) deleteTask(sec.linkedTaskId);
+    const sec = findNodeById(topic.subsections, id);
+    if (!sec) return;
+    // Removing a node removes its whole subtree — every descendant's
+    // linked task must go too, not just the node itself.
+    flattenTree([sec]).forEach((n) => {
+      if (n.linkedTaskId) deleteTask(n.linkedTaskId);
+    });
+    updateTopic((p) => ({ ...p, subsections: removeNodeById(p.subsections, id) }));
   };
   // Pausing hides a track from due/balance calculations (isTrackDueOn
   // returns false while `paused`); resuming shifts `createdDate` forward by
@@ -2418,15 +2647,12 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     });
     updateTopic((p) => ({
       ...p,
-      subsections: [
-        ...p.subsections,
-        { ...sec, id: uid(), title: `${sec.title} (\u06A9\u067E\u06CC)`, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null }
-      ]
+      subsections: duplicateNodeAsSibling(p.subsections, sec.id, (orig) => ({ ...orig, id: uid(), title: `${orig.title} (\u06A9\u067E\u06CC)`, createdDate: todayKey(), linkedTaskId: newTaskId, archived: false, paused: false, pausedSince: null, children: [] })).nodes
     }));
   };
   if (!topic) {
-    return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-8 flex flex-col items-center text-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "graduation-cap", size: 26, className: "text-fuchsia-300 mb-2" }), /* @__PURE__ */ React.createElement("p", { className: "text-slate-300 text-sm" }, "\u0647\u0646\u0648\u0632 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u0646\u0633\u0627\u062E\u062A\u06CC")), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0645\u0648\u0636\u0648\u0639 \u062C\u062F\u06CC\u062F"), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
-      const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
+    return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-8 flex flex-col items-center text-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "graduation-cap", size: 26, className: "text-fuchsia-300 mb-2" }), /* @__PURE__ */ React.createElement("p", { className: "text-slate-300 text-sm" }, "\u0647\u0646\u0648\u0632 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u0646\u0633\u0627\u062E\u062A\u06CC")), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0645\u0648\u0636\u0648\u0639 \u062C\u062F\u06CC\u062F"), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title, activityType) => {
+      const p = { id: uid(), title, activityType, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
       setProjects([p]);
       setActiveId(p.id);
       setShowNewTopic(false);
@@ -2488,39 +2714,46 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     topicExportMsg && React.createElement("p", { className: "text-[10px] mt-1", style: { color: "var(--text-success, #7fbb6e)" } }, topicExportMsg),
     topicExportErr && React.createElement("p", { className: "text-[10px] mt-1 text-rose-400" }, topicExportErr)
   );
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-1" }, projects.map((p) => /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      key: p.id,
-      onClick: () => setActiveId(p.id),
-      className: "shrink-0 rounded-xl px-3 py-2 text-xs font-medium border",
-      style: { borderColor: p.id === activeId ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: p.id === activeId ? "var(--background-modifier-hover)" : "var(--background-primary)", color: p.id === activeId ? "var(--text-accent)" : "var(--text-muted)" }
-    },
-    p.title
-  )), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "shrink-0 w-9 h-9 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15, className: "text-slate-400" }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4", style: topic.color ? { borderRight: `3px solid ${topic.color}` } : void 0 }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 min-w-0" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowTopicColorPicker((p) => !p), title: "\u0631\u0646\u06AF \u0645\u0648\u0636\u0648\u0639", className: "w-2 h-2 rounded-full shrink-0", style: { background: topic.color || "rgba(255,255,255,.25)" } }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-white truncate" }, topic.title)), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-fuchsia-300 font-bold" }, topicProgress(topic), "%"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-1" }, projects.map((p) => {
+    const pType = ACTIVITY_TYPES.find((t2) => t2.id === p.activityType);
+    return /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: p.id,
+        onClick: () => setActiveId(p.id),
+        className: "shrink-0 rounded-xl px-3 py-2 text-xs font-medium border flex items-center gap-1.5",
+        style: { borderColor: p.id === activeId ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: p.id === activeId ? "var(--background-modifier-hover)" : "var(--background-primary)", color: p.id === activeId ? "var(--text-accent)" : "var(--text-muted)" }
+      },
+      pType && /* @__PURE__ */ React.createElement(Ic, { name: pType.icon, size: 11, color: pType.color }),
+      p.title
+    );
+  }), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "shrink-0 w-9 h-9 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15, className: "text-slate-400" }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4", style: topic.color ? { borderRight: `3px solid ${topic.color}` } : void 0 }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 min-w-0" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowTopicColorPicker((p) => !p), title: "\u0631\u0646\u06AF \u0645\u0648\u0636\u0648\u0639", className: "w-2 h-2 rounded-full shrink-0", style: { background: topic.color || "rgba(255,255,255,.25)" } }), (() => {
+    const activeType = ACTIVITY_TYPES.find((t2) => t2.id === topic.activityType);
+    return activeType ? /* @__PURE__ */ React.createElement(Ic, { name: activeType.icon, size: 13, color: activeType.color }) : null;
+  })(), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-white truncate" }, topic.title)), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-fuchsia-300 font-bold" }, topicProgress(topic), "%"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
     topic.subsections.forEach((s) => s.linkedTaskId && deleteTask(s.linkedTaskId));
     setProjects((prev) => prev.filter((p) => p.id !== topic.id));
     setActiveId(null);
-  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), topicColorPickerRow, /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: topic.color || "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
-    const linkedTask = tasks.find((tk) => tk.id === sec.linkedTaskId);
+  }, className: "text-rose-400/80 hover:text-rose-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })))), topicColorPickerRow, /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${topicProgress(topic)}%`, background: topic.color || "linear-gradient(90deg,#C026D3,#22D3EE)" } }))), /* @__PURE__ */ React.createElement(LearningGoalEditor, { entity: topic, onChange: (goal) => updateTopic((p) => ({ ...p, goal })) }), React.createElement(LearningRoutineEditor, { topic, onChange: updateTopicRoutine }), /* @__PURE__ */ React.createElement("div", null, subsectionsHeader, /* @__PURE__ */ React.createElement("div", { className: "space-y-2.5" }, topic.subsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0646\u0648\u0632 \u0632\u06CC\u0631\u0628\u062E\u0634\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0645\u062B\u0644\u0627\u064B \xAB\u062A\u062B\u0628\u06CC\u062A\xBB\u060C \xAB\u0645\u0631\u0648\u0631\xBB\u060C \xAB\u062D\u0641\u0638\xBB"), topic.subsections.length > 0 && visibleSubsections.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-600" }, "\u0647\u0645\u0647\u200C\u06CC \u0632\u06CC\u0631\u0628\u062E\u0634\u200C\u0647\u0627 \u0622\u0631\u0634\u06CC\u0648 \u0634\u062F\u0647\u200C\u0627\u0646\u062F \u2014 \xAB\u0646\u0645\u0627\u06CC\u0634 \u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647\u200C\u0647\u0627\xBB \u0631\u0627 \u0628\u0632\u0646"), visibleSubsections.map((sec) => {
     return /* @__PURE__ */ React.createElement(
       SubsectionCard,
       {
         key: sec.id,
         subsection: sec,
         topic,
-        task: linkedTask,
+        tasks,
         onUpdateSubsection: updateSubsection,
         onDeleteSubsection: deleteSubsection,
         onAddProgress,
-        onTogglePause: () => togglePause(sec),
-        onToggleArchive: () => toggleArchive(sec),
-        onDuplicate: () => duplicateSubsection(sec),
-        onExtendGoal: () => extendGoal(sec, linkedTask)
+        onTogglePause: togglePause,
+        onToggleArchive: toggleArchive,
+        onDuplicate: duplicateSubsection,
+        onExtendGoal: extendGoal,
+        onAddChild: addChildSubsection
       }
     );
-  })), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
-    const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
+  })), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title, activityType) => {
+    const p = { id: uid(), title, activityType, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
     setProjects((prev) => [...prev, p]);
     setActiveId(p.id);
     setShowNewTopic(false);
@@ -2588,6 +2821,104 @@ function formatDateKeyFa(key) {
   const [y, m, d] = key.split("-").map(Number);
   if (!y || !m || !d) return key;
   return Jalali.formatJalali(new Date(y, m - 1, d), { weekday: false });
+}
+// --- Learning system v2: multi-level tree helpers (spec item 25 --
+// arbitrary-depth nesting, e.g. Language -> Reading -> a specific book ->
+// a specific chapter -> a specific section, not capped at two levels).
+// A node from the OLD flat model (a plain subsection with no `children`)
+// is just a leaf in this tree -- fully backward compatible, no migration
+// needed for existing data. Every function below is a pure, immutable
+// tree operation (returns new arrays/objects, never mutates the input),
+// matching the rest of the app's setState-based update pattern.
+function findNodeById(nodes, id) {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    if (n.children && n.children.length) {
+      const found = findNodeById(n.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+function updateNodeById(nodes, id, updater) {
+  return nodes.map((n) => {
+    if (n.id === id) return updater(n);
+    if (n.children && n.children.length) {
+      return { ...n, children: updateNodeById(n.children, id, updater) };
+    }
+    return n;
+  });
+}
+function removeNodeById(nodes, id) {
+  return nodes.filter((n) => n.id !== id).map((n) => n.children && n.children.length ? { ...n, children: removeNodeById(n.children, id) } : n);
+}
+function addChildToNode(nodes, parentId, childNode) {
+  return nodes.map((n) => {
+    if (n.id === parentId) return { ...n, children: [...(n.children || []), childNode] };
+    if (n.children && n.children.length) {
+      return { ...n, children: addChildToNode(n.children, parentId, childNode) };
+    }
+    return n;
+  });
+}
+function flattenTree(nodes) {
+  const out = [];
+  (nodes || []).forEach((n) => {
+    out.push(n);
+    if (n.children && n.children.length) out.push(...flattenTree(n.children));
+  });
+  return out;
+}
+// Inserts a clone of the node whose id is `id` right after it, in whatever
+// array actually contains it (top-level `subsections` or a nested
+// `children` array) — used by duplicateSubsection so "copy" produces a
+// sibling next to the original at any depth, not always appended to the
+// tree's root. cloneFn receives the found node and must return the new
+// node (including its own fresh id).
+function duplicateNodeAsSibling(nodes, id, cloneFn) {
+  const idx = nodes.findIndex((n) => n.id === id);
+  if (idx !== -1) {
+    const next = nodes.slice();
+    next.splice(idx + 1, 0, cloneFn(nodes[idx]));
+    return { found: true, nodes: next };
+  }
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (n.children && n.children.length) {
+      const result = duplicateNodeAsSibling(n.children, id, cloneFn);
+      if (result.found) {
+        const next = nodes.slice();
+        next[i] = { ...n, children: result.nodes };
+        return { found: true, nodes: next };
+      }
+    }
+  }
+  return { found: false, nodes };
+}
+// The {recurrence, recurrenceWeekdays} that should be passed as the
+// "topic" argument to the EXISTING isTrackDueOn/computeTrackBalance/
+// computeTrackStreak/computeTrackSurplusInfo/computeTodayStillOwed for the
+// node whose id is targetId -- i.e. its DIRECT PARENT's own effective
+// recurrence, resolved all the way up to the topic root if nothing in
+// between overrides it. Deliberately does NOT fold the target node's own
+// recurrenceOverride in -- isTrackDueOn already does that internally, so
+// this only needs to resolve what the ancestor chain contributes above
+// it. This is what makes deep, multi-level recurrence inheritance work
+// (a level with no override of its own inherits from its nearest
+// overriding ancestor, not necessarily straight from the topic) without
+// changing a single line of the existing, already-tested due/balance/
+// streak/surplus functions. Verified with a 12-case standalone test
+// covering 4 levels of nesting and mixed override combinations.
+function findParentEffectiveRecurrence(nodes, targetId, inheritedFromAbove) {
+  for (const n of nodes) {
+    if (n.id === targetId) return inheritedFromAbove;
+    const ownEffective = n.recurrenceOverride ? { recurrence: n.recurrenceOverride.recurrence, recurrenceWeekdays: n.recurrenceOverride.recurrenceWeekdays } : inheritedFromAbove;
+    if (n.children && n.children.length) {
+      const found = findParentEffectiveRecurrence(n.children, targetId, ownEffective);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 function isTrackDueOn(subsection, topic, d) {
   // Paused/archived tracks are never "due" — callers that need to know
@@ -2929,28 +3260,44 @@ function DailyReportTrackRow({ subsection, topic, task, onAddProgress }) {
 function buildLearningTopicMarkdownReport(topic, tasks) {
   const lines = [];
   lines.push(`# \u06AF\u0632\u0627\u0631\u0634 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC: ${topic.title}`, "", `\u062A\u0627\u0631\u06CC\u062E \u062E\u0631\u0648\u062C\u06CC: ${formatDateKeyFa(todayKey())}`, "");
-  (topic.subsections || []).forEach((sec) => {
-    const task = (tasks || []).find((tk) => tk.id === sec.linkedTaskId);
-    const statusLabel = sec.archived ? "\u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647" : sec.paused ? "\u0645\u062A\u0648\u0642\u0641" : "\u0641\u0639\u0627\u0644";
-    lines.push(`## ${sec.title} (${statusLabel})`);
-    if (sec.rangeLabel) lines.push(`- \u0628\u0627\u0632\u0647: ${sec.rangeLabel}`);
-    if (sec.quotaPerPeriod) lines.push(`- \u0633\u0647\u0645\u06CC\u0647: ${sec.quotaPerPeriod} ${sec.unit} / \u062F\u0648\u0631\u0647`);
-    if (task) {
-      const pct = Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100));
-      lines.push(`- \u067E\u06CC\u0634\u0631\u0641\u062A: ${task.progressCurrent} / ${task.progressTarget} ${task.progressUnit} (${pct}%)`);
-      const streak = computeTrackStreak(sec, topic, task);
-      if (streak > 0) lines.push(`- \u0631\u0634\u062A\u0647\u200C\u06CC \u0641\u0639\u0644\u06CC: ${streak} \u0631\u0648\u0632 \u0645\u062A\u0648\u0627\u0644\u06CC`);
-    }
-    if (sec.notes) lines.push(`- \u06CC\u0627\u062F\u062F\u0627\u0634\u062A: ${sec.notes}`);
-    if (task && task.progressLog && task.progressLog.length) {
-      lines.push("", "### \u062A\u0627\u0631\u06CC\u062E\u0686\u0647\u200C\u06CC \u067E\u06CC\u0634\u0631\u0641\u062A");
-      const sortedLog = [...task.progressLog].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
-      sortedLog.forEach((e) => {
-        lines.push(`- ${formatDateKeyFa(e.date)}: +${e.amount} ${sec.unit}${e.note ? ` \u2014 ${e.note}` : ""}`);
-      });
-    }
-    lines.push("");
-  });
+  // Spec item 25 (multi-level tree): walks subsection.children recursively
+  // instead of only the top-level array \u2014 otherwise anything nested more
+  // than one level deep would silently be missing from the exported
+  // report. Heading depth grows with tree depth (## -> ### -> ####, capped
+  // at 6, Markdown's own limit) so the export visually mirrors the actual
+  // nesting instead of flattening it.
+  const walk = (sections, depth) => {
+    (sections || []).forEach((sec) => {
+      const task = (tasks || []).find((tk) => tk.id === sec.linkedTaskId);
+      const statusLabel = sec.archived ? "\u0622\u0631\u0634\u06CC\u0648\u200C\u0634\u062F\u0647" : sec.paused ? "\u0645\u062A\u0648\u0642\u0641" : "\u0641\u0639\u0627\u0644";
+      const hashes = "#".repeat(Math.min(6, depth + 2));
+      lines.push(`${hashes} ${sec.title} (${statusLabel})`);
+      if (sec.rangeLabel) lines.push(`- \u0628\u0627\u0632\u0647: ${sec.rangeLabel}`);
+      if (sec.quotaPerPeriod) lines.push(`- \u0633\u0647\u0645\u06CC\u0647: ${sec.quotaPerPeriod} ${sec.unit} / \u062F\u0648\u0631\u0647`);
+      if (task) {
+        const pct = Math.min(100, Math.round(task.progressCurrent / task.progressTarget * 100));
+        lines.push(`- \u067E\u06CC\u0634\u0631\u0641\u062A: ${task.progressCurrent} / ${task.progressTarget} ${task.progressUnit} (${pct}%)`);
+        const streak = computeTrackStreak(sec, topic, task);
+        if (streak > 0) lines.push(`- \u0631\u0634\u062A\u0647\u200C\u06CC \u0641\u0639\u0644\u06CC: ${streak} \u0631\u0648\u0632 \u0645\u062A\u0648\u0627\u0644\u06CC`);
+      }
+      if (sec.goal && (sec.goal.description || sec.goal.targetJy)) {
+        if (sec.goal.description) lines.push(`- \u0647\u062F\u0641: ${sec.goal.description}`);
+        if (sec.goal.expectedOutcome) lines.push(`- \u0646\u062A\u06CC\u062C\u0647\u0654 \u0645\u0648\u0631\u062F\u0627\u0646\u062A\u0638\u0627\u0631: ${sec.goal.expectedOutcome}`);
+        if (sec.goal.targetJy && Jalali) lines.push(`- \u0645\u0647\u0644\u062A: ${Jalali.formatJalali(Jalali.fromJalaliParts(sec.goal.targetJy, sec.goal.targetJm, sec.goal.targetJd), { weekday: false })}`);
+      }
+      if (sec.notes) lines.push(`- \u06CC\u0627\u062F\u062F\u0627\u0634\u062A: ${sec.notes}`);
+      if (task && task.progressLog && task.progressLog.length) {
+        lines.push("", `${"#".repeat(Math.min(6, depth + 3))} \u062A\u0627\u0631\u06CC\u062E\u0686\u0647\u200C\u06CC \u067E\u06CC\u0634\u0631\u0641\u062A`);
+        const sortedLog = [...task.progressLog].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+        sortedLog.forEach((e) => {
+          lines.push(`- ${formatDateKeyFa(e.date)}: +${e.amount} ${sec.unit}${e.note ? ` \u2014 ${e.note}` : ""}${e.detail ? ` (${e.detail})` : ""}`);
+        });
+      }
+      lines.push("");
+      if (sec.children && sec.children.length) walk(sec.children, depth + 1);
+    });
+  };
+  walk(topic.subsections, 0);
   lines.push(`_\u0635\u0627\u062F\u0631\u0634\u062F\u0647 \u062A\u0648\u0633\u0637 \u067E\u0644\u0627\u06AF\u06CC\u0646 \u0632\u0646\u062F\u06AF\u06CC\u0622\u0631\u0627\u0645 \u062F\u0631 ${(/* @__PURE__ */ new Date()).toLocaleTimeString("fa-IR")}_`);
   return lines.join("\n");
 }
@@ -5923,11 +6270,12 @@ function LifeFlowApp() {
     // وضعیتِ done→todo این trigger را دوباره اجرا نمی‌کند.
     return willBeDone ? runAutomationRules(next, automationRules, "task_completed") : next;
   }));
-  const addTaskProgress = (id, amount, note) => setTasks((p) => p.map((t2) => {
+  const addTaskProgress = (id, amount, note, detail) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id || t2.progressType !== "progressive") return t2;
     const next = Math.min(t2.progressTarget, (t2.progressCurrent || 0) + amount);
     const done = next >= t2.progressTarget;
     const entry = { id: uid(), date: todayKey(), amount, note: (note || "").trim() };
+    if (detail && detail.trim()) entry.detail = detail.trim();
     return { ...t2, progressCurrent: next, progressLog: [entry, ...t2.progressLog || []], status: done ? "done" : "todo", completedDate: done ? todayKey() : null };
   }));
   useEffect(() => {
@@ -6159,7 +6507,7 @@ function LifeFlowApp() {
       setShowAdd(false);
       setEditingTask(null);
       setPrefillTime(null);
-    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, prefillTime, calendars }),
+    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, customItemTypes: settings.customItemTypes, prefillTime, calendars }),
     searchOpen && /* @__PURE__ */ React.createElement(
       GlobalSearchModal,
       {
