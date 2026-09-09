@@ -5591,6 +5591,36 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   // اطلاع‌رسانیِ‌محضِ WeeklyLoadModal را باز می‌کند؛ عمداً هیچ نمای موجودِ
   // تقویم (DayPlannerView/WeekHourlyView/...) را تغییر نمی‌دهد.
   const [showWeeklyLoad, setShowWeeklyLoad] = useState(false);
+  // بندِ ۷۷ (لِین ۷، نیمه‌ی «جلوگیری» — تکمیل‌کننده‌ی نیمه‌ی «آگاهی»ِ جلسه‌ی
+  // قبل): همه‌ی مسیرهای زمان‌بندیِ تقویم (درگ در DayPlannerView/
+  // WeekHourlyView، ریسایز، کلیک‌برای‌ساخت در فضای خالیِ `dropAt`) در
+  // نهایت دقیقاً همین یک propِ `onSchedule` را صدا می‌زنند — پس به‌جای
+  // لمسِ startMove/startResize/dropAt (منطقِ حساسِ لمسی/موس که همین الان
+  // بینِ چند لِین فعال بوده)، فقط همین یک نقطه‌ی مشترک قبل از رسیدن به
+  // آن کامپوننت‌ها پیچیده می‌شود. اگر ساعتِ نهایی بیرون از همه‌ی بازه‌های
+  // کاری باشد، commit نمی‌شود (کارِ درگ‌شده بدونِ توضیح به‌جای قبلی
+  // برمی‌گردد چون تسک در state تغییر نکرده) و یک پیامِ گذرا نشان داده
+  // می‌شود؛ در غیرِ این‌صورت دقیقاً همان onSchedule اصلی، بدونِ هیچ تغییرِ
+  // رفتاری دیگر. computeAutoSchedule هرگز این گارد را لمس نمی‌کند چون
+  // خودش فقط از داخلِ بازه‌های کاری زمان انتخاب می‌کند.
+  // محدودیتِ شناخته‌شده: ورودیِ ساعتِ سریع در TaskRow (نمای فهرستِ تسک‌ها،
+  // نه تقویم) از `scheduleTask`ِ خامِ LifeFlowApp استفاده می‌کند، نه این
+  // wrapper — چون آن مسیر بیرون از قلمروِ CalendarViews است.
+  const [blockedNotice, setBlockedNotice] = useState(null);
+  useEffect(() => {
+    if (!blockedNotice) return;
+    const t = setTimeout(() => setBlockedNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [blockedNotice]);
+  const guardedOnSchedule = (id, time, duration) => {
+    const hoursEnabled = !scheduling || !scheduling.workingHours || scheduling.workingHours.enabled !== false;
+    const hasDefinedCapacity = workingHoursCapacityMinutes(scheduling) > 0;
+    if (hoursEnabled && hasDefinedCapacity && !isTimeWithinWorkingHours(time, scheduling)) {
+      setBlockedNotice(`\u26D4 \u0633\u0627\u0639\u062A ${time} \u0628\u06CC\u0631\u0648\u0646 \u0627\u0632 \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC \u062A\u0639\u0631\u06CC\u0641‌\u0634\u062F\u0647 \u0627\u0633\u062A \u2014 \u0632\u0645\u0627\u0646‌\u0628\u0646\u062F\u06CC \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.`);
+      return;
+    }
+    onSchedule(id, time, duration);
+  };
   const zoom = appearance?.calendarZoom ?? 1;
   const slotMinutes = appearance?.calendarSlotMinutes ?? 30;
   const taskDetail = appearance?.calendarTaskDetail ?? "full";
@@ -5630,7 +5660,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       ))
     )
   );
-  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes, taskDetail }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
+  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule: guardedOnSchedule, zoom, slotMinutes, taskDetail }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
   const weeklyLoadButton = /* @__PURE__ */ React.createElement(
     "div",
     { className: "flex justify-end" },
@@ -5644,7 +5674,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       "\u{1F4CA} \u0628\u0627\u0631 \u06A9\u0627\u0631\u06CC \u0647\u0641\u062A\u0647"
     )
   );
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), weeklyLoadButton, view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }), showWeeklyLoad && /* @__PURE__ */ React.createElement(WeeklyLoadModal, { cursor, tasks, scheduling, onClose: () => setShowWeeklyLoad(false) }));
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), weeklyLoadButton, blockedNotice && /* @__PURE__ */ React.createElement("div", { className: "text-[11px] font-bold rounded-lg px-2.5 py-1.5", style: { color: "#F87171", background: "rgba(248,113,113,.1)", border: "1px solid rgba(248,113,113,.25)" } }, blockedNotice), view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule: guardedOnSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule: guardedOnSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule: guardedOnSchedule, onDelete, onEdit, onAddProgress }), showWeeklyLoad && /* @__PURE__ */ React.createElement(WeeklyLoadModal, { cursor, tasks, scheduling, onClose: () => setShowWeeklyLoad(false) }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
