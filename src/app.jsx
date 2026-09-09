@@ -59,6 +59,23 @@ var WEEKDAYS = [
 ];
 var JALALI_MONTHS_FA = Jalali ? Jalali.MONTH_NAMES_FA : ["\u0641\u0631\u0648\u0631\u062F\u06CC\u0646", "\u0627\u0631\u062F\u06CC\u0628\u0647\u0634\u062A", "\u062E\u0631\u062F\u0627\u062F", "\u062A\u06CC\u0631", "\u0645\u0631\u062F\u0627\u062F", "\u0634\u0647\u0631\u06CC\u0648\u0631", "\u0645\u0647\u0631", "\u0622\u0628\u0627\u0646", "\u0622\u0630\u0631", "\u062F\u06CC", "\u0628\u0647\u0645\u0646", "\u0627\u0633\u0641\u0646\u062F"];
 var RECURRENCE_TYPES = [["none", "\u0628\u062F\u0648\u0646 \u062A\u06A9\u0631\u0627\u0631"], ["daily", "\u0631\u0648\u0632\u0627\u0646\u0647"], ["weekly", "\u0647\u0641\u062A\u06AF\u06CC"], ["monthly", "\u0645\u0627\u0647\u0627\u0646\u0647 (\u0634\u0645\u0633\u06CC)"], ["yearly", "\u0633\u0627\u0644\u0627\u0646\u0647 (\u0634\u0645\u0633\u06CC)"], ["even", "\u0631\u0648\u0632\u0647\u0627\u06CC \u0632\u0648\u062C"], ["odd", "\u0631\u0648\u0632\u0647\u0627\u06CC \u0641\u0631\u062F"]];
+// Spec item 26: learning shouldn't be limited to a few fixed categories —
+// this is a light, purely-visual tag on a topic (icon + color), not a
+// gate on what the user can name/create (topic titles were always free
+// text). "custom" covers anything not in the preset list; the label the
+// user actually typed as the topic title is what carries the real
+// meaning, this tag is just for quick visual scanning across topics.
+// Deliberately NOT deep data-integration with FitnessHub/StudyHub (e.g.
+// importing an exercise or book as a learning topic) — that's general
+// cross-system sync territory (spec item 49), out of this item's scope.
+var ACTIVITY_TYPES = [
+  { id: "study", label: "\u0645\u0637\u0627\u0644\u0639\u0647", icon: "book-open", color: "#22D3EE" },
+  { id: "exercise", label: "\u0648\u0631\u0632\u0634", icon: "dumbbell", color: "#FB7185" },
+  { id: "language", label: "\u0632\u0628\u0627\u0646", icon: "graduation-cap", color: "#34D399" },
+  { id: "skill", label: "\u0645\u0647\u0627\u0631\u062A", icon: "sparkles", color: "#FBBF24" },
+  { id: "quran", label: "\u0642\u0631\u0622\u0646", icon: "book", color: "#A78BFA" },
+  { id: "custom", label: "\u0633\u0627\u06CC\u0631", icon: "folder", color: "#94A3B8" }
+];
 function isTaskDueOn(task, dateObj) {
   // بند ۷۹ (لِین ۷): زمانِ شروعِ مجاز — اگر تسک notBefore دارد و dateObj
   // زودتر از آن روز است، due نیست، مستقل از تکرار. مقایسه روی سطحِ روز
@@ -2361,8 +2378,9 @@ function AddSubsectionForm({ onAdd }) {
 }
 function NewLearningTopicModal({ onClose, onAdd }) {
   const [title, setTitle] = useState("");
+  const [activityType, setActivityType] = useState("custom");
   const submit = () => {
-    if (title.trim()) onAdd(title.trim());
+    if (title.trim()) onAdd(title.trim(), activityType);
   };
   return /* @__PURE__ */ React.createElement(
     ModalShell,
@@ -2373,7 +2391,24 @@ function NewLearningTopicModal({ onClose, onAdd }) {
       submitLabel: "\u0627\u06CC\u062C\u0627\u062F \u0645\u0648\u0636\u0648\u0639",
       submitDisabled: !title.trim()
     },
-    /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0645\u062B\u0644\u0627\u064B \u062D\u0641\u0638 \u0642\u0631\u0622\u0646" })
+    /* @__PURE__ */ React.createElement(TextInput, { autoFocus: true, value: title, onChange: (e) => setTitle(e.target.value), placeholder: "\u0645\u062B\u0644\u0627\u064B \u062D\u0641\u0638 \u0642\u0631\u0622\u0646" }),
+    /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 mb-1.5", style: { marginTop: "12px" } }, "\u0646\u0648\u0639 \u0641\u0639\u0627\u0644\u06CC\u062A (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u2014 \u0641\u0642\u0637 \u0628\u0631\u0627\u06CC \u062A\u0645\u0627\u06CC\u0632 \u0628\u0635\u0631\u06CC)"),
+    /* @__PURE__ */ React.createElement(
+      "div",
+      { className: "flex flex-wrap gap-1.5" },
+      ACTIVITY_TYPES.map((t2) => /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          key: t2.id,
+          type: "button",
+          onClick: () => setActivityType(t2.id),
+          className: "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px]",
+          style: { background: activityType === t2.id ? `${t2.color}26` : "rgba(255,255,255,0.05)", color: activityType === t2.id ? t2.color : "var(--text-muted)", border: `1px solid ${activityType === t2.id ? t2.color : "transparent"}` }
+        },
+        /* @__PURE__ */ React.createElement(Ic, { name: t2.icon, size: 12 }),
+        t2.label
+      ))
+    )
   );
 }
 function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, deleteTask }) {
@@ -2610,8 +2645,8 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     }));
   };
   if (!topic) {
-    return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-8 flex flex-col items-center text-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "graduation-cap", size: 26, className: "text-fuchsia-300 mb-2" }), /* @__PURE__ */ React.createElement("p", { className: "text-slate-300 text-sm" }, "\u0647\u0646\u0648\u0632 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u0646\u0633\u0627\u062E\u062A\u06CC")), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0645\u0648\u0636\u0648\u0639 \u062C\u062F\u06CC\u062F"), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
-      const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
+    return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-8 flex flex-col items-center text-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "graduation-cap", size: 26, className: "text-fuchsia-300 mb-2" }), /* @__PURE__ */ React.createElement("p", { className: "text-slate-300 text-sm" }, "\u0647\u0646\u0648\u0632 \u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC \u0646\u0633\u0627\u062E\u062A\u06CC")), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "w-full rounded-xl py-3 text-sm font-medium text-slate-300 border border-dashed border-white/15 flex items-center justify-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 }), " \u0645\u0648\u0636\u0648\u0639 \u062C\u062F\u06CC\u062F"), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title, activityType) => {
+      const p = { id: uid(), title, activityType, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
       setProjects([p]);
       setActiveId(p.id);
       setShowNewTopic(false);
@@ -2673,16 +2708,23 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
     topicExportMsg && React.createElement("p", { className: "text-[10px] mt-1", style: { color: "var(--text-success, #7fbb6e)" } }, topicExportMsg),
     topicExportErr && React.createElement("p", { className: "text-[10px] mt-1 text-rose-400" }, topicExportErr)
   );
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-1" }, projects.map((p) => /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      key: p.id,
-      onClick: () => setActiveId(p.id),
-      className: "shrink-0 rounded-xl px-3 py-2 text-xs font-medium border",
-      style: { borderColor: p.id === activeId ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: p.id === activeId ? "var(--background-modifier-hover)" : "var(--background-primary)", color: p.id === activeId ? "var(--text-accent)" : "var(--text-muted)" }
-    },
-    p.title
-  )), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "shrink-0 w-9 h-9 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15, className: "text-slate-400" }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4", style: topic.color ? { borderRight: `3px solid ${topic.color}` } : void 0 }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 min-w-0" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowTopicColorPicker((p) => !p), title: "\u0631\u0646\u06AF \u0645\u0648\u0636\u0648\u0639", className: "w-2 h-2 rounded-full shrink-0", style: { background: topic.color || "rgba(255,255,255,.25)" } }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-white truncate" }, topic.title)), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-fuchsia-300 font-bold" }, topicProgress(topic), "%"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-1" }, projects.map((p) => {
+    const pType = ACTIVITY_TYPES.find((t2) => t2.id === p.activityType);
+    return /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: p.id,
+        onClick: () => setActiveId(p.id),
+        className: "shrink-0 rounded-xl px-3 py-2 text-xs font-medium border flex items-center gap-1.5",
+        style: { borderColor: p.id === activeId ? "var(--interactive-accent)" : "var(--background-modifier-border)", background: p.id === activeId ? "var(--background-modifier-hover)" : "var(--background-primary)", color: p.id === activeId ? "var(--text-accent)" : "var(--text-muted)" }
+      },
+      pType && /* @__PURE__ */ React.createElement(Ic, { name: pType.icon, size: 11, color: pType.color }),
+      p.title
+    );
+  }), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowNewTopic(true), className: "shrink-0 w-9 h-9 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15, className: "text-slate-400" }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4", style: topic.color ? { borderRight: `3px solid ${topic.color}` } : void 0 }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 min-w-0" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setShowTopicColorPicker((p) => !p), title: "\u0631\u0646\u06AF \u0645\u0648\u0636\u0648\u0639", className: "w-2 h-2 rounded-full shrink-0", style: { background: topic.color || "rgba(255,255,255,.25)" } }), (() => {
+    const activeType = ACTIVITY_TYPES.find((t2) => t2.id === topic.activityType);
+    return activeType ? /* @__PURE__ */ React.createElement(Ic, { name: activeType.icon, size: 13, color: activeType.color }) : null;
+  })(), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-white truncate" }, topic.title)), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-fuchsia-300 font-bold" }, topicProgress(topic), "%"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
     topic.subsections.forEach((s) => s.linkedTaskId && deleteTask(s.linkedTaskId));
     setProjects((prev) => prev.filter((p) => p.id !== topic.id));
     setActiveId(null);
@@ -2704,8 +2746,8 @@ function LearningHub({ projects, setProjects, tasks, onAddProgress, saveTask, de
         onAddChild: addChildSubsection
       }
     );
-  })), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title) => {
-    const p = { id: uid(), title, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
+  })), /* @__PURE__ */ React.createElement(AddSubsectionForm, { onAdd: addSubsection })), showNewTopic && /* @__PURE__ */ React.createElement(NewLearningTopicModal, { onClose: () => setShowNewTopic(false), onAdd: (title, activityType) => {
+    const p = { id: uid(), title, activityType, subsections: [], goal: {}, recurrence: "daily", recurrenceWeekdays: [], color: null };
     setProjects((prev) => [...prev, p]);
     setActiveId(p.id);
     setShowNewTopic(false);
