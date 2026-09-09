@@ -4469,6 +4469,12 @@ function CustomViewEditorModal({ initial, tasks, onClose, onSave }) {
   const submit = () => {
     onSave({
       ...initial,
+      // isNew فقط یک پرچمِ یک‌بارمصرف برایِ تشخیصِ «ساخت جدید در برابرِ ویرایش»
+      // در CalendarViews است - اگر این‌جا در دیتایِ ذخیره‌شده باقی بماند،
+      // دفعه‌ی بعد که همین نما دوباره باز شود، به‌اشتباه به‌عنوانِ «تازه»
+      // تلقی می‌شود و onAddCustomView (به‌جایِ onUpdateCustomView) صدا زده
+      // می‌شود - یعنی هر ویرایش یک کپیِ تازه می‌سازد، به‌جایِ اصلاحِ همان نما.
+      isNew: false,
       name: name.trim() || "\u0628\u06CC\u200C\u0646\u0627\u0645",
       dayCount: Math.max(1, Math.min(14, dayCount)),
       taskDetail,
