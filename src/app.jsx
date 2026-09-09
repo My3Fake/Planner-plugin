@@ -5073,7 +5073,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     activeCustomView && React.createElement(
       "button",
       { onClick: () => setEditingCustomView({ ...activeCustomView }), className: "w-7 h-7 rounded-lg bg-white/[0.05] flex items-center justify-center shrink-0", title: "\u0648\u06CC\u0631\u0627\u06CC\u0634" },
-      React.createElement(Ic, { name: "pencil", size: 13, className: "text-slate-300" })
+      React.createElement(Ic, { name: "edit", size: 13, className: "text-slate-300" })
     ),
     activeCustomView && React.createElement(
       "button",
