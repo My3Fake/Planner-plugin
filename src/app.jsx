@@ -515,7 +515,7 @@ var DEFAULT_FEATURES = {
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
-var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", quadrantColors: DEFAULT_QUADRANT_COLORS };
+var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", calendarLastView: null, calendarLastDate: null, quadrantColors: DEFAULT_QUADRANT_COLORS };
 // Lane 7 (زمان‌بندی هوشمند و ظرفیت، بندهای ۷۲–۸۸ در PROGRESS.md): پایه‌ی
 // داده‌ایِ «ساعات کاری» — یک یا چند بازه‌ی زمانی که مجموعشان ظرفیت روزانه
 // را می‌سازد (بند ۷۸: چند بازه کاری در یک روز). فعلاً یک مجموعه‌ی واحد
@@ -6070,9 +6070,18 @@ function YearView({ cursor, tasks, onJumpMonth }) {
   }));
 }
 function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, onSaveTask, scheduling, appearance, onChangeAppearance }) {
-  const [view, setView] = useState("day");
+  // بند ۵۹: آخرین نما/تاریخِ مشاهده‌شده حفظ شود. از همان کانالِ
+  // appearance/onChangeAppearance که zoom/slotMinutes/taskDetail هم قبلاً
+  // استفاده می‌کردند (پایین همین تابع) — چیزِ تازه‌ای لازم نبود، فقط دو
+  // فیلدِ دیگر به همان شیء اضافه شد. مقدارِ اولیه‌ی null (نه یک view/تاریخِ
+  // مشخص) عمداً انتخاب شد تا اولین‌بارِ بازکردنِ پلاگین (که هنوز چیزی ذخیره
+  // نشده) دقیقاً همان رفتارِ قبلی (نمای «روز»، تاریخِ امروز) را داشته باشد.
+  const [view, setView] = useState(() => appearance?.calendarLastView || "day");
   const [weekSubView, setWeekSubView] = useState("cards");
-  const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
+  const [cursor, setCursor] = useState(() => appearance?.calendarLastDate ? new Date(appearance.calendarLastDate) : /* @__PURE__ */ new Date());
+  useEffect(() => {
+    if (onChangeAppearance) onChangeAppearance({ calendarLastView: view, calendarLastDate: cursor.toISOString() });
+  }, [view, cursor]);
   // بند ۸۳ (لِین ۷): «بار کاری هفته» — دکمه‌ی تکی که یک مودالِ مستقل و
   // اطلاع‌رسانیِ‌محضِ WeeklyLoadModal را باز می‌کند؛ عمداً هیچ نمای موجودِ
   // تقویم (DayPlannerView/WeekHourlyView/...) را تغییر نمی‌دهد.
