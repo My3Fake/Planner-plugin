@@ -93,6 +93,11 @@ interface LifeFlowSettings {
 		// a fixed small set of known keys like q1-q4.
 		exerciseTypeColors?: Record<string, string>;
 	};
+	// Spec item 8 (custom task model system, Lane 1) — user-defined task
+	// types beyond the 4 built-in ones (task/event/routine/learning), each
+	// shaped exactly like app.jsx's ITEM_TYPES entries so AddTaskModal can
+	// just concat() the two lists.
+	customItemTypes: { id: string; label: string; icon: string; color: string }[];
 	[key: string]: unknown;
 }
 
@@ -135,6 +140,7 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 		bufferMinutes: 0,
 	},
 	appearance: { fontFamily: "default", density: "comfortable", quadrantColors: DEFAULT_QUADRANT_COLORS, exerciseTypeColors: DEFAULT_EXERCISE_TYPE_COLORS },
+	customItemTypes: [],
 };
 
 // Tiny local id generator for new working-hour periods — settings-tab.ts is
@@ -143,6 +149,17 @@ const DEFAULT_SETTINGS: LifeFlowSettings = {
 function newPeriodId(): string {
 	return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
+
+// Mirrors app.jsx's ICON_PATHS keys exactly (same duplication pattern as
+// DEFAULT_QUADRANT_COLORS above) — this native tab can't easily import from
+// the JSX bundle source, so the icon name list is kept in sync by hand. If
+// a new icon is ever added to ICON_PATHS in app.jsx, add it here too.
+const ICON_CHOICES = [
+	"bell", "book", "calendar", "check", "clipboard", "clock", "cloud", "columns",
+	"copy", "download", "dumbbell", "edit", "flame", "folder", "grid", "headphones",
+	"home", "location", "lock", "moon", "pause", "play", "plus", "repeat", "search",
+	"settings", "sparkles", "sun", "sunrise", "sunset", "tag", "trash", "upload", "x",
+];
 
 const LANGUAGE_OPTIONS: Record<string, string> = {
 	fa: "فارسی",
@@ -252,6 +269,7 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					quadrantColors: { ...DEFAULT_SETTINGS.appearance.quadrantColors, ...((parsed.appearance || {}).quadrantColors || {}) },
 					exerciseTypeColors: { ...DEFAULT_SETTINGS.appearance.exerciseTypeColors, ...((parsed.appearance || {}).exerciseTypeColors || {}) },
 				},
+				customItemTypes: Array.isArray(parsed.customItemTypes) ? parsed.customItemTypes : [],
 			};
 		} catch (e) {
 			return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
@@ -523,6 +541,77 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					const next = this.readSettings();
 					next.taskDefaults.advancedOpenByDefault = value;
 					this.writeSettings(next);
+				});
+			});
+
+		// ---------------------------------------------------------------
+		// Spec item 8 (Lane 1): user-defined task types beyond the 4
+		// built-in ones. Each is a plain {id, label, icon, color} record,
+		// same shape as app.jsx's ITEM_TYPES, so AddTaskModal's chip row
+		// just concatenates the two lists — see PROGRESS.md Lane 1 log.
+		containerEl.createEl("h3", { text: "نوع‌های سفارشیِ تسک" });
+		containerEl.createEl("p", {
+			text: "علاوه بر ۴ نوعِ پیش‌فرض (تسک/رویداد/روتین/یادگیری)، می‌توانید نوع‌های دلخواهِ خودتان را اضافه کنید — مثلاً «قرآن» یا «کار شخصی». هرکدام در پنجره‌ی «تسک جدید» به‌عنوان یک گزینه‌ی تازه ظاهر می‌شود.",
+			cls: "setting-item-description",
+		});
+
+		const customTypes = Array.isArray(settings.customItemTypes) ? settings.customItemTypes : [];
+		customTypes.forEach((ct, idx) => {
+			new Setting(containerEl)
+				.setName(ct.label)
+				.setDesc(`آیکون: ${ct.icon}`)
+				.addColorPicker((picker) => {
+					picker.setValue(ct.color);
+					picker.onChange((value) => {
+						const next = this.readSettings();
+						next.customItemTypes[idx] = { ...next.customItemTypes[idx], color: value };
+						this.writeSettings(next);
+					});
+				})
+				.addExtraButton((btn) => {
+					btn.setIcon("trash-2");
+					btn.setTooltip("حذف این نوع");
+					btn.onClick(() => {
+						const next = this.readSettings();
+						next.customItemTypes.splice(idx, 1);
+						this.writeSettings(next);
+						this.display();
+					});
+				});
+		});
+
+		let newTypeName = "";
+		let newTypeIcon = ICON_CHOICES[0];
+		new Setting(containerEl)
+			.setName("افزودن نوعِ تازه")
+			.addText((text) => {
+				text.setPlaceholder("مثلاً «قرآن»");
+				text.onChange((value) => {
+					newTypeName = value;
+				});
+			})
+			.addDropdown((dd) => {
+				ICON_CHOICES.forEach((icon) => dd.addOption(icon, icon));
+				dd.setValue(newTypeIcon);
+				dd.onChange((value) => {
+					newTypeIcon = value;
+				});
+			})
+			.addButton((btn) => {
+				btn.setButtonText("افزودن").setCta();
+				btn.onClick(() => {
+					const trimmed = newTypeName.trim();
+					if (!trimmed) return;
+					const next = this.readSettings();
+					if (!Array.isArray(next.customItemTypes)) next.customItemTypes = [];
+					next.customItemTypes.push({
+						id: `custom_${Date.now()}`,
+						label: trimmed,
+						icon: newTypeIcon,
+						color: "#8B5CF6",
+					});
+					this.writeSettings(next);
+					this.display();
 				});
 			});
 
