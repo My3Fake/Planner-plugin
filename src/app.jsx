@@ -4258,6 +4258,79 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const toggleMultiTask = (id) => {
     setMultiTaskIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   };
+  // بندهای ۳۵/۳۷/۳۸: برنامه‌ی چندمرحله‌ای. `program` وضعیتِ زنده/فعلیِ
+  // برنامه‌ای است که در حالِ اجراست (اگر باشد)؛ `draftStages` پیش‌نویسِ
+  // محلی‌ایست که کاربر قبل از فشردنِ «شروع برنامه» می‌سازد — تا وقتی
+  // شروع نشده، چیزی در `pomodoro` ذخیره نمی‌شود (مگر با «ذخیره به‌عنوانِ
+  // الگو»، که مستقل از شروع‌کردن است).
+  const program = pomodoro.program || { active: false, stages: [], currentIndex: 0 };
+  const templates = pomodoro.templates || [];
+  const [draftStages, setDraftStages] = useState([]);
+  const [templateNameDraft, setTemplateNameDraft] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const STAGE_TYPE_LABELS = { work: `\u06A9\u0627\u0631`, short: "\u0627\u0633\u062A\u0631\u0627\u062D\u062A \u06A9\u0648\u062A\u0627\u0647", long: "\u0627\u0633\u062A\u0631\u0627\u062D\u062A \u0628\u0644\u0646\u062F" };
+  const addDraftStage = () => {
+    setDraftStages((prev) => [...prev, { id: uid(), type: "work", durationMin: settings.work, taskId: "", multiTaskIds: [] }]);
+  };
+  const updateDraftStage = (id, patch) => {
+    setDraftStages((prev) => prev.map((s) => s.id === id ? { ...s, ...patch } : s));
+  };
+  const removeDraftStage = (id) => {
+    setDraftStages((prev) => prev.filter((s) => s.id !== id));
+  };
+  const moveDraftStage = (id, dir) => {
+    setDraftStages((prev) => {
+      const i = prev.findIndex((s) => s.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  };
+  const applyStageToLiveTimer = (stage, isRunning) => {
+    setMode(stage.type);
+    setSecondsLeft(stage.durationMin * 60);
+    setRunning(isRunning);
+    setTaskId(stage.taskId || "");
+    setMultiMode((stage.multiTaskIds || []).length > 0);
+    setMultiTaskIds(stage.multiTaskIds || []);
+    if (isRunning) startedAtRef.current = (/* @__PURE__ */ new Date()).toISOString();
+    setPomodoro((p) => ({
+      ...p,
+      activeTimer: {
+        mode: stage.type,
+        running: isRunning,
+        totalSeconds: stage.durationMin * 60,
+        secondsLeftAtAnchor: stage.durationMin * 60,
+        anchorAt: isRunning ? (/* @__PURE__ */ new Date()).toISOString() : null,
+        taskLabel: stage.taskId ? tasks.find((t2) => t2.id === stage.taskId)?.title || null : (stage.multiTaskIds || []).length > 0 ? `${toFa((stage.multiTaskIds || []).length)} \u0645\u0633\u06CC\u0631` : null
+      }
+    }));
+  };
+  const startProgram = () => {
+    if (draftStages.length === 0) return;
+    setPomodoro((p) => ({ ...p, program: { active: true, stages: draftStages, currentIndex: 0 } }));
+    applyStageToLiveTimer(draftStages[0], false);
+  };
+  const cancelProgram = () => {
+    setPomodoro((p) => ({ ...p, program: { active: false, stages: [], currentIndex: 0 } }));
+  };
+  const saveCurrentAsTemplate = () => {
+    const name = templateNameDraft.trim();
+    const stagesToSave = program.active ? program.stages : draftStages;
+    if (!name || stagesToSave.length === 0) return;
+    setPomodoro((p) => ({ ...p, templates: [...p.templates || [], { id: uid(), name, stages: stagesToSave }] }));
+    setTemplateNameDraft("");
+  };
+  const loadSelectedTemplate = () => {
+    const tpl = templates.find((t2) => t2.id === selectedTemplateId);
+    if (!tpl) return;
+    setDraftStages(tpl.stages.map((s) => ({ ...s, id: uid() })));
+  };
+  const deleteTemplate = (id) => {
+    setPomodoro((p) => ({ ...p, templates: (p.templates || []).filter((t2) => t2.id !== id) }));
+  };
   // Writes a small, transition-only snapshot into the *already-lifted*
   // `pomodoro` state (not a new prop/state layer) so main.ts's status-bar
   // item can derive "seconds left right now" via elapsed-time math, reading
@@ -4387,6 +4460,27 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       setSessionNote("");
     }
     let nextMode = "work";
+    if (program.active) {
+      const nextIndex = program.currentIndex + 1;
+      if (completed && nextIndex < program.stages.length) {
+        const nextStage = program.stages[nextIndex];
+        nextMode = nextStage.type;
+        setPomodoro((p) => ({ ...p, program: { ...p.program, currentIndex: nextIndex } }));
+        applyStageToLiveTimer(nextStage, !!settings.autoStartNext);
+        return;
+      } else if (completed) {
+        setPomodoro((p) => ({ ...p, program: { active: false, stages: [], currentIndex: 0 } }));
+        setMode("work");
+        setSecondsLeft(durations.work * 60);
+        pushActiveTimer("work", false, durations.work * 60);
+        return;
+      } else {
+        const curStage = program.stages[program.currentIndex];
+        setSecondsLeft(curStage.durationMin * 60);
+        pushActiveTimer(mode, false, curStage.durationMin * 60);
+        return;
+      }
+    }
     if (completed && mode === "work") {
       const nextCycle = cycle + 1;
       setCycle(nextCycle);
@@ -4419,10 +4513,33 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   };
   const reset = () => {
     setRunning(false);
+    if (program.active) {
+      const dur = program.stages[program.currentIndex].durationMin * 60;
+      setSecondsLeft(dur);
+      pushActiveTimer(mode, false, dur);
+      return;
+    }
     setSecondsLeft(durations[mode] * 60);
     pushActiveTimer(mode, false, durations[mode] * 60);
   };
   const skip = () => {
+    if (program.active) {
+      const curDur = program.stages[program.currentIndex].durationMin * 60;
+      if (running || secondsLeft < curDur) logSession(false);
+      const nextIndex = program.currentIndex + 1;
+      if (nextIndex < program.stages.length) {
+        const nextStage = program.stages[nextIndex];
+        setPomodoro((p) => ({ ...p, program: { ...p.program, currentIndex: nextIndex } }));
+        applyStageToLiveTimer(nextStage, false);
+      } else {
+        cancelProgram();
+        setMode("work");
+        setSecondsLeft(durations.work * 60);
+        setRunning(false);
+        pushActiveTimer("work", false, durations.work * 60);
+      }
+      return;
+    }
     if (running || secondsLeft < durations[mode] * 60) logSession(false);
     const next = mode === "work" ? "short" : "work";
     setMode(next);
@@ -4432,6 +4549,7 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   };
   const switchMode = (m) => {
     setRunning(false);
+    if (program.active) cancelProgram();
     setMode(m);
     setSecondsLeft(durations[m] * 60);
     pushActiveTimer(m, false, durations[m] * 60);
@@ -4631,6 +4749,46 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       )
     );
   }
+  let programSection;
+  if (program.active) {
+    programSection = React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      React.createElement("div", { className: "flex items-center justify-between mb-2" }, React.createElement("p", { className: "text-xs font-bold text-slate-300" }, `\u0628\u0631\u0646\u0627\u0645\u0647 \u062F\u0631 \u062D\u0627\u0644 \u0627\u062C\u0631\u0627: \u0645\u0631\u062D\u0644\u0647 ${toFa(program.currentIndex + 1)} \u0627\u0632 ${toFa(program.stages.length)}`), React.createElement("button", { type: "button", onClick: cancelProgram, className: "text-[11px] px-2.5 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-slate-400" }, "\u0644\u063A\u0648 \u0628\u0631\u0646\u0627\u0645\u0647")),
+      React.createElement("div", { className: "space-y-1" }, program.stages.map((s, i) => {
+        const tk = s.taskId ? tasks.find((t2) => t2.id === s.taskId) : null;
+        const isCur = i === program.currentIndex;
+        return React.createElement(
+          "div",
+          { key: s.id, className: "flex items-center gap-2 text-[11px] py-1", style: { opacity: i < program.currentIndex ? 0.4 : 1 } },
+          React.createElement("span", { className: "w-16 shrink-0", style: { color: isCur ? "var(--text-accent)" : "var(--text-muted)", fontWeight: isCur ? "bold" : "normal" } }, STAGE_TYPE_LABELS[s.type]),
+          React.createElement("span", { className: "text-slate-500 shrink-0" }, toFa(s.durationMin), " \u062F\u0642\u06CC\u0642\u0647"),
+          React.createElement("span", { className: "truncate flex-1", style: { color: "var(--text-faint)" } }, tk ? tk.title : (s.multiTaskIds || []).length > 0 ? `${toFa(s.multiTaskIds.length)} \u0645\u0633\u06CC\u0631` : "")
+        );
+      }))
+    );
+  } else {
+    const stageRows = draftStages.map((s, i) => React.createElement(
+      "div",
+      { key: s.id, className: "flex items-center gap-1.5 mb-1.5" },
+      React.createElement("select", { value: s.type, onChange: (e) => updateDraftStage(s.id, { type: e.target.value }), className: "bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1.5 text-white text-[11px] outline-none" }, Object.entries(STAGE_TYPE_LABELS).map(([v, l]) => React.createElement("option", { key: v, value: v, className: "bg-[#120814]" }, l))),
+      React.createElement("input", { type: "number", min: "1", value: s.durationMin, onChange: (e) => updateDraftStage(s.id, { durationMin: Math.max(1, Number(e.target.value) || 1) }), className: "w-14 bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1.5 text-white text-[11px] outline-none text-center" }),
+      React.createElement("select", { value: s.taskId, onChange: (e) => updateDraftStage(s.id, { taskId: e.target.value }), className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1.5 text-white text-[11px] outline-none" }, React.createElement("option", { value: "", className: "bg-[#120814]" }, "\u0628\u062F\u0648\u0646 \u062A\u0633\u06A9"), activeTasks.map((tk) => React.createElement("option", { key: tk.id, value: tk.id, className: "bg-[#120814]" }, tk.title))),
+      React.createElement("button", { type: "button", onClick: () => moveDraftStage(s.id, -1), disabled: i === 0, className: "px-1.5 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-slate-400 disabled:opacity-30" }, React.createElement(Ic, { name: "chevron-up", size: 12 })),
+      React.createElement("button", { type: "button", onClick: () => moveDraftStage(s.id, 1), disabled: i === draftStages.length - 1, className: "px-1.5 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-slate-400 disabled:opacity-30" }, React.createElement(Ic, { name: "chevron-down", size: 12 })),
+      React.createElement("button", { type: "button", onClick: () => removeDraftStage(s.id), className: "px-1.5 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-rose-400" }, React.createElement(Ic, { name: "x", size: 12 }))
+    ));
+    programSection = React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, "\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u06CC \u0686\u0646\u062F\u0645\u0631\u062D\u0644\u0647\u200C\u0627\u06CC"),
+      draftStages.length === 0 ? React.createElement("p", { className: "text-[11px] text-slate-600 mb-2" }, "\u0647\u0646\u0648\u0632 \u0647\u06CC\u0686 \u0645\u0631\u062D\u0644\u0647\u200C\u0627\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u0634\u062F\u0647") : React.createElement("div", { className: "mb-2" }, stageRows),
+      React.createElement("button", { type: "button", onClick: addDraftStage, className: "w-full mb-3 rounded-lg py-1.5 text-[11px] font-medium text-slate-300 border border-dashed border-white/15" }, "+ \u0627\u0641\u0632\u0648\u062F\u0646 \u0645\u0631\u062D\u0644\u0647"),
+      draftStages.length > 0 && React.createElement("button", { type: "button", onClick: startProgram, className: "w-full mb-3 rounded-xl py-2 text-sm font-bold text-white", style: { background: "linear-gradient(to left, #22D3EE, #C026D3)" } }, "\u0634\u0631\u0648\u0639 \u0628\u0631\u0646\u0627\u0645\u0647"),
+      React.createElement("div", { className: "pt-2 border-t border-white/10" }, React.createElement("p", { className: "text-[10px] text-slate-500 mb-1.5" }, "\u0630\u062E\u06CC\u0631\u0647 \u0628\u0647\u200C\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u06AF\u0648"), React.createElement("div", { className: "flex gap-1.5 mb-2" }, React.createElement("input", { type: "text", value: templateNameDraft, onChange: (e) => setTemplateNameDraft(e.target.value), placeholder: "\u0646\u0627\u0645 \u0627\u0644\u06AF\u0648", className: "flex-1 bg-white/[0.05] border border-white/10 rounded-lg px-2.5 py-1.5 text-white text-[11px] outline-none" }), React.createElement("button", { type: "button", onClick: saveCurrentAsTemplate, disabled: !templateNameDraft.trim() || draftStages.length === 0, className: "px-3 rounded-lg bg-white/[0.05] border border-white/10 text-slate-300 text-[11px] disabled:opacity-40" }, "\u0630\u062E\u06CC\u0631\u0647")), templates.length > 0 && React.createElement("div", null, React.createElement("p", { className: "text-[10px] text-slate-500 mb-1.5" }, "\u0627\u0644\u06AF\u0648\u0647\u0627\u06CC \u0630\u062E\u06CC\u0631\u0647\u200C\u0634\u062F\u0647"), templates.map((tpl) => React.createElement("div", { key: tpl.id, className: "flex items-center gap-1.5 mb-1" }, React.createElement("span", { className: "flex-1 text-[11px] text-slate-300 truncate" }, tpl.name, ` (${toFa(tpl.stages.length)} \u0645\u0631\u062D\u0644\u0647)`), React.createElement("button", { type: "button", onClick: () => setDraftStages(tpl.stages.map((s) => ({ ...s, id: uid() }))), className: "px-2.5 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-slate-300 text-[10px]" }, "\u0628\u0627\u0631\u06AF\u0630\u0627\u0631\u06CC"), React.createElement("button", { type: "button", onClick: () => deleteTemplate(tpl.id), className: "px-2 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-rose-400 text-[10px]" }, "\u062D\u0630\u0641"))))
+      )
+    );
+  }
   return /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, [["work", t("pomodoro_work", "fa")], ["short", t("pomodoro_short_break", "fa")], ["long", t("pomodoro_long_break", "fa")]].map(([m, label]) => /* @__PURE__ */ React.createElement(Chip, { key: m, active: mode === m, color: m === "work" ? "#DB2777" : m === "short" ? "#22D3EE" : "#C026D3", onClick: () => switchMode(m) }, label))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-6 flex flex-col items-center" }, /* @__PURE__ */ React.createElement("svg", { width: 200, height: 200, viewBox: "0 0 200 200" }, /* @__PURE__ */ React.createElement("circle", { cx: "100", cy: "100", r, fill: "none", stroke: "var(--background-modifier-border)", strokeWidth: "12" }), /* @__PURE__ */ React.createElement(
     "circle",
     {
@@ -4646,7 +4804,7 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       transform: "rotate(-90 100 100)",
       style: { filter: `drop-shadow(0 0 8px ${modeColor}88)`, transition: "stroke-dashoffset .3s linear" }
     }
-  ), /* @__PURE__ */ React.createElement("text", { x: "100", y: "94", textAnchor: "middle", fontSize: "34", fontWeight: "800", fill: "var(--text-normal)" }, pad2(Math.floor(secondsLeft / 60)), ":", pad2(secondsLeft % 60)), /* @__PURE__ */ React.createElement("text", { x: "100", y: "118", textAnchor: "middle", fontSize: "11", fill: "var(--text-muted)" }, "\u062F\u0648\u0631 ", cycle + 1)), /* @__PURE__ */ React.createElement("div", { className: "w-full mt-4" }, taskPickerHeader, taskPickerBody), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 w-full mt-4" }, !running ? /* @__PURE__ */ React.createElement("button", { onClick: start, className: "flex-1 rounded-xl py-3 font-bold text-sm text-white", style: { background: `linear-gradient(135deg,${modeColor},#C026D3)` } }, t("pomodoro_start", "fa")) : /* @__PURE__ */ React.createElement("button", { onClick: pause, className: "flex-1 rounded-xl py-3 font-bold text-sm bg-white/[0.08] text-white" }, t("pomodoro_pause", "fa")), /* @__PURE__ */ React.createElement("button", { onClick: reset, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 16 })), /* @__PURE__ */ React.createElement("button", { onClick: skip, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 text-xs font-medium" }, t("pomodoro_skip", "fa")))), askProgressSection, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, `\u062A\u0646\u0638\u06CC\u0645\u0627\u062A ${term}`), /* @__PURE__ */ React.createElement("div", { className: "mb-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0646\u0627\u0645 \u0627\u06CC\u0646 \u0648\u06CC\u0698\u06AF\u06CC \u062F\u0631 \u0631\u0627\u0628\u0637 \u06A9\u0627\u0631\u0628\u0631\u06CC"), /* @__PURE__ */ React.createElement("input", {
+  ), /* @__PURE__ */ React.createElement("text", { x: "100", y: "94", textAnchor: "middle", fontSize: "34", fontWeight: "800", fill: "var(--text-normal)" }, pad2(Math.floor(secondsLeft / 60)), ":", pad2(secondsLeft % 60)), /* @__PURE__ */ React.createElement("text", { x: "100", y: "118", textAnchor: "middle", fontSize: "11", fill: "var(--text-muted)" }, "\u062F\u0648\u0631 ", cycle + 1)), /* @__PURE__ */ React.createElement("div", { className: "w-full mt-4" }, taskPickerHeader, taskPickerBody), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 w-full mt-4" }, !running ? /* @__PURE__ */ React.createElement("button", { onClick: start, className: "flex-1 rounded-xl py-3 font-bold text-sm text-white", style: { background: `linear-gradient(135deg,${modeColor},#C026D3)` } }, t("pomodoro_start", "fa")) : /* @__PURE__ */ React.createElement("button", { onClick: pause, className: "flex-1 rounded-xl py-3 font-bold text-sm bg-white/[0.08] text-white" }, t("pomodoro_pause", "fa")), /* @__PURE__ */ React.createElement("button", { onClick: reset, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 16 })), /* @__PURE__ */ React.createElement("button", { onClick: skip, className: "px-4 rounded-xl bg-white/[0.05] border border-white/10 text-slate-300 text-xs font-medium" }, t("pomodoro_skip", "fa")))), askProgressSection, programSection, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-3" }, `\u062A\u0646\u0638\u06CC\u0645\u0627\u062A ${term}`), /* @__PURE__ */ React.createElement("div", { className: "mb-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500 mb-1" }, "\u0646\u0627\u0645 \u0627\u06CC\u0646 \u0648\u06CC\u0698\u06AF\u06CC \u062F\u0631 \u0631\u0627\u0628\u0637 \u06A9\u0627\u0631\u0628\u0631\u06CC"), /* @__PURE__ */ React.createElement("input", {
     type: "text",
     value: settings.termFa || "",
     onChange: (e) => setPomodoro((p) => ({ ...p, settings: { ...p.settings, termFa: e.target.value } })),
@@ -5659,8 +5817,15 @@ var NAV = [
 ];
 var DEFAULT_POMODORO = {
   settings: { work: 25, shortBreak: 5, longBreak: 15, cyclesUntilLong: 4, autoStartNext: false, sound: true, askReviewEveryTime: true, alarmVolume: 0.7, alarmPlayCount: 1, alarmRepeatUntilDismissed: false, alarmCustomUrl: "", termFa: "\u062F\u0648\u0631 \u062A\u0645\u0631\u06A9\u0632" },
-  sessions: []
+  sessions: [],
   // { id, type: 'work'|'short'|'long', taskId, startedAt, durationMin, completedAt, interrupted, progressAdded }
+  // بندهای ۳۵/۳۷: برنامه‌ی چندمرحله‌ایِ در‌حال‌اجرا (اگر active باشد،
+  // finishSession/skip به‌جای چرخه‌ی خودکارِ کار/استراحت، از همین لیست
+  // پیروی می‌کنند). هر stage: { id, type: 'work'|'short'|'long',
+  // durationMin, taskId, multiTaskIds }.
+  program: { active: false, stages: [], currentIndex: 0 },
+  // بندِ ۳۸: الگوهای ذخیره‌شده برای استفاده‌ی دوباره — هرکدام { id, name, stages }.
+  templates: []
 };
 function pomoTodayKey() {
   return todayKey();
