@@ -515,7 +515,7 @@ var DEFAULT_FEATURES = {
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
-var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", quadrantColors: DEFAULT_QUADRANT_COLORS };
+var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", hideWeekends: false, quadrantColors: DEFAULT_QUADRANT_COLORS };
 // Lane 7 (زمان‌بندی هوشمند و ظرفیت، بندهای ۷۲–۸۸ در PROGRESS.md): پایه‌ی
 // داده‌ایِ «ساعات کاری» — یک یا چند بازه‌ی زمانی که مجموعشان ظرفیت روزانه
 // را می‌سازد (بند ۷۸: چند بازه کاری در یک روز). فعلاً یک مجموعه‌ی واحد
@@ -5384,6 +5384,17 @@ function AgendaView({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgre
 
   return React.createElement("div", null, sections);
 }
+// بند ۵۷ (نمایشِ شماره‌ی هفته): تعدادِ روزهایِ سپری‌شده از ابتدایِ سالِ
+// جلالی تقسیم بر ۷ - یک تقریبِ ساده و کافی برایِ یک برچسبِ صرفاً اطلاعاتی
+// (نه چیزی که محاسباتِ دیگری رویش بنا شود، پس نیازی به دقتِ ISO-8601-وار
+// در لبه‌هایِ مرزِ سال نیست).
+function jalaliWeekNumber(dateObj) {
+  if (!Jalali) return null;
+  const { jy } = Jalali.toJalaliParts(dateObj);
+  const startOfYear = Jalali.fromJalaliParts(jy, 1, 1);
+  const diffDays = Math.round((dateObj - startOfYear) / 864e5);
+  return Math.max(1, Math.floor(diffDays / 7) + 1);
+}
 function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
   let title = "";
   if (Jalali) {
@@ -5393,7 +5404,7 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
       title = `${Jalali.formatJalali(cursor, { weekday: false, year: false })} \u062A\u0627 ${Jalali.formatJalali(end, { weekday: false })}`;
     } else if (view === "week") {
       const start = Jalali.jalaliStartOfWeek(cursor), end = Jalali.addDays(start, 6);
-      title = `${Jalali.formatJalali(start, { weekday: false, year: false })} \u062A\u0627 ${Jalali.formatJalali(end, { weekday: false })}`;
+      title = `${Jalali.formatJalali(start, { weekday: false, year: false })} \u062A\u0627 ${Jalali.formatJalali(end, { weekday: false })} \u2014 \u0647\u0641\u062A\u0647\u200C\u06CC ${Jalali.toFaDigits(jalaliWeekNumber(cursor))}`;
     } else if (view === "month") {
       const { jy, jm } = Jalali.toJalaliParts(cursor);
       title = `${JALALI_MONTHS_FA[jm - 1]} ${Jalali.toFaDigits(jy)}`;
@@ -5698,19 +5709,30 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     );
   }), nowLineEl)));
 }
-function WeekView({ cursor, tasks, onJumpDay }) {
+function WeekView({ cursor, tasks, onJumpDay, hideWeekends = false }) {
   if (!Jalali) return null;
   const start = Jalali.jalaliStartOfWeek(cursor);
-  const days = Array.from({ length: 7 }, (_, i) => Jalali.addDays(start, i));
-  return /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-7 gap-1.5" }, days.map((d) => {
+  const allDays = Array.from({ length: 7 }, (_, i) => Jalali.addDays(start, i));
+  // بند ۵۶ (نمایش/مخفی‌کردنِ آخرهفته): جمعه (تعطیلِ رسمیِ تقویمِ ایرانی)
+  // وقتی hideWeekends فعال است پنهان می‌شود.
+  //
+  // ضمناً یک باگِ واقعیِ از‌قبل‌موجود این‌جا کشف و رفع شد: `grid`/
+  // `grid-cols-7` در styles.css اصلاً کامپایل نشده بودند (این پروژه هیچ
+  // مرحله‌ی build برایِ Tailwind ندارد - فقط کلاس‌هایی که جایِ دیگر واقعاً
+  // استفاده شده‌اند کامپایل می‌شوند)، یعنی این نما هیچ‌وقت واقعاً به‌صورتِ
+  // گرید رندر نمی‌شد. جایگزین شد با flex/flex-1 - همان الگویی که
+  // WeekHourlyView از قبل با موفقیت دارد - که هم این باگ را رفع می‌کند و
+  // هم حذفِ پویایِ روزها را بدونِ محاسبه‌ی دستیِ عرض ممکن می‌سازد.
+  const days = hideWeekends ? allDays.filter((d) => d.getDay() !== 5) : allDays;
+  return /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5" }, days.map((d) => {
     const due = tasks.filter((tsk) => isTaskDueOn(tsk, d));
     const done = due.filter((tsk) => tsk.status === "done").length;
     const isToday = Jalali.isSameJalaliDay(d, /* @__PURE__ */ new Date());
-    return /* @__PURE__ */ React.createElement("button", { key: d.toISOString(), onClick: () => onJumpDay(d), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: `p-2 h-24 flex flex-col ${isToday ? "" : ""}` }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, WEEKDAY_SHORT_ORDER[days.indexOf(d)] || ""), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold", style: { color: isToday ? "#EAB4F2" : "#e2e8f0" } }, Jalali.toFaDigits(Jalali.toJalaliParts(d).jd)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex flex-wrap gap-0.5" }, due.slice(0, 6).map((tsk) => /* @__PURE__ */ React.createElement("span", { key: tsk.id, className: "w-1.5 h-1.5 rounded-full", style: { background: QUADRANTS.find((q) => q.id === tsk.quad)?.color, opacity: tsk.status === "done" ? 0.35 : 1 } }))), due.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-500 mt-1" }, done, "/", due.length)));
+    return /* @__PURE__ */ React.createElement("button", { key: d.toISOString(), onClick: () => onJumpDay(d), className: "text-right flex-1", style: { minWidth: 0 } }, /* @__PURE__ */ React.createElement(GlassCard, { className: `p-2 h-24 flex flex-col ${isToday ? "" : ""}` }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, WEEKDAY_SHORT_ORDER[allDays.indexOf(d)] || ""), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold", style: { color: isToday ? "#EAB4F2" : "#e2e8f0" } }, Jalali.toFaDigits(Jalali.toJalaliParts(d).jd)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex flex-wrap gap-0.5" }, due.slice(0, 6).map((tsk) => /* @__PURE__ */ React.createElement("span", { key: tsk.id, className: "w-1.5 h-1.5 rounded-full", style: { background: QUADRANTS.find((q) => q.id === tsk.quad)?.color, opacity: tsk.status === "done" ? 0.35 : 1 } }))), due.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-500 mt-1" }, done, "/", due.length)));
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
-function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
+function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7, zoom = 1, slotMinutes = 30, taskDetail = "full", hideWeekends = false }) {
   if (!Jalali) return null;
   // Same zoom mechanism as DayPlannerView (see its comment above rowH) -
   // rowH is "px per 30 real minutes", scaled by `zoom`; everything else in
@@ -5720,7 +5742,10 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
   const gridRows = calSlots(slotMinutes);
   const gridRowH = slotMinutes / 30 * rowH;
   const start = dayCount === 7 ? Jalali.jalaliStartOfWeek(cursor) : cursor;
-  const days = Array.from({ length: dayCount }, (_, i) => Jalali.addDays(start, i));
+  // بند ۵۶: فقط برایِ نمایِ هفتگیِ استاندارد (dayCount===7) معنا دارد -
+  // نماهایِ ۳روزه/سفارشی از قبل هر تعداد روزی را که کاربر خواسته نشان
+  // می‌دهند، مفهومِ «آخرهفته» در آن‌ها تعریف‌نشده است.
+  const days = (dayCount === 7 && hideWeekends ? Array.from({ length: 7 }, (_, i) => Jalali.addDays(start, i)).filter((d) => d.getDay() !== 5) : Array.from({ length: dayCount }, (_, i) => Jalali.addDays(start, i)));
   const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(/* @__PURE__ */ new Date()), 6e4);
@@ -5941,9 +5966,23 @@ function YearView({ cursor, tasks, onJumpMonth }) {
   }));
 }
 function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, scheduling, appearance, onChangeAppearance, customViews = [], onAddCustomView, onUpdateCustomView, onDeleteCustomView }) {
-  const [view, setView] = useState("day");
+  // بند ۵۹ (حفظِ آخرین موقعیتِ نما): view/cursor از appearance می‌آیند نه
+  // مقدارِ ثابت، تا با بازگشت به پلاگین همان نما/تاریخِ آخر باز شود.
+  // محدودیتِ مستند: اگر آخرین نما «سفارشی» بوده، فقط خودِ view (نه
+  // این‌که کدام نمایِ سفارشی فعال بود) حفظ می‌شود - کاربر باید نمای
+  // سفارشیِ موردنظرش را دوباره از نوارِ چیپ انتخاب کند.
+  const [view, setView] = useState(appearance?.calendarLastView || "day");
   const [weekSubView, setWeekSubView] = useState("cards");
-  const [cursor, setCursor] = useState(/* @__PURE__ */ new Date());
+  const [cursor, setCursor] = useState(() => {
+    if (appearance?.calendarLastCursor) {
+      const d = new Date(appearance.calendarLastCursor);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return /* @__PURE__ */ new Date();
+  });
+  useEffect(() => {
+    onChangeAppearance && onChangeAppearance({ calendarLastView: view, calendarLastCursor: cursor.toISOString() });
+  }, [view, cursor]);
   // بند ۱۹ (نماهای کاملاً سفارشی): کدام نمای ذخیره‌شده الان فعال است -
   // این خودش ذخیره نمی‌شود (فقط انتخابِ لحظه‌ای در جلسه)، ولی خودِ لیستِ
   // نماها (`customViews`) از طریقِ appearance-level state در LifeFlowApp
@@ -5958,6 +5997,8 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   const zoom = appearance?.calendarZoom ?? 1;
   const slotMinutes = appearance?.calendarSlotMinutes ?? 30;
   const taskDetail = appearance?.calendarTaskDetail ?? "full";
+  const hideWeekends = appearance?.hideWeekends ?? false;
+  const setHideWeekends = (v) => onChangeAppearance && onChangeAppearance({ hideWeekends: v });
   const setZoom = (z) => onChangeAppearance && onChangeAppearance({ calendarZoom: z });
   const setSlotMinutes = (m) => onChangeAppearance && onChangeAppearance({ calendarSlotMinutes: m });
   const setTaskDetail = (d) => onChangeAppearance && onChangeAppearance({ calendarTaskDetail: d });
@@ -5984,7 +6025,15 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   };
   const weekSubToggle = React.createElement(
     "div",
-    { className: "flex justify-end" },
+    { className: "flex items-center justify-between gap-2 flex-wrap" },
+    React.createElement(
+      "button",
+      {
+        onClick: () => setHideWeekends(!hideWeekends),
+        className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${hideWeekends ? "bg-white/10 text-white" : "bg-white/[0.05] text-slate-400"}`
+      },
+      "\u0628\u062F\u0648\u0646 \u0622\u062E\u0631\u0647\u0641\u062A\u0647"
+    ),
     React.createElement(
       "div",
       { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" },
@@ -5995,7 +6044,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       ))
     )
   );
-  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes, taskDetail }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
+  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes, taskDetail, hideWeekends }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay, hideWeekends });
   // بند ۱۹: فیلترِ ربع فقط وقتی اعمال می‌شود که کاربر صراحتاً حداقل یک ربع
   // را انتخاب کرده باشد؛ `null`/آرایه‌ی خالی یعنی «همه را نشان بده» (پیش‌فرضِ
   // امن برایِ نماهای تازه، تا هیچ تسکی به‌طورِ غیرمنتظره پنهان نشود).
