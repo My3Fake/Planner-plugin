@@ -5288,7 +5288,7 @@ function computeSplitSchedule(unplacedTasks, occupiedTasks, scheduling, bufferMi
 // ساعات کاری را غیرفعال کرده باشد (`workingHours.enabled === false`)
 // چیزی رندر نمی‌شود — نه خط ظرفیت، نه هشدار — چون بدون ظرفیتِ تعریف‌شده
 // «بیش‌برنامه‌ریزی» بی‌معنی است.
-function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, scheduledTasks, onApplyAutoSchedule, onSaveTask }) {
+function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, scheduledTasks, onApplyAutoSchedule, onSaveTask, cursor }) {
   const enabled = !scheduling || !scheduling.workingHours || scheduling.workingHours.enabled !== false;
   const [runResult, setRunResult] = useState(null);
   const [confirmingReschedule, setConfirmingReschedule] = useState(false);
@@ -5300,6 +5300,13 @@ function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, sc
   if (!enabled) return null;
   const capacityMinutes = workingHoursCapacityMinutes(scheduling);
   const over = capacityMinutes > 0 && scheduledMinutes > capacityMinutes;
+  // بندِ ۸۷ (روزِ بدونِ جلسه) — نیمه‌ی نمایش. تا این جلسه فقط تنظیم ذخیره
+  // می‌شد بدونِ هیچ نمایشی؛ اینجا فقط یک آگاهیِ ملایم است، نه جلوگیری —
+  // برخلافِ بندِ ۷۷ که واقعاً drop را بلاک می‌کند، اینجا زمان‌بندیِ دستی
+  // در چنین روزی هنوز کاملاً ممکن است (کاربر شاید بخواهد استثنا بگذارد).
+  const isNoMeetingDay = cursor && scheduling && Array.isArray(scheduling.noMeetingWeekdays) && scheduling.noMeetingWeekdays.includes(cursor.getDay());
+  const scheduledCountToday = (scheduledTasks || []).length;
+
   // بندِ ۷۷ (نیمه‌ی آگاهی): تسک‌هایی که ساعتِ‌مشخص دارند ولی آن ساعت
   // بیرون از همه‌ی بازه‌های کاریِ تعریف‌شده می‌افتد. فقط وقتی حداقل یک
   // بازه‌ی کاریِ معتبر تعریف شده معنا دارد (capacityMinutes>0) — وگرنه
@@ -5430,6 +5437,12 @@ function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, sc
       { className: "text-[11px] mt-2", style: { color: "#FBBF24" } },
       "\u23F0 \u0628\u06CC\u0631\u0648\u0646 \u0627\u0632 \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC: ",
       outOfHoursTasks.map((t) => t.title).join("\u060C ")
+    ),
+    isNoMeetingDay && /* @__PURE__ */ React.createElement(
+      "p",
+      { className: "text-[11px] mt-2", style: { color: "#38BDF8" } },
+      "\u{1F4C5} \u0627\u0645\u0631\u0648\u0632 \u0628\u0647\u200C\u0639\u0646\u0648\u0627\u0646 \u00AB\u0631\u0648\u0632 \u0628\u062F\u0648\u0646 \u062C\u0644\u0633\u0647\u00BB \u0639\u0644\u0627\u0645\u062A \u062E\u0648\u0631\u062F\u0647",
+      scheduledCountToday > 0 ? ` \u2014 \u0648\u0644\u06CC ${scheduledCountToday} \u0645\u0648\u0631\u062F \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC‌\u0634\u062F\u0647 \u062F\u0627\u0631\u06CC\u062F` : "."
     )
   );
 }
@@ -5761,7 +5774,7 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
   const createAt = (mins) => {
     if (onCreateAt) onCreateAt(minutesToHHMM(Math.max(360, Math.min(1410, mins))));
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling, unscheduledTasks: unscheduled, scheduledTasks: scheduled, onSaveTask, onApplyAutoSchedule: (placements) => placements.forEach(({ id, time }) => {
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(DayCapacitySummary, { scheduledMinutes, scheduling, unscheduledTasks: unscheduled, scheduledTasks: scheduled, onSaveTask, cursor, onApplyAutoSchedule: (placements) => placements.forEach(({ id, time }) => {
     // dayTasks (نه فقط unscheduled) چون این callback هم برای بندِ ۷۲
     // (فقط تسک‌های بدونِ‌ساعت) و هم بندِ ۷۳ (کلِ روز، شاملِ تسک‌هایی که
     // قبلاً ساعت داشتند) صدا زده می‌شود.
