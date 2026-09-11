@@ -515,7 +515,7 @@ var DEFAULT_FEATURES = {
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
-var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", hideWeekends: false, quadrantColors: DEFAULT_QUADRANT_COLORS };
+var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", hideWeekends: false, calendarLastView: null, calendarLastCursor: null, quadrantColors: DEFAULT_QUADRANT_COLORS };
 // Lane 7 (زمان‌بندی هوشمند و ظرفیت، بندهای ۷۲–۸۸ در PROGRESS.md): پایه‌ی
 // داده‌ایِ «ساعات کاری» — یک یا چند بازه‌ی زمانی که مجموعشان ظرفیت روزانه
 // را می‌سازد (بند ۷۸: چند بازه کاری در یک روز). فعلاً یک مجموعه‌ی واحد
@@ -5967,7 +5967,10 @@ function YearView({ cursor, tasks, onJumpMonth }) {
 }
 function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, scheduling, appearance, onChangeAppearance, customViews = [], onAddCustomView, onUpdateCustomView, onDeleteCustomView }) {
   // بند ۵۹ (حفظِ آخرین موقعیتِ نما): view/cursor از appearance می‌آیند نه
-  // مقدارِ ثابت، تا با بازگشت به پلاگین همان نما/تاریخِ آخر باز شود.
+  // مقدارِ ثابت، تا با بازگشت به پلاگین همان نما/تاریخِ آخر باز شود. مقدارِ
+  // اولیه‌ی appearance برایِ این دو فیلد عمداً null است (نه یک view/تاریخِ
+  // مشخص) تا اولین‌بارِ بازکردنِ پلاگین (که هنوز چیزی ذخیره نشده) دقیقاً
+  // همان رفتارِ قبلی (نمای «روز»، تاریخِ امروز) را داشته باشد.
   // محدودیتِ مستند: اگر آخرین نما «سفارشی» بوده، فقط خودِ view (نه
   // این‌که کدام نمایِ سفارشی فعال بود) حفظ می‌شود - کاربر باید نمای
   // سفارشیِ موردنظرش را دوباره از نوارِ چیپ انتخاب کند.

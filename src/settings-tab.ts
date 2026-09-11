@@ -81,6 +81,12 @@ interface LifeFlowSettings {
 		calendarZoom?: number;
 		calendarSlotMinutes?: number;
 		calendarTaskDetail?: string;
+		// Item 59 (remember last calendar view/date) - same reasoning as the
+		// three fields above: no native-tab control, round-trips via
+		// readSettings()'s spread, app.jsx (CalendarViews) is the only reader/
+		// writer.
+		calendarLastView?: string | null;
+		calendarLastDate?: string | null;
 		quadrantColors: {
 			q1: string;
 			q2: string;
