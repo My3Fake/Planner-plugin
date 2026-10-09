@@ -1202,6 +1202,28 @@ function colorForTag(tag) {
   for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
   return INSTANCE_COLOR_PALETTE[h % INSTANCE_COLOR_PALETTE.length];
 }
+// Lane 2 (بند ۲۴/۳۰): منبعِ سبکِ زمینه‌ی یادگیری برای TaskRow. LifeFlowApp در هر
+// رندر `projects` را این‌جا می‌گذارد؛ TaskRow فقط می‌خواند (بدون prop تازه روی
+// هیچ‌کدام از نقطه‌های فراخوانی و بدون تغییر رفتار تسک‌های غیریادگیری).
+const LEARNING_CTX = { projects: [] };
+function findLearningContextForTask(task, projects) {
+  if (!task || task.progressType !== "progressive" || !projects || !projects.length) return null;
+  for (const topic of projects) {
+    for (const sec of flattenTree(topic.subsections || [])) {
+      if (sec.linkedTaskId === task.id) {
+        const g = sec.goal || {};
+        const hasDate = g.targetJy && g.targetJm && g.targetJd;
+        return {
+          topicTitle: topic.title,
+          title: sec.title,
+          goalDate: hasDate ? `${toFa(g.targetJy)}/${toFa(g.targetJm)}/${toFa(g.targetJd)}` : null,
+          outcome: g.expectedOutcome || ""
+        };
+      }
+    }
+  }
+  return null;
+}
 function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, calendars, customActionButtons, onRunAction }) {
   const q = QUADRANTS.find((x) => x.id === task.quad) || QUADRANTS[1];
   // Lane 9 (بند ۹۷): وقتی کاربر بیش از یک تقویم دارد، رنگ/نام تقویمِ
@@ -1215,6 +1237,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
   const [openActions, setOpenActions] = useState(false);
   const hasActionButtons = customActionButtons && customActionButtons.length > 0;
   const isProgressive = task.progressType === "progressive";
+  const learnCtx = isProgressive ? findLearningContextForTask(task, LEARNING_CTX.projects) : null;
   return /* @__PURE__ */ React.createElement("div", { className: "py-2.5 border-b border-white/[0.05] last:border-0" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 px-1" }, isProgressive ? /* @__PURE__ */ React.createElement("span", { className: "w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0", style: { borderColor: task.status === "done" ? "#22D3EE" : "rgba(255,255,255,.25)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "trending-up", size: 12, className: "text-cyan-300" })) : /* @__PURE__ */ React.createElement(
     "button",
     {
@@ -1223,7 +1246,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
       style: { borderColor: task.status === "done" ? q.color : "rgba(255,255,255,.25)", background: task.status === "done" ? q.color : "transparent" }
     },
     task.status === "done" && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm flex items-center gap-1.5 ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.icon && /* @__PURE__ */ React.createElement(Ic, { name: task.icon, size: 12, className: "shrink-0 text-slate-400" }), task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm flex items-center gap-1.5 ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.icon && /* @__PURE__ */ React.createElement(Ic, { name: task.icon, size: 12, className: "shrink-0 text-slate-400" }), task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), learnCtx && /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-400 mt-0.5" }, "\uD83C\uDF93 ", learnCtx.topicTitle, " \u203A ", learnCtx.title, learnCtx.goalDate ? " \u2022 \u0647\u062F\u0641: " + learnCtx.goalDate : ""), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => setOpenSched((v) => !v),
@@ -6080,6 +6103,7 @@ function LifeFlowApp() {
   const [podcasts, setPodcasts] = useState(savedData.podcasts || []);
   const [exercises, setExercises] = useState(savedData.exercises || []);
   const [projects, setProjects] = useState(savedData.projects || []);
+  LEARNING_CTX.projects = projects;
   const [planning, setPlanning] = useState(savedData.planning || { morning: [], noon: [], evening: [], night: [] });
   const [goals, setGoals] = useState(savedData.goals || { targetHours: 2, log: {} });
   const [journal, setJournal] = useState(savedData.journal || []);
