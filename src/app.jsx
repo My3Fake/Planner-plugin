@@ -4270,7 +4270,7 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const STAGE_TYPE_LABELS = { work: `\u06A9\u0627\u0631`, short: "\u0627\u0633\u062A\u0631\u0627\u062D\u062A \u06A9\u0648\u062A\u0627\u0647", long: "\u0627\u0633\u062A\u0631\u0627\u062D\u062A \u0628\u0644\u0646\u062F" };
   const addDraftStage = () => {
-    setDraftStages((prev) => [...prev, { id: uid(), type: "work", durationMin: settings.work, taskId: "", multiTaskIds: [] }]);
+    setDraftStages((prev) => [...prev, { id: uid(), type: "work", durationMin: settings.work, taskId: "", multiTaskIds: [], targetAmount: "" }]);
   };
   const updateDraftStage = (id, patch) => {
     setDraftStages((prev) => prev.map((s) => s.id === id ? { ...s, ...patch } : s));
@@ -4455,7 +4455,8 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
     if (completed && mode === "work" && (hasProgressTargets || settings.askReviewEveryTime !== false)) {
       setAskProgress(entry);
       setMultiProgress({});
-      setProgressInput("");
+      const planned = program.active ? program.stages[program.currentIndex] : null;
+      setProgressInput(planned && planned.taskId && planned.taskId === taskId && Number(planned.targetAmount) > 0 ? String(planned.targetAmount) : "");
       setFocusRating(null);
       setSessionNote("");
     }
@@ -4763,7 +4764,7 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
           { key: s.id, className: "flex items-center gap-2 text-[11px] py-1", style: { opacity: i < program.currentIndex ? 0.4 : 1 } },
           React.createElement("span", { className: "w-16 shrink-0", style: { color: isCur ? "var(--text-accent)" : "var(--text-muted)", fontWeight: isCur ? "bold" : "normal" } }, STAGE_TYPE_LABELS[s.type]),
           React.createElement("span", { className: "text-slate-500 shrink-0" }, toFa(s.durationMin), " \u062F\u0642\u06CC\u0642\u0647"),
-          React.createElement("span", { className: "truncate flex-1", style: { color: "var(--text-faint)" } }, tk ? tk.title : (s.multiTaskIds || []).length > 0 ? `${toFa(s.multiTaskIds.length)} \u0645\u0633\u06CC\u0631` : "")
+          React.createElement("span", { className: "truncate flex-1", style: { color: "var(--text-faint)" } }, tk ? tk.title : (s.multiTaskIds || []).length > 0 ? `${toFa(s.multiTaskIds.length)} \u0645\u0633\u06CC\u0631` : "", tk && Number(s.targetAmount) > 0 ? ` \u2014 \u0647\u062F\u0641: ${toFa(s.targetAmount)} ${tk.progressUnit || ""}` : "")
         );
       }))
     );
@@ -4774,6 +4775,11 @@ function PomodoroTimerView({ pomodoro, setPomodoro, tasks, onAddProgress, onTogg
       React.createElement("select", { value: s.type, onChange: (e) => updateDraftStage(s.id, { type: e.target.value }), className: "bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1.5 text-white text-[11px] outline-none" }, Object.entries(STAGE_TYPE_LABELS).map(([v, l]) => React.createElement("option", { key: v, value: v, className: "bg-[#120814]" }, l))),
       React.createElement("input", { type: "number", min: "1", value: s.durationMin, onChange: (e) => updateDraftStage(s.id, { durationMin: Math.max(1, Number(e.target.value) || 1) }), className: "w-14 bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1.5 text-white text-[11px] outline-none text-center" }),
       React.createElement("select", { value: s.taskId, onChange: (e) => updateDraftStage(s.id, { taskId: e.target.value }), className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1.5 text-white text-[11px] outline-none" }, React.createElement("option", { value: "", className: "bg-[#120814]" }, "\u0628\u062F\u0648\u0646 \u062A\u0633\u06A9"), activeTasks.map((tk) => React.createElement("option", { key: tk.id, value: tk.id, className: "bg-[#120814]" }, tk.title))),
+      (() => {
+        const stTask = s.taskId ? tasks.find((t2) => t2.id === s.taskId) : null;
+        if (!stTask || stTask.progressType !== "progressive") return null;
+        return React.createElement("input", { type: "number", min: "0", value: s.targetAmount, onChange: (e) => updateDraftStage(s.id, { targetAmount: e.target.value }), placeholder: `\u0647\u062F\u0641 ${stTask.progressUnit || ""}`, title: "\u0686\u0647 \u0645\u0642\u062F\u0627\u0631 \u0627\u0632 \u0627\u06CC\u0646 \u062A\u0633\u06A9 \u062F\u0631 \u0627\u06CC\u0646 \u0645\u0631\u062D\u0644\u0647 \u0627\u0646\u062C\u0627\u0645 \u062E\u0648\u0627\u0647\u062F \u0634\u062F", className: "w-16 bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1.5 text-white text-[11px] outline-none text-center" });
+      })(),
       React.createElement("button", { type: "button", onClick: () => moveDraftStage(s.id, -1), disabled: i === 0, className: "px-1.5 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-slate-400 disabled:opacity-30" }, React.createElement(Ic, { name: "chevron-up", size: 12 })),
       React.createElement("button", { type: "button", onClick: () => moveDraftStage(s.id, 1), disabled: i === draftStages.length - 1, className: "px-1.5 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-slate-400 disabled:opacity-30" }, React.createElement(Ic, { name: "chevron-down", size: 12 })),
       React.createElement("button", { type: "button", onClick: () => removeDraftStage(s.id), className: "px-1.5 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-rose-400" }, React.createElement(Ic, { name: "x", size: 12 }))
