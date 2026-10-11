@@ -5156,6 +5156,18 @@ function isTimeWithinWorkingHours(hhmm, scheduling) {
     return end > start && mins >= start && mins < end;
   });
 }
+// نسخه‌ی «بازه‌ای» (اصلاحِ نقصِ بندِ ۷۷ که فقط ساعتِ شروع را می‌دید): کلِ
+// بازه‌ی [شروع، شروع+طول) باید داخلِ **یک** بازه‌ی کاری بیفتد. تسکی که ۱۶:۳۰
+// شروع شود و ۹۰ دقیقه باشد در بازه‌ی ۰۹–۱۷ جا نمی‌شود. طولِ صفر/نامعلوم مثلِ
+// نقطه‌ای در ساعتِ شروع رفتار می‌کند (سازگار با رفتارِ قبلی).
+function isIntervalWithinWorkingHours(hhmm, duration, scheduling) {
+  const periods = scheduling && scheduling.workingHours && scheduling.workingHours.periods || [];
+  const s0 = timeToMinutes(hhmm), e0 = s0 + Math.max(0, duration || 0);
+  return periods.some((p) => {
+    const ps = timeToMinutes(p.start), pe = timeToMinutes(p.end);
+    return pe > ps && s0 >= ps && s0 < pe && e0 <= pe;
+  });
+}
 // بندهای ۷۲ (زمان‌بندی خودکار) و ۷۶ (هشدار کمبود ظرفیت) — لِین ۷. تابعی
 // خالص (بدون React، بدون خواندن/نوشتنِ هیچ state ای) که تسک‌های
 // بدونِ‌ساعتِ یک روز را با یک الگوریتمِ حریصانه‌ی first-fit در شکاف‌های
@@ -5311,7 +5323,7 @@ function DayCapacitySummary({ scheduledMinutes, scheduling, unscheduledTasks, sc
   // بیرون از همه‌ی بازه‌های کاریِ تعریف‌شده می‌افتد. فقط وقتی حداقل یک
   // بازه‌ی کاریِ معتبر تعریف شده معنا دارد (capacityMinutes>0) — وگرنه
   // «بیرون از ساعاتِ کاری» یعنی «همه‌چیز»، که هشدارِ بی‌فایده‌ای می‌شود.
-  const outOfHoursTasks = capacityMinutes > 0 ? (scheduledTasks || []).filter((t) => t.time && !isTimeWithinWorkingHours(t.time, scheduling)) : [];
+  const outOfHoursTasks = capacityMinutes > 0 ? (scheduledTasks || []).filter((t) => t.time && !isIntervalWithinWorkingHours(t.time, t.duration, scheduling)) : [];
   const canAutoSchedule = !!onApplyAutoSchedule && unscheduledTasks && unscheduledTasks.length > 0;
   const runAutoSchedule = () => {
     const { placements, unplaced } = computeAutoSchedule(unscheduledTasks, scheduledTasks || [], scheduling, (scheduling && scheduling.bufferMinutes) || 0);
@@ -6130,8 +6142,10 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   const guardedOnSchedule = (id, time, duration) => {
     const hoursEnabled = !scheduling || !scheduling.workingHours || scheduling.workingHours.enabled !== false;
     const hasDefinedCapacity = workingHoursCapacityMinutes(scheduling) > 0;
-    if (hoursEnabled && hasDefinedCapacity && !isTimeWithinWorkingHours(time, scheduling)) {
-      setBlockedNotice(`\u26D4 \u0633\u0627\u0639\u062A ${time} \u0628\u06CC\u0631\u0648\u0646 \u0627\u0632 \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC \u062A\u0639\u0631\u06CC\u0641‌\u0634\u062F\u0647 \u0627\u0633\u062A \u2014 \u0632\u0645\u0627\u0646‌\u0628\u0646\u062F\u06CC \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.`);
+    if (hoursEnabled && hasDefinedCapacity && !isIntervalWithinWorkingHours(time, duration, scheduling)) {
+      // دو پیامِ متفاوت: شروع بیرون از ساعاتِ کاری، یا شروعِ درست ولی تسک از
+      // پایانِ بازه می‌گذرد (اصلاحِ نقصِ نسخه‌ی قبلی که این حالتِ دوم را رد می‌کرد).
+      setBlockedNotice(isTimeWithinWorkingHours(time, scheduling) ? `\u26D4 \u0627\u06CC\u0646 \u062A\u0633\u06A9 \u0627\u0632 ${time} \u0634\u0631\u0648\u0639 \u0645\u06CC\u200C\u0634\u0648\u062F \u0648\u0644\u06CC \u0627\u0632 \u067E\u0627\u06CC\u0627\u0646 \u0628\u0627\u0632\u0647\u0654 \u06A9\u0627\u0631\u06CC \u0645\u06CC\u200C\u06AF\u0630\u0631\u062F \u2014 \u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.` : `\u26D4 \u0633\u0627\u0639\u062A ${time} \u0628\u06CC\u0631\u0648\u0646 \u0627\u0632 \u0633\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u06CC \u062A\u0639\u0631\u06CC\u0641‌\u0634\u062F\u0647 \u0627\u0633\u062A \u2014 \u0632\u0645\u0627\u0646‌\u0628\u0646\u062F\u06CC \u0627\u0646\u062C\u0627\u0645 \u0646\u0634\u062F.`);
       return;
     }
     onSchedule(id, time, duration);
