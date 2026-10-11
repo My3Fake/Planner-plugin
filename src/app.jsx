@@ -39,6 +39,25 @@ var ICON_CHOICES = [
   "home", "location", "lock", "moon", "pause", "play", "plus", "repeat", "search",
   "settings", "sparkles", "sun", "sunrise", "sunset", "tag", "trash", "upload", "x"
 ];
+// Multiple/offset reminders (spec items 90-91): minutes relative to the
+// task's `time` (negative = before, 0 = at time, positive = after). Firing
+// is checked per due occurrence (isTaskDueOn), so this works independently
+// of recurrence without extra logic.
+var REMINDER_OFFSETS = [
+  { minutes: -30, label: "\u06F3\u06F0 \u062F\u0642\u06CC\u0642\u0647 \u0642\u0628\u0644" },
+  { minutes: -10, label: "\u06F1\u06F0 \u062F\u0642\u06CC\u0642\u0647 \u0642\u0628\u0644" },
+  { minutes: -5, label: "\u06F5 \u062F\u0642\u06CC\u0642\u0647 \u0642\u0628\u0644" },
+  { minutes: 0, label: "\u0633\u0631 \u0648\u0642\u062A" },
+  { minutes: 5, label: "\u06F5 \u062F\u0642\u06CC\u0642\u0647 \u0628\u0639\u062F" }
+];
+function shiftTimeByMinutes(hhmm, minutes) {
+  const parts = hhmm.split(":");
+  const h = Number(parts[0]), m = Number(parts[1]);
+  let total = h * 60 + m + minutes;
+  total = (total % 1440 + 1440) % 1440;
+  const hh = Math.floor(total / 60), mm = total % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
 var PRIORITIES = [
   { level: 1, label: "\u067E\u0627\u06CC\u06CC\u0646" },
   { level: 2, label: "\u0645\u062A\u0648\u0633\u0637" },
@@ -235,6 +254,20 @@ function runTimeBasedRules(tasks, rules, now) {
   });
   return changed ? next : tasks;
 }
+// Reminder sound presets (spec item 93). Reuses playPomodoroChime's Web
+// Audio engine (custom URL/volume/repeat/stop support from Lane 4) rather
+// than building a parallel sound system.
+var REMINDER_CHIME_NOTES = {
+  reminder_default: [880, 1108.73],
+  reminder_bell: [1318.51, 1567.98, 1318.51],
+  reminder_soft: [523.25, 659.25],
+  reminder_urgent: [987.77, 987.77, 987.77]
+};
+function playReminderChime(soundId) {
+  if (!soundId || soundId === "none") return null;
+  const kind = REMINDER_CHIME_NOTES[soundId] ? soundId : "reminder_default";
+  return playPomodoroChime(kind, { volume: 0.6 });
+}
 function playPomodoroChime(kind, opts = {}) {
   const volume = Math.max(0, Math.min(1, opts.volume ?? 0.7));
   const playCount = opts.repeatUntilDismissed ? Infinity : Math.max(1, opts.playCount || 1);
@@ -275,7 +308,7 @@ function playPomodoroChime(kind, opts = {}) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return;
       ctx = new Ctx();
-      const notes = kind === "work" ? [880, 1108.73] : [659.25, 987.77];
+      const notes = REMINDER_CHIME_NOTES[kind] || (kind === "work" ? [880, 1108.73] : [659.25, 987.77]);
       notes.forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -508,7 +541,7 @@ var LANGUAGES = [
   { id: "fr", label: "Fran\xE7ais", dir: "ltr" },
   { id: "ar", label: "\u0627\u0644\u0639\u0631\u0628\u064A\u0629", dir: "rtl" }
 ];
-var DEFAULT_NOTIFICATIONS = { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false, dndDuringFocus: true };
+var DEFAULT_NOTIFICATIONS = { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false, dndDuringFocus: true, reminderSound: "reminder_default" };
 var DEFAULT_TASK_DEFAULTS = { quad: "q2", priority: 2, daypart: "morning", duration: 45, advancedOpenByDefault: false };
 var DEFAULT_FEATURES = {
   showMatrix: true,
@@ -1299,6 +1332,13 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
   const [daypart, setDaypart] = useState(initialTask ? initialTask.daypart : defaults.daypart), [tag, setTag] = useState(initialTask ? initialTask.tag || "" : "");
   const [time, setTime] = useState(initialTask ? initialTask.time || "" : prefillTime || ""), [duration, setDuration] = useState(initialTask ? initialTask.duration : defaults.duration);
   const [recurrence, setRecurrence] = useState(initialTask ? initialTask.recurrence : "none"), [reminder, setReminder] = useState(initialTask ? initialTask.reminder : false);
+  const [reminderOffsets, setReminderOffsets] = useState(
+    initialTask && Array.isArray(initialTask.reminderOffsets) && initialTask.reminderOffsets.length ? initialTask.reminderOffsets : [0]
+  );
+  const toggleReminderOffset = (m) => setReminderOffsets((prev) => {
+    if (prev.includes(m)) return prev.length > 1 ? prev.filter((x) => x !== m) : prev;
+    return [...prev, m].sort((a, b) => a - b);
+  });
   // بند ۷۹ (لِین ۷، PROGRESS.md): «زمان شروع مجاز» — تاریخی که پیش از آن این
   // فعالیت اصلاً due/قابل‌زمان‌بندی نیست. مقدار به‌فرمتِ همان رشته‌ی ایزوی
   // خامِ "YYYY-MM-DD" که JalaliDateTimePicker می‌دهد ذخیره می‌شود (مثل الگوی
@@ -1344,6 +1384,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
       duration,
       recurrence,
       reminder,
+      reminderOffsets: reminder ? reminderOffsets : void 0,
       notBefore: notBefore || null,
       recurrenceWeekdays: recurrence === "weekly" ? weekdays : void 0,
       recurrenceDay: recurrence === "monthly" || recurrence === "yearly" ? monthDay : void 0,
@@ -1485,7 +1526,7 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
         },
         JALALI_MONTHS_FA.map((m, i) => /* @__PURE__ */ React.createElement("option", { key: i, value: i + 1, className: "bg-[#120814]" }, m))
       ))),
-      /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 13 }), " \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC"), /* @__PURE__ */ React.createElement(ToggleSwitch, { on: reminder, onClick: () => setReminder((v) => !v) })),
+      /* @__PURE__ */ React.createElement("div", { className: "mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 13 }), " \u06CC\u0627\u062F\u0622\u0648\u0631\u06CC"), /* @__PURE__ */ React.createElement(ToggleSwitch, { on: reminder, onClick: () => setReminder((v) => !v) })), reminder && /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap mt-2.5" }, REMINDER_OFFSETS.map((ro) => /* @__PURE__ */ React.createElement(Chip, { key: ro.minutes, active: reminderOffsets.includes(ro.minutes), color: "#C026D3", onClick: () => toggleReminderOffset(ro.minutes) }, ro.label)))),
       /* @__PURE__ */ React.createElement(TextInput, { value: tag, onChange: (e) => setTag(e.target.value), placeholder: "\u0628\u0631\u0686\u0633\u0628 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)" }),
       /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-2.5" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-300 flex items-center gap-1.5" }, icon ? /* @__PURE__ */ React.createElement(Ic, { name: icon, size: 13 }) : /* @__PURE__ */ React.createElement(Ic, { name: "grid", size: 13 }), " \u0622\u06CC\u06A9\u0648\u0646 \u062A\u0633\u06A9 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC)"), /* @__PURE__ */ React.createElement(
         "select",
@@ -6187,15 +6228,23 @@ function LifeFlowApp() {
     const nowHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const today = todayKey();
     tasks.forEach((tk) => {
-      if (!tk.reminder || !tk.time || tk.status === "done" || tk.time !== nowHM) return;
+      if (!tk.reminder || !tk.time || tk.status === "done") return;
       if (!isTaskDueOn(tk, now)) return;
-      const fireKey = `lifeflow_notif_${tk.id}_${today}`;
-      if (storage.get(fireKey)) return;
-      try {
-        new Notification("\u23F0 " + tk.title, { body: "\u0632\u0645\u0627\u0646 \u0627\u0646\u062C\u0627\u0645 \u0627\u06CC\u0646 \u062A\u0633\u06A9\u0647", icon: "./icon-192.png" });
-        storage.set(fireKey, "1");
-      } catch (e) {
-      }
+      // Legacy tasks (reminder:true, no reminderOffsets) keep the old
+      // single "exactly at task.time" behavior ([0]).
+      const offsets = Array.isArray(tk.reminderOffsets) && tk.reminderOffsets.length ? tk.reminderOffsets : [0];
+      offsets.forEach((offsetMin) => {
+        if (shiftTimeByMinutes(tk.time, offsetMin) !== nowHM) return;
+        const fireKey = `lifeflow_notif_${tk.id}_${today}_${offsetMin}`;
+        if (storage.get(fireKey)) return;
+        const body = offsetMin === 0 ? "\u0632\u0645\u0627\u0646 \u0627\u0646\u062C\u0627\u0645 \u0627\u06CC\u0646 \u062A\u0633\u06A9\u0647" : offsetMin < 0 ? `${-offsetMin} \u062F\u0642\u06CC\u0642\u0647 \u062A\u0627 \u0632\u0645\u0627\u0646 \u0627\u06CC\u0646 \u062A\u0633\u06A9` : `${offsetMin} \u062F\u0642\u06CC\u0642\u0647 \u0627\u0632 \u0632\u0645\u0627\u0646 \u0627\u06CC\u0646 \u062A\u0633\u06A9 \u06AF\u0630\u0634\u062A\u0647`;
+        try {
+          new Notification("\u23F0 " + tk.title, { body, icon: "./icon-192.png" });
+          playReminderChime(settings.notifications && settings.notifications.reminderSound);
+          storage.set(fireKey, "1");
+        } catch (e) {
+        }
+      });
     });
   }, [now, tasks, settings.notifications, focusMode]);
   useEffect(() => {
