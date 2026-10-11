@@ -327,6 +327,19 @@ function wouldCompleteWhileBlocked(task, amount, tasks) {
   const next = Math.min(task.progressTarget, (task.progressCurrent || 0) + amount);
   return next >= task.progressTarget && !!blockingTaskFor(task, tasks);
 }
+// KanbanBoard's drag handler (moveTask) can put a task straight into the
+// "done" column, a third route to completion besides toggleTask and
+// addTaskProgress. Same rule as those: only the transition INTO done is
+// refused while blocked; moving a blocked task between todo/doing is fine
+// and un-completing is always allowed. Behavior for every other move is
+// byte-for-byte what moveTask did before (it never touched completedDate).
+function applyMoveTask(tasks, id, status) {
+  return (tasks || []).map((t2) => {
+    if (t2.id !== id) return t2;
+    if (status === "done" && t2.status !== "done" && blockingTaskFor(t2, tasks)) return t2;
+    return { ...t2, status };
+  });
+}
 // --- end Lane 8 part 4 helpers --------------------------------------------
 // --- Lane 8 part 5 (item 7, "pinned shortcuts" half only): dashboard pins --
 // Resolves settings.pinnedTaskIds (an array of ids, order = pin order) to
@@ -6944,7 +6957,7 @@ function LifeFlowApp() {
     return { ...s, dashboardSectionVisibility: current };
   });
   const saveTask = (t2) => setTasks((prev) => prev.some((x) => x.id === t2.id) ? prev.map((x) => x.id === t2.id ? t2 : x) : [t2, ...prev]);
-  const moveTask = (id, status) => setTasks((p) => p.map((t2) => t2.id === id ? { ...t2, status } : t2));
+  const moveTask = (id, status) => setTasks((p) => applyMoveTask(p, id, status));
   const scheduleTask = (id, time, duration) => setTasks((p) => p.map((t2) => t2.id === id ? { ...t2, time, duration } : t2));
   // Lane 8 (items 110-111): moving in and out of the Inbox. Both reuse the
   // same setTasks pattern as scheduleTask/moveTask right above rather than
