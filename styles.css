@@ -238,3 +238,33 @@
    that have no larger alternative way to trigger them.
    ------------------------------------------------------------------- */
 .lifeflow-app-root .lifeflow-tap-pad { padding: 6px; margin: -6px; }
+
+/* -------------------------------------------------------------------
+   Lane 6 (calendar) - hand-written utility rules.
+
+   This project has NO Tailwind build step: styles.css is a frozen,
+   pre-compiled bundle, so a class used in app.jsx that wasn't already
+   used elsewhere when the bundle was generated silently does nothing.
+   A systematic audit of the calendar components (DayPlannerView,
+   WeekView, WeekHourlyView, MonthView, YearView) found these classes
+   used in markup but never compiled. Each rule below mirrors what
+   Tailwind would have generated, scoped under .lifeflow-plugin-host
+   like the rest of the bundle. Effects of the missing classes before
+   this block: Month view and Week-cards view had no 7-column grid;
+   the drag/resize handle in Day view was zero-height (invisible);
+   grab/resize cursors and text-selection suppression never applied.
+   ------------------------------------------------------------------- */
+.lifeflow-plugin-host .cursor-grab{cursor:grab}
+.lifeflow-plugin-host .active\:cursor-grabbing:active{cursor:grabbing}
+.lifeflow-plugin-host .cursor-ns-resize{cursor:ns-resize}
+.lifeflow-plugin-host .select-none{-webkit-user-select:none;user-select:none}
+.lifeflow-plugin-host .h-0\.5{height:.125rem}
+.lifeflow-plugin-host .h-1{height:.25rem}
+.lifeflow-plugin-host .w-1{width:.25rem}
+.lifeflow-plugin-host .h-24{height:6rem}
+.lifeflow-plugin-host .p-2{padding:.5rem}
+.lifeflow-plugin-host .aspect-square{aspect-ratio:1/1}
+.lifeflow-plugin-host .bg-white\/40{background-color:hsla(0,0%,100%,.4)}
+.lifeflow-plugin-host .bg-fuchsia-400{--tw-bg-opacity:1;background-color:rgb(232 121 249/var(--tw-bg-opacity,1))}
+.lifeflow-plugin-host .grid-cols-7{grid-template-columns:repeat(7,minmax(0,1fr))}
+@media (min-width:640px){.lifeflow-plugin-host .sm\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}
