@@ -317,6 +317,16 @@ function blockingTaskFor(task, tasks) {
   const blocker = (tasks || []).find((t2) => t2.id === task.dependsOn);
   return blocker && blocker.status !== "done" ? blocker : null;
 }
+// A progressive task completes by reaching its target, not via the checkbox
+// that toggleTask guards - so without this, logging progress was a back
+// door around the dependency block. Only the update that would COMPLETE
+// the task is refused (partial progress on a blocked task is still fine,
+// matching toggleTask which only guards the todo->done transition).
+function wouldCompleteWhileBlocked(task, amount, tasks) {
+  if (!task || task.progressType !== "progressive") return false;
+  const next = Math.min(task.progressTarget, (task.progressCurrent || 0) + amount);
+  return next >= task.progressTarget && !!blockingTaskFor(task, tasks);
+}
 // --- end Lane 8 part 4 helpers --------------------------------------------
 // --- Lane 8 part 5 (item 7, "pinned shortcuts" half only): dashboard pins --
 // Resolves settings.pinnedTaskIds (an array of ids, order = pin order) to
@@ -6826,6 +6836,7 @@ function LifeFlowApp() {
   }));
   const addTaskProgress = (id, amount, note, detail) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id || t2.progressType !== "progressive") return t2;
+    if (wouldCompleteWhileBlocked(t2, amount, p)) return t2;
     const next = Math.min(t2.progressTarget, (t2.progressCurrent || 0) + amount);
     const done = next >= t2.progressTarget;
     const entry = { id: uid(), date: todayKey(), amount, note: (note || "").trim() };
