@@ -17,6 +17,7 @@ interface LifeFlowSettings {
 		learningDeadlines: boolean;
 		dailyDigest: boolean;
 		dndDuringFocus: boolean;
+		reminderSound: string;
 	};
 	features: {
 		showMatrix: boolean;
@@ -131,7 +132,7 @@ const DEFAULT_EXERCISE_TYPE_COLORS: Record<string, string> = { "قدرتی": "#C
 const DEFAULT_SETTINGS: LifeFlowSettings = {
 	theme: "dark",
 	language: "fa",
-	notifications: { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false, dndDuringFocus: true },
+	notifications: { taskReminders: true, pomodoroEnd: true, learningDeadlines: true, dailyDigest: false, dndDuringFocus: true, reminderSound: "reminder_default" },
 	features: {
 		showMatrix: true,
 		tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true },
@@ -465,7 +466,7 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 		// ---------------------------------------------------------------
 		containerEl.createEl("h3", { text: "اعلان‌ها" });
 
-		const notifItems: Array<[keyof LifeFlowSettings["notifications"], string, string]> = [
+		const notifItems: Array<[Exclude<keyof LifeFlowSettings["notifications"], "reminderSound">, string, string]> = [
 			["taskReminders", "یادآوری تسک‌ها", "اعلان برای تسک‌های زمان‌بندی‌شده‌ی نزدیک"],
 			["pomodoroEnd", "پایان پومودورو", "اعلان وقتی یک دور پومودورو تمام می‌شود"],
 			["learningDeadlines", "مهلت‌های یادگیری", "اعلان نزدیک‌شدن مهلت اهداف یادگیری"],
@@ -486,6 +487,28 @@ export class LifeFlowSettingTab extends PluginSettingTab {
 					});
 				});
 		});
+
+		// Reminder sound (spec item 93) — a string choice, so it can't live
+		// in the boolean-only toggle loop above.
+		const REMINDER_SOUND_OPTIONS: Record<string, string> = {
+			none: "بی‌صدا",
+			reminder_default: "پیش‌فرض",
+			reminder_bell: "زنگ",
+			reminder_soft: "ملایم",
+			reminder_urgent: "فوری",
+		};
+		new Setting(containerEl)
+			.setName("صدای یادآوری")
+			.setDesc("صدایی که هنگام یادآوریِ تسک پخش می‌شود (علاوه‌بر اعلانِ خودِ سیستم‌عامل).")
+			.addDropdown((drop) => {
+				Object.entries(REMINDER_SOUND_OPTIONS).forEach(([id, label]) => drop.addOption(id, label));
+				drop.setValue(settings.notifications.reminderSound || "reminder_default");
+				drop.onChange((value) => {
+					const next = this.readSettings();
+					next.notifications.reminderSound = value;
+					this.writeSettings(next);
+				});
+			});
 
 		// ---------------------------------------------------------------
 		containerEl.createEl("h3", { text: "پیش‌فرض‌های پنجره‌ی «تسک جدید»" });
