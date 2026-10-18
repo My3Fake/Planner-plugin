@@ -6935,6 +6935,86 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
+// بند ۱۹ (نماهای کاملاً سفارشی): فرمِ ساخت/ویرایشِ یک نمای ذخیره‌شده.
+// عمداً از همان کنترل‌های بندهای ۲۰/۲۳ (چیپ‌های سطحِ جزئیات/مقیاسِ زمانی،
+// دکمه‌های زوم) استفاده مجدد شده - این‌ها همان زبانِ بصری‌ای‌اند که کاربر
+// از قبل در تولبارِ اصلیِ تقویم دیده، پس یادگیریِ تازه‌ای لازم ندارد.
+function CustomViewEditorModal({ initial, tasks, onClose, onSave }) {
+  const [name, setName] = useState(initial.name || "");
+  const [dayCount, setDayCount] = useState(initial.dayCount || 3);
+  const [taskDetail, setTaskDetail] = useState(initial.taskDetail || "full");
+  const [zoom, setZoom] = useState(initial.zoom || 1);
+  const [slotMinutes, setSlotMinutes] = useState(initial.slotMinutes || 30);
+  const [quadFilter, setQuadFilter] = useState(initial.quadFilter || null);
+  const [tagFilter, setTagFilter] = useState(initial.tagFilter || null);
+  const [typeFilter, setTypeFilter] = useState(initial.typeFilter || null);
+  // بند ۱۹: تگ‌ها آزادند (نه یک enum ثابت مثلِ ربع‌ها)، پس گزینه‌ها از خودِ
+  // تسک‌هایِ موجود استخراج می‌شوند - اگر کاربر هنوز هیچ تگی استفاده نکرده،
+  // این بخش اصلاً نشان داده نمی‌شود (به‌جایِ یک فرمِ خالیِ گیج‌کننده).
+  const availableTags = Array.from(new Set(tasks.map((t2) => t2.tag).filter(Boolean)));
+  const toggleQuad = (id) => setQuadFilter((prev) => {
+    const cur = Array.isArray(prev) ? prev : [];
+    return cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+  });
+  const toggleTag = (t2) => setTagFilter((prev) => {
+    const cur = Array.isArray(prev) ? prev : [];
+    return cur.includes(t2) ? cur.filter((x) => x !== t2) : [...cur, t2];
+  });
+  const toggleType = (t2) => setTypeFilter((prev) => {
+    const cur = Array.isArray(prev) ? prev : [];
+    return cur.includes(t2) ? cur.filter((x) => x !== t2) : [...cur, t2];
+  });
+  const submit = () => {
+    onSave({
+      ...initial,
+      // isNew فقط یک پرچمِ یک‌بارمصرف برایِ تشخیصِ «ساخت جدید در برابرِ ویرایش»
+      // در CalendarViews است - اگر این‌جا در دیتایِ ذخیره‌شده باقی بماند،
+      // دفعه‌ی بعد که همین نما دوباره باز شود، به‌اشتباه به‌عنوانِ «تازه»
+      // تلقی می‌شود و onAddCustomView (به‌جایِ onUpdateCustomView) صدا زده
+      // می‌شود - یعنی هر ویرایش یک کپیِ تازه می‌سازد، به‌جایِ اصلاحِ همان نما.
+      isNew: false,
+      name: name.trim() || "\u0628\u06CC\u200C\u0646\u0627\u0645",
+      dayCount: Math.max(1, Math.min(14, dayCount)),
+      taskDetail,
+      zoom,
+      slotMinutes,
+      quadFilter: Array.isArray(quadFilter) && quadFilter.length > 0 ? quadFilter : null,
+      tagFilter: Array.isArray(tagFilter) && tagFilter.length > 0 ? tagFilter : null,
+      typeFilter: Array.isArray(typeFilter) && typeFilter.length > 0 ? typeFilter : null
+    });
+  };
+  return /* @__PURE__ */ React.createElement(
+    ModalShell,
+    { title: initial.isNew ? "\u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC \u062A\u0627\u0632\u0647" : "\u0648\u06CC\u0631\u0627\u06CC\u0634 \u0646\u0645\u0627", onClose, onSubmit: submit, submitLabel: "\u0630\u062E\u06CC\u0631\u0647" },
+    /* @__PURE__ */ React.createElement(TextInput, {
+      value: name,
+      onChange: (e) => setName(e.target.value),
+      placeholder: "\u0646\u0627\u0645 \u0646\u0645\u0627 \u2014 \u0645\u062B\u0644 \u0628\u0631\u0631\u0633\u06CC \u0647\u0641\u062A\u06AF\u06CC"
+    }),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u062A\u0639\u062F\u0627\u062F \u0631\u0648\u0632"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, /* @__PURE__ */ React.createElement(
+      "button",
+      { onClick: () => setDayCount((d) => Math.max(1, d - 1)), className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300" },
+      /* @__PURE__ */ React.createElement(Ic, { name: "minus", size: 13 })
+    ), /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-slate-300 w-9 text-center" }, toFa(dayCount), " \u0631\u0648\u0632"), /* @__PURE__ */ React.createElement(
+      "button",
+      { onClick: () => setDayCount((d) => Math.min(14, d + 1)), className: "w-7 h-7 rounded-lg flex items-center justify-center text-slate-300" },
+      /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 13 })
+    ))),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u0633\u0637\u062D \u062C\u0632\u0626\u06CC\u0627\u062A"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_TASK_DETAIL_OPTIONS.map((d) => /* @__PURE__ */ React.createElement(
+      "button",
+      { key: d, onClick: () => setTaskDetail(d), className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${taskDetail === d ? "bg-white/10 text-white" : "text-slate-400"}` },
+      calDetailLabel(d)
+    )))),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("span", { className: "text-xs text-slate-400" }, "\u0645\u0642\u06CC\u0627\u0633 \u0632\u0645\u0627\u0646\u06CC"), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_SLOT_OPTIONS.map((m) => /* @__PURE__ */ React.createElement(
+      "button",
+      { key: m, onClick: () => setSlotMinutes(m), className: `px-2.5 py-1 rounded-lg text-[11px] font-medium ${slotMinutes === m ? "bg-white/10 text-white" : "text-slate-400"}` },
+      calSlotLabel(m)
+    )))),
+    /* @__PURE__ */ React.createElement("div", { className: "mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0631\u0628\u0639\u200C\u0647\u0627 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, QUADRANTS.map((q) => /* @__PURE__ */ React.createElement(Chip, { key: q.id, active: Array.isArray(quadFilter) && quadFilter.includes(q.id), onClick: () => toggleQuad(q.id), color: q.color }, q.label)))),
+    /* @__PURE__ */ React.createElement("div", { className: "mb-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0646\u0648\u0639 \u062A\u0633\u06A9 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, /* @__PURE__ */ React.createElement(Chip, { active: Array.isArray(typeFilter) && typeFilter.includes("binary"), onClick: () => toggleType("binary") }, "\u0633\u0627\u062F\u0647"), /* @__PURE__ */ React.createElement(Chip, { active: Array.isArray(typeFilter) && typeFilter.includes("progressive"), onClick: () => toggleType("progressive"), color: "#22D3EE" }, "\u0631\u0648\u0646\u062F\u062F\u0627\u0631"))),
+    availableTags.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "mb-1 mt-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-1.5" }, "\u0641\u0642\u0637 \u0627\u06CC\u0646 \u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627 \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u062F (\u062E\u0627\u0644\u06CC = \u0647\u0645\u0647)"), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap gap-1.5" }, availableTags.map((t2) => /* @__PURE__ */ React.createElement(Chip, { key: t2, active: Array.isArray(tagFilter) && tagFilter.includes(t2), onClick: () => toggleTag(t2), color: colorForTag(t2) }, t2))))
+  );
+}
 function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, scheduling, appearance, onChangeAppearance, customViews = [], onAddCustomView, onUpdateCustomView, onDeleteCustomView, calendars }) {
   // بند ۵۹ (حفظِ آخرین موقعیتِ نما): view/cursor از appearance می‌آیند نه
   // مقدارِ ثابت، تا با بازگشت به پلاگین همان نما/تاریخِ آخر باز شود. مقدارِ
