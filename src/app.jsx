@@ -515,7 +515,7 @@ var DEFAULT_FEATURES = {
   tabs: { planning: true, calendar: true, study: true, fitness: true, learning: true, pomodoro: true, notes: true }
 };
 var DEFAULT_QUADRANT_COLORS = { q1: "#DB2777", q2: "#C026D3", q3: "#22D3EE", q4: "#6B7280" };
-var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", calendarLastView: null, calendarLastDate: null, quadrantColors: DEFAULT_QUADRANT_COLORS };
+var DEFAULT_APPEARANCE = { fontFamily: "default", density: "comfortable", calendarZoom: 1, calendarSlotMinutes: 30, calendarTaskDetail: "full", hideWeekends: false, calendarLastView: null, calendarLastCursor: null, quadrantColors: DEFAULT_QUADRANT_COLORS };
 // Lane 7 (زمان‌بندی هوشمند و ظرفیت، بندهای ۷۲–۸۸ در PROGRESS.md): پایه‌ی
 // داده‌ایِ «ساعات کاری» — یک یا چند بازه‌ی زمانی که مجموعشان ظرفیت روزانه
 // را می‌سازد (بند ۷۸: چند بازه کاری در یک روز). فعلاً یک مجموعه‌ی واحد
@@ -5384,6 +5384,17 @@ function AgendaView({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgre
 
   return React.createElement("div", null, sections);
 }
+// بند ۵۷ (نمایشِ شماره‌ی هفته): تعدادِ روزهایِ سپری‌شده از ابتدایِ سالِ
+// جلالی تقسیم بر ۷ - یک تقریبِ ساده و کافی برایِ یک برچسبِ صرفاً اطلاعاتی
+// (نه چیزی که محاسباتِ دیگری رویش بنا شود، پس نیازی به دقتِ ISO-8601-وار
+// در لبه‌هایِ مرزِ سال نیست).
+function jalaliWeekNumber(dateObj) {
+  if (!Jalali) return null;
+  const { jy } = Jalali.toJalaliParts(dateObj);
+  const startOfYear = Jalali.fromJalaliParts(jy, 1, 1);
+  const diffDays = Math.round((dateObj - startOfYear) / 864e5);
+  return Math.max(1, Math.floor(diffDays / 7) + 1);
+}
 function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
   let title = "";
   if (Jalali) {
@@ -5393,7 +5404,7 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
       title = `${Jalali.formatJalali(cursor, { weekday: false, year: false })} \u062A\u0627 ${Jalali.formatJalali(end, { weekday: false })}`;
     } else if (view === "week") {
       const start = Jalali.jalaliStartOfWeek(cursor), end = Jalali.addDays(start, 6);
-      title = `${Jalali.formatJalali(start, { weekday: false, year: false })} \u062A\u0627 ${Jalali.formatJalali(end, { weekday: false })}`;
+      title = `${Jalali.formatJalali(start, { weekday: false, year: false })} \u062A\u0627 ${Jalali.formatJalali(end, { weekday: false })} \u2014 \u0647\u0641\u062A\u0647\u200C\u06CC ${Jalali.toFaDigits(jalaliWeekNumber(cursor))}`;
     } else if (view === "month") {
       const { jy, jm } = Jalali.toJalaliParts(cursor);
       title = `${JALALI_MONTHS_FA[jm - 1]} ${Jalali.toFaDigits(jy)}`;
@@ -5401,6 +5412,8 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
       title = `\u0633\u0627\u0644 ${Jalali.toFaDigits(Jalali.toJalaliParts(cursor).jy)}`;
     } else if (view === "agenda") {
       title = "\u06F1\u06F4 \u0631\u0648\u0632 \u0622\u06CC\u0646\u062F\u0647";
+    } else if (view === "custom") {
+      title = "\u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC";
     }
   }
   const navButtons = view === "agenda" ? null : React.createElement(
@@ -5410,7 +5423,7 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
     React.createElement("button", { onClick: onToday, className: "px-3 h-8 rounded-lg bg-white/[0.06] text-xs text-slate-300 font-medium" }, "\u0627\u0645\u0631\u0648\u0632"),
     React.createElement("button", { onClick: onNext, className: "w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center" }, React.createElement(Ic, { name: "chevron-left", size: 15 }))
   );
-  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
+  return /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3 flex items-center justify-between flex-wrap gap-2" }, navButtons || React.createElement("div", null), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100" }, title), /* @__PURE__ */ React.createElement("div", { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" }, [["day", "\u0631\u0648\u0632"], ["threeDay", "\u06F3\u0631\u0648\u0632\u0647"], ["week", "\u0647\u0641\u062A\u0647"], ["month", "\u0645\u0627\u0647"], ["year", "\u0633\u0627\u0644"], ["agenda", "\u0641\u0647\u0631\u0633\u062A"], ["custom", "\u0633\u0641\u0627\u0631\u0634\u06CC"]].map(([v, l]) => /* @__PURE__ */ React.createElement("button", { key: v, onClick: () => onView(v), className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${view === v ? "bg-white/10 text-white" : "text-slate-400"}` }, l))));
 }
 // Items 23 (Zoom و مقیاس زمانی) و ۲۰ (نمایش فشرده/متنوع تسک‌ها): both live in
 // this one toolbar since they're both "how the hourly grid renders" controls
@@ -5421,11 +5434,19 @@ function CalendarHeader({ view, cursor, onPrev, onNext, onToday, onView }) {
 // calendarTaskDetail (see DEFAULT_APPEARANCE), so the chosen scale/detail
 // level survives closing/reopening the plugin, same as every other
 // appearance setting.
+// بندهای ۲۰/۲۳/۱۹ مشترکاً از این دو لیبل استفاده می‌کنند (CalendarZoomControls
+// و CustomViewEditorModal تازه‌ی بندِ ۱۹).
+function calSlotLabel(m) {
+  return m === 60 ? "\u06F1\u0633\u0627\u0639\u062A" : `${toFa(m)}\u062F`;
+}
+function calDetailLabel(d) {
+  return d === "full" ? "\u06A9\u0627\u0645\u0644" : d === "compact" ? "\u0641\u0634\u0631\u062F\u0647" : "\u06A9\u0645\u06CC\u0646\u0647";
+}
 function CalendarZoomControls({ zoom, slotMinutes, taskDetail, onZoomChange, onSlotMinutesChange, onTaskDetailChange }) {
   const zoomOut = () => onZoomChange(Math.max(CAL_ZOOM_MIN, Math.round((zoom - CAL_ZOOM_STEP) * 100) / 100));
   const zoomIn = () => onZoomChange(Math.min(CAL_ZOOM_MAX, Math.round((zoom + CAL_ZOOM_STEP) * 100) / 100));
-  const slotLabel = (m) => m === 60 ? "\u06F1\u0633\u0627\u0639\u062A" : `${toFa(m)}\u062F`;
-  const detailLabel = (d) => d === "full" ? "\u06A9\u0627\u0645\u0644" : d === "compact" ? "\u0641\u0634\u0631\u062F\u0647" : "\u06A9\u0645\u06CC\u0646\u0647";
+  const slotLabel = calSlotLabel;
+  const detailLabel = calDetailLabel;
   return /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between gap-2 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 flex-wrap" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 bg-white/[0.05] border border-white/10 rounded-xl p-1" }, CAL_SLOT_OPTIONS.map((m) => /* @__PURE__ */ React.createElement(
     "button",
     {
@@ -5688,19 +5709,30 @@ function DayPlannerView({ cursor, tasks, onSchedule, onToggle, onDelete, onEdit,
     );
   }), nowLineEl)));
 }
-function WeekView({ cursor, tasks, onJumpDay }) {
+function WeekView({ cursor, tasks, onJumpDay, hideWeekends = false }) {
   if (!Jalali) return null;
   const start = Jalali.jalaliStartOfWeek(cursor);
-  const days = Array.from({ length: 7 }, (_, i) => Jalali.addDays(start, i));
-  return /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-7 gap-1.5" }, days.map((d) => {
+  const allDays = Array.from({ length: 7 }, (_, i) => Jalali.addDays(start, i));
+  // بند ۵۶ (نمایش/مخفی‌کردنِ آخرهفته): جمعه (تعطیلِ رسمیِ تقویمِ ایرانی)
+  // وقتی hideWeekends فعال است پنهان می‌شود.
+  //
+  // ضمناً یک باگِ واقعیِ از‌قبل‌موجود این‌جا کشف و رفع شد: `grid`/
+  // `grid-cols-7` در styles.css اصلاً کامپایل نشده بودند (این پروژه هیچ
+  // مرحله‌ی build برایِ Tailwind ندارد - فقط کلاس‌هایی که جایِ دیگر واقعاً
+  // استفاده شده‌اند کامپایل می‌شوند)، یعنی این نما هیچ‌وقت واقعاً به‌صورتِ
+  // گرید رندر نمی‌شد. جایگزین شد با flex/flex-1 - همان الگویی که
+  // WeekHourlyView از قبل با موفقیت دارد - که هم این باگ را رفع می‌کند و
+  // هم حذفِ پویایِ روزها را بدونِ محاسبه‌ی دستیِ عرض ممکن می‌سازد.
+  const days = hideWeekends ? allDays.filter((d) => d.getDay() !== 5) : allDays;
+  return /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5" }, days.map((d) => {
     const due = tasks.filter((tsk) => isTaskDueOn(tsk, d));
     const done = due.filter((tsk) => tsk.status === "done").length;
     const isToday = Jalali.isSameJalaliDay(d, /* @__PURE__ */ new Date());
-    return /* @__PURE__ */ React.createElement("button", { key: d.toISOString(), onClick: () => onJumpDay(d), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: `p-2 h-24 flex flex-col ${isToday ? "" : ""}` }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, WEEKDAY_SHORT_ORDER[days.indexOf(d)] || ""), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold", style: { color: isToday ? "#EAB4F2" : "#e2e8f0" } }, Jalali.toFaDigits(Jalali.toJalaliParts(d).jd)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex flex-wrap gap-0.5" }, due.slice(0, 6).map((tsk) => /* @__PURE__ */ React.createElement("span", { key: tsk.id, className: "w-1.5 h-1.5 rounded-full", style: { background: QUADRANTS.find((q) => q.id === tsk.quad)?.color, opacity: tsk.status === "done" ? 0.35 : 1 } }))), due.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-500 mt-1" }, done, "/", due.length)));
+    return /* @__PURE__ */ React.createElement("button", { key: d.toISOString(), onClick: () => onJumpDay(d), className: "text-right flex-1", style: { minWidth: 0 } }, /* @__PURE__ */ React.createElement(GlassCard, { className: `p-2 h-24 flex flex-col ${isToday ? "" : ""}` }, /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, WEEKDAY_SHORT_ORDER[allDays.indexOf(d)] || ""), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold", style: { color: isToday ? "#EAB4F2" : "#e2e8f0" } }, Jalali.toFaDigits(Jalali.toJalaliParts(d).jd)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex flex-wrap gap-0.5" }, due.slice(0, 6).map((tsk) => /* @__PURE__ */ React.createElement("span", { key: tsk.id, className: "w-1.5 h-1.5 rounded-full", style: { background: QUADRANTS.find((q) => q.id === tsk.quad)?.color, opacity: tsk.status === "done" ? 0.35 : 1 } }))), due.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[9px] text-slate-500 mt-1" }, done, "/", due.length)));
   }));
 }
 var WEEKDAY_SHORT_ORDER = ["\u0634", "\u06CC", "\u062F", "\u0633", "\u0686", "\u067E", "\u062C"];
-function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7, zoom = 1, slotMinutes = 30, taskDetail = "full" }) {
+function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount = 7, zoom = 1, slotMinutes = 30, taskDetail = "full", hideWeekends = false }) {
   if (!Jalali) return null;
   // Same zoom mechanism as DayPlannerView (see its comment above rowH) -
   // rowH is "px per 30 real minutes", scaled by `zoom`; everything else in
@@ -5710,7 +5742,10 @@ function WeekHourlyView({ cursor, tasks, onEdit, onCreateAt, onSchedule, dayCoun
   const gridRows = calSlots(slotMinutes);
   const gridRowH = slotMinutes / 30 * rowH;
   const start = dayCount === 7 ? Jalali.jalaliStartOfWeek(cursor) : cursor;
-  const days = Array.from({ length: dayCount }, (_, i) => Jalali.addDays(start, i));
+  // بند ۵۶: فقط برایِ نمایِ هفتگیِ استاندارد (dayCount===7) معنا دارد -
+  // نماهایِ ۳روزه/سفارشی از قبل هر تعداد روزی را که کاربر خواسته نشان
+  // می‌دهند، مفهومِ «آخرهفته» در آن‌ها تعریف‌نشده است.
+  const days = (dayCount === 7 && hideWeekends ? Array.from({ length: 7 }, (_, i) => Jalali.addDays(start, i)).filter((d) => d.getDay() !== 5) : Array.from({ length: dayCount }, (_, i) => Jalali.addDays(start, i)));
   const [now, setNow] = useState(() => /* @__PURE__ */ new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(/* @__PURE__ */ new Date()), 6e4);
@@ -5930,19 +5965,34 @@ function YearView({ cursor, tasks, onJumpMonth }) {
     return /* @__PURE__ */ React.createElement("button", { key: i, onClick: () => onJumpMonth(monthStart), className: "text-right" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-100 mb-1.5" }, name), /* @__PURE__ */ React.createElement("div", { className: "h-1.5 rounded-full bg-white/[0.08] overflow-hidden mb-1" }, /* @__PURE__ */ React.createElement("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: "linear-gradient(90deg,#C026D3,#22D3EE)" } })), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, doneCount, "/", dueCount, " \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F\u0647")));
   }));
 }
-function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, scheduling, appearance, onChangeAppearance }) {
-  // بند ۵۹: آخرین نما/تاریخِ مشاهده‌شده حفظ شود. از همان کانالِ
-  // appearance/onChangeAppearance که zoom/slotMinutes/taskDetail هم قبلاً
-  // استفاده می‌کردند (پایین همین تابع) — چیزِ تازه‌ای لازم نبود، فقط دو
-  // فیلدِ دیگر به همان شیء اضافه شد. مقدارِ اولیه‌ی null (نه یک view/تاریخِ
-  // مشخص) عمداً انتخاب شد تا اولین‌بارِ بازکردنِ پلاگین (که هنوز چیزی ذخیره
-  // نشده) دقیقاً همان رفتارِ قبلی (نمای «روز»، تاریخِ امروز) را داشته باشد.
-  const [view, setView] = useState(() => appearance?.calendarLastView || "day");
+function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onCreateAt, scheduling, appearance, onChangeAppearance, customViews = [], onAddCustomView, onUpdateCustomView, onDeleteCustomView }) {
+  // بند ۵۹ (حفظِ آخرین موقعیتِ نما): view/cursor از appearance می‌آیند نه
+  // مقدارِ ثابت، تا با بازگشت به پلاگین همان نما/تاریخِ آخر باز شود. مقدارِ
+  // اولیه‌ی appearance برایِ این دو فیلد عمداً null است (نه یک view/تاریخِ
+  // مشخص) تا اولین‌بارِ بازکردنِ پلاگین (که هنوز چیزی ذخیره نشده) دقیقاً
+  // همان رفتارِ قبلی (نمای «روز»، تاریخِ امروز) را داشته باشد.
+  // محدودیتِ مستند: اگر آخرین نما «سفارشی» بوده، فقط خودِ view (نه
+  // این‌که کدام نمایِ سفارشی فعال بود) حفظ می‌شود - کاربر باید نمای
+  // سفارشیِ موردنظرش را دوباره از نوارِ چیپ انتخاب کند.
+  const [view, setView] = useState(appearance?.calendarLastView || "day");
   const [weekSubView, setWeekSubView] = useState("cards");
-  const [cursor, setCursor] = useState(() => appearance?.calendarLastDate ? new Date(appearance.calendarLastDate) : /* @__PURE__ */ new Date());
+  const [cursor, setCursor] = useState(() => {
+    if (appearance?.calendarLastCursor) {
+      const d = new Date(appearance.calendarLastCursor);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return /* @__PURE__ */ new Date();
+  });
   useEffect(() => {
-    if (onChangeAppearance) onChangeAppearance({ calendarLastView: view, calendarLastDate: cursor.toISOString() });
+    onChangeAppearance && onChangeAppearance({ calendarLastView: view, calendarLastCursor: cursor.toISOString() });
   }, [view, cursor]);
+  // بند ۱۹ (نماهای کاملاً سفارشی): کدام نمای ذخیره‌شده الان فعال است -
+  // این خودش ذخیره نمی‌شود (فقط انتخابِ لحظه‌ای در جلسه)، ولی خودِ لیستِ
+  // نماها (`customViews`) از طریقِ appearance-level state در LifeFlowApp
+  // ماندگار است.
+  const [activeCustomViewId, setActiveCustomViewId] = useState(null);
+  const [editingCustomView, setEditingCustomView] = useState(null);
+  const activeCustomView = customViews.find((v) => v.id === activeCustomViewId) || null;
   // بند ۸۳ (لِین ۷): «بار کاری هفته» — دکمه‌ی تکی که یک مودالِ مستقل و
   // اطلاع‌رسانیِ‌محضِ WeeklyLoadModal را باز می‌کند؛ عمداً هیچ نمای موجودِ
   // تقویم (DayPlannerView/WeekHourlyView/...) را تغییر نمی‌دهد.
@@ -5950,6 +6000,8 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   const zoom = appearance?.calendarZoom ?? 1;
   const slotMinutes = appearance?.calendarSlotMinutes ?? 30;
   const taskDetail = appearance?.calendarTaskDetail ?? "full";
+  const hideWeekends = appearance?.hideWeekends ?? false;
+  const setHideWeekends = (v) => onChangeAppearance && onChangeAppearance({ hideWeekends: v });
   const setZoom = (z) => onChangeAppearance && onChangeAppearance({ calendarZoom: z });
   const setSlotMinutes = (m) => onChangeAppearance && onChangeAppearance({ calendarSlotMinutes: m });
   const setTaskDetail = (d) => onChangeAppearance && onChangeAppearance({ calendarTaskDetail: d });
@@ -5963,6 +6015,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
     else if (view === "threeDay") setCursor((c) => Jalali.addDays(c, dir * 3));
     else if (view === "week") setCursor((c) => Jalali.addDays(c, dir * 7));
     else if (view === "month") setCursor((c) => Jalali.jalaliAddMonths(c, dir));
+    else if (view === "custom") setCursor((c) => Jalali.addDays(c, dir * (activeCustomView ? activeCustomView.dayCount : 1)));
     else setCursor((c) => Jalali.jalaliAddMonths(c, dir * 12));
   };
   const jumpDay = (d) => {
@@ -5975,7 +6028,15 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
   };
   const weekSubToggle = React.createElement(
     "div",
-    { className: "flex justify-end" },
+    { className: "flex items-center justify-between gap-2 flex-wrap" },
+    React.createElement(
+      "button",
+      {
+        onClick: () => setHideWeekends(!hideWeekends),
+        className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${hideWeekends ? "bg-white/10 text-white" : "bg-white/[0.05] text-slate-400"}`
+      },
+      "\u0628\u062F\u0648\u0646 \u0622\u062E\u0631\u0647\u0641\u062A\u0647"
+    ),
     React.createElement(
       "div",
       { className: "flex bg-white/[0.05] border border-white/10 rounded-xl p-1" },
@@ -5986,7 +6047,88 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       ))
     )
   );
-  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes, taskDetail }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay });
+  const weekContent = weekSubView === "hourly" ? React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, zoom, slotMinutes, taskDetail, hideWeekends }) : React.createElement(WeekView, { cursor, tasks, onJumpDay: jumpDay, hideWeekends });
+  // بند ۱۹: فیلترِ ربع فقط وقتی اعمال می‌شود که کاربر صراحتاً حداقل یک ربع
+  // را انتخاب کرده باشد؛ `null`/آرایه‌ی خالی یعنی «همه را نشان بده» (پیش‌فرضِ
+  // امن برایِ نماهای تازه، تا هیچ تسکی به‌طورِ غیرمنتظره پنهان نشود).
+  const customViewTasks = (cv) => {
+    if (!cv) return tasks;
+    let result = tasks;
+    if (Array.isArray(cv.quadFilter) && cv.quadFilter.length > 0) result = result.filter((t2) => cv.quadFilter.includes(t2.quad));
+    if (Array.isArray(cv.tagFilter) && cv.tagFilter.length > 0) result = result.filter((t2) => cv.tagFilter.includes(t2.tag));
+    if (Array.isArray(cv.typeFilter) && cv.typeFilter.length > 0) result = result.filter((t2) => cv.typeFilter.includes(t2.progressType || "binary"));
+    return result;
+  };
+  const customToolbar = React.createElement(
+    "div",
+    { className: "flex items-center gap-1.5 flex-wrap" },
+    customViews.map((cv) => React.createElement(
+      "button",
+      {
+        key: cv.id,
+        onClick: () => setActiveCustomViewId(cv.id),
+        className: `px-2.5 py-1.5 rounded-lg text-[11px] font-medium shrink-0 ${activeCustomViewId === cv.id ? "bg-white/10 text-white" : "bg-white/[0.05] text-slate-400"}`
+      },
+      cv.name || "\u0628\u06CC\u200C\u0646\u0627\u0645"
+    )),
+    React.createElement(
+      "button",
+      {
+        onClick: () => setEditingCustomView({ id: uid(), name: "", dayCount: 3, taskDetail: "full", zoom: 1, slotMinutes: 30, quadFilter: null, tagFilter: null, typeFilter: null, isNew: true }),
+        className: "px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-fuchsia-300 bg-white/[0.05] flex items-center gap-1 shrink-0"
+      },
+      React.createElement(Ic, { name: "plus", size: 12 }),
+      "\u0646\u0645\u0627\u06CC \u062A\u0627\u0632\u0647"
+    ),
+    activeCustomView && React.createElement(
+      "button",
+      { onClick: () => setEditingCustomView({ ...activeCustomView }), className: "w-7 h-7 rounded-lg bg-white/[0.05] flex items-center justify-center shrink-0", title: "\u0648\u06CC\u0631\u0627\u06CC\u0634" },
+      React.createElement(Ic, { name: "edit", size: 13, className: "text-slate-300" })
+    ),
+    activeCustomView && React.createElement(
+      "button",
+      {
+        onClick: () => {
+          onDeleteCustomView && onDeleteCustomView(activeCustomView.id);
+          setActiveCustomViewId(null);
+        },
+        className: "w-7 h-7 rounded-lg bg-white/[0.05] flex items-center justify-center shrink-0",
+        title: "\u062D\u0630\u0641"
+      },
+      React.createElement(Ic, { name: "trash", size: 13, className: "text-rose-400/80" })
+    )
+  );
+  const customContent = customViews.length === 0 ? React.createElement(GlassCard, { className: "p-6 text-center" }, React.createElement("p", { className: "text-sm text-slate-400 mb-3" }, "\u0647\u0646\u0648\u0632 \u0647\u06CC\u0686 \u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC\u06CC \u0646\u0633\u0627\u062E\u062A\u0647\u200C\u0627\u06CC\u062F"), React.createElement(
+    "button",
+    { onClick: () => setEditingCustomView({ id: uid(), name: "", dayCount: 3, taskDetail: "full", zoom: 1, slotMinutes: 30, quadFilter: null, tagFilter: null, typeFilter: null, isNew: true }), className: "mod-cta rounded-xl px-4 py-2 text-sm font-bold" },
+    "\u0633\u0627\u062E\u062A\u0646 \u0627\u0648\u0644\u06CC\u0646 \u0646\u0645\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC"
+  )) : !activeCustomView ? React.createElement(GlassCard, { className: "p-6 text-center" }, React.createElement("p", { className: "text-sm text-slate-400" }, "\u06CC\u06A9 \u0646\u0645\u0627 \u0627\u0632 \u0628\u0627\u0644\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646")) : React.createElement(WeekHourlyView, {
+    cursor,
+    tasks: customViewTasks(activeCustomView),
+    onEdit,
+    onCreateAt,
+    onSchedule,
+    dayCount: activeCustomView.dayCount,
+    zoom: activeCustomView.zoom,
+    slotMinutes: activeCustomView.slotMinutes,
+    taskDetail: activeCustomView.taskDetail
+  });
+  const customViewModal = editingCustomView ? React.createElement(CustomViewEditorModal, {
+    initial: editingCustomView,
+    tasks,
+    onClose: () => setEditingCustomView(null),
+    onSave: (view2) => {
+      if (editingCustomView.isNew) {
+        onAddCustomView && onAddCustomView(view2);
+      } else {
+        onUpdateCustomView && onUpdateCustomView(view2.id, view2);
+      }
+      setActiveCustomViewId(view2.id);
+      setEditingCustomView(null);
+    }
+  }) : null;
+  // بند ۸۳ (لِین ۷): دکمه‌ی تکیِ «بار کاری هفته» که WeeklyLoadModal را باز
+  // می‌کند - مستقلِ کاملاً از نماهایِ سفارشیِ بندِ ۱۹، هردو با هم سازگارند.
   const weeklyLoadButton = /* @__PURE__ */ React.createElement(
     "div",
     { className: "flex justify-end" },
@@ -6000,7 +6142,7 @@ function CalendarViews({ tasks, onToggle, onSchedule, onDelete, onEdit, onAddPro
       "\u{1F4CA} \u0628\u0627\u0631 \u06A9\u0627\u0631\u06CC \u0647\u0641\u062A\u0647"
     )
   );
-  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), weeklyLoadButton, view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }), showWeeklyLoad && /* @__PURE__ */ React.createElement(WeeklyLoadModal, { cursor, tasks, scheduling, onClose: () => setShowWeeklyLoad(false) }));
+  return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement(CalendarHeader, { view, cursor, onPrev: () => step(-1), onNext: () => step(1), onToday: () => setCursor(/* @__PURE__ */ new Date()), onView: setView }), showZoomControls && /* @__PURE__ */ React.createElement(CalendarZoomControls, { zoom, slotMinutes, taskDetail, onZoomChange: setZoom, onSlotMinutesChange: setSlotMinutes, onTaskDetailChange: setTaskDetail }), weeklyLoadButton, view === "day" && /* @__PURE__ */ React.createElement(DayPlannerView, { cursor, tasks, onSchedule, onToggle, onDelete, onEdit, onCreateAt, scheduling, zoom, slotMinutes, taskDetail }), view === "threeDay" && /* @__PURE__ */ React.createElement(WeekHourlyView, { cursor, tasks, onEdit, onCreateAt, onSchedule, dayCount: 3, zoom, slotMinutes, taskDetail }), view === "week" && weekSubToggle, view === "week" && weekContent, view === "month" && /* @__PURE__ */ React.createElement(MonthView, { cursor, tasks, onJumpDay: jumpDay }), view === "year" && /* @__PURE__ */ React.createElement(YearView, { cursor, tasks, onJumpMonth: jumpMonth }), view === "agenda" && /* @__PURE__ */ React.createElement(AgendaView, { tasks, onToggle, onSchedule, onDelete, onEdit, onAddProgress }), view === "custom" && customToolbar, view === "custom" && customContent, customViewModal, showWeeklyLoad && /* @__PURE__ */ React.createElement(WeeklyLoadModal, { cursor, tasks, scheduling, onClose: () => setShowWeeklyLoad(false) }));
 }
 var NAV = [
   { id: "dashboard", labelKey: "nav_dashboard", icon: "home" },
@@ -6112,6 +6254,15 @@ function LifeFlowApp() {
   const addCustomActionButton = (btn) => setCustomActionButtons((p) => [...p, btn]);
   const deleteCustomActionButton = (id) => setCustomActionButtons((p) => p.filter((b) => b.id !== id));
   const runCustomActionButton = (taskId, action) => setTasks((p) => p.map((t2) => t2.id === taskId ? applyAutomationAction(t2, action) : t2));
+  // بند ۱۹ (نماهای کاملاً سفارشیِ تقویم): هر نما یک ترکیبِ ذخیره‌شده از
+  // {dayCount, taskDetail, zoom, slotMinutes, quadFilter} است - همان
+  // زیرساختِ بندهای ۲۰/۲۲/۲۳ (که از قبل روی WeekHourlyView قابلِ تنظیم
+  // بودند)، فقط این‌بار به‌عنوانِ چند پیش‌تنظیمِ قابلِ‌نام‌گذاری و ذخیره،
+  // به‌جای یک تنظیمِ سراسریِ واحد.
+  const [customCalendarViews, setCustomCalendarViews] = useState(savedData.customCalendarViews || []);
+  const addCustomCalendarView = (view) => setCustomCalendarViews((p) => [...p, view]);
+  const updateCustomCalendarView = (id, patch) => setCustomCalendarViews((p) => p.map((v) => v.id === id ? { ...v, ...patch } : v));
+  const deleteCustomCalendarView = (id) => setCustomCalendarViews((p) => p.filter((v) => v.id !== id));
   const [pomodoro, setPomodoro] = useState(savedData.pomodoro || DEFAULT_POMODORO);
   // Tracks whether an active pomodoro *work* session is currently running, so
   // the notification effects below can suppress other notices (DND) while
@@ -6120,7 +6271,7 @@ function LifeFlowApp() {
   // targeted callback rather than fully lifting the timer's state.
   const [focusMode, setFocusMode] = useState(false);
   useEffect(() => {
-    const fullState = { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, pomodoro };
+    const fullState = { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, customCalendarViews, pomodoro };
     try {
       storage.set(STORAGE_KEY, JSON.stringify(fullState));
     } catch (e) {
@@ -6131,7 +6282,7 @@ function LifeFlowApp() {
       } catch (e) {
       }
     }
-  }, [tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, pomodoro]);
+  }, [tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, customCalendarViews, pomodoro]);
   const toggleTask = (id) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id) return t2;
     const willBeDone = t2.status !== "done";
@@ -6357,7 +6508,7 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })) }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })), customViews: customCalendarViews, onAddCustomView: addCustomCalendarView, onUpdateCustomView: updateCustomCalendarView, onDeleteCustomView: deleteCustomCalendarView }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
