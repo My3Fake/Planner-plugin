@@ -131,6 +131,277 @@ function recurrenceLabel(task) {
   if (task.recurrence === "odd") return "\u0631\u0648\u0632\u0647\u0627\u06CC \u0641\u0631\u062F (\u0634\u0645\u0633\u06CC)";
   return null;
 }
+// --- Lane 8 (task productivity layer, spec items 61-67) ---------------
+// Filter/sort/group helpers for the task LIST view. Kept as small pure
+// functions (no React, no hooks) so they can be unit-tested directly with
+// plain Node, same convention as isTaskDueOn above.
+//
+// Design notes (see PROGRESS.md section 4.8 for the full log entry):
+// - "type" filter reads `task.itemType`, defaulting to "task" for any
+//   task that predates the field. Lane 1's `ITEM_TYPES` constant lives on
+//   the not-yet-merged `feature/task-item-type` branch, so this file
+//   intentionally does NOT import it — the dropdown options are built
+//   dynamically from whatever itemType values actually exist in the
+//   user's data (see getTaskFilterOptions), with TASK_TYPE_FALLBACK_LABELS
+//   only used to give the 4 known built-in ids a friendly label. Once
+//   Lane 1 merges, this keeps working unchanged; custom item-type ids
+//   just show their raw id as the label until then.
+// - Spec item 65 ("filter by subsection") has no dedicated field in the
+//   current task model (no project/subsection concept exists yet for
+//   plain tasks). For this first slice it's mapped onto the existing
+//   Eisenhower quadrant (`task.quad`), labeled "\u0631\u0628\u0639" in the
+//   UI (not "\u0632\u06CC\u0631\u0628\u062E\u0634") to stay honest about what it
+//   actually filters on. Revisit if/when a real project/subsection field
+//   is added to the task model.
+var TASK_TYPE_FALLBACK_LABELS = { task: "\u062A\u0633\u06A9", event: "\u0631\u0648\u06CC\u062F\u0627\u062F", routine: "\u0631\u0648\u062A\u06CC\u0646", learning: "\u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC" };
+function taskTypeLabel(itemType) {
+  return TASK_TYPE_FALLBACK_LABELS[itemType] || itemType || TASK_TYPE_FALLBACK_LABELS.task;
+}
+var TASK_SORT_OPTIONS = [
+  { id: "default", label: "\u067E\u06CC\u0634\u200C\u0641\u0631\u0636" },
+  { id: "priority", label: "\u0627\u0648\u0644\u0648\u06CC\u062A (\u0628\u0627\u0644\u0627 \u0628\u0647 \u067E\u0627\u06CC\u06CC\u0646)" },
+  { id: "type", label: "\u0646\u0648\u0639" },
+  { id: "tag", label: "\u0628\u0631\u0686\u0633\u0628 (\u0627\u0644\u0641\u0628\u0627)" },
+  { id: "quad", label: "\u0631\u0628\u0639" }
+];
+var TASK_GROUP_OPTIONS = [
+  { id: "none", label: "\u0628\u062F\u0648\u0646 \u06AF\u0631\u0648\u0647\u200C\u0628\u0646\u062F\u06CC" },
+  { id: "type", label: "\u0646\u0648\u0639" },
+  { id: "priority", label: "\u0627\u0648\u0644\u0648\u06CC\u062A" },
+  { id: "quad", label: "\u0631\u0628\u0639" },
+  { id: "tag", label: "\u0628\u0631\u0686\u0633\u0628" }
+];
+var DEFAULT_TASK_FILTERS = { scope: "all", priority: "all", type: "all", quad: "all", tag: "all", blocked: "all" };
+function isTaskFilterActive(filters) {
+  return Object.keys(DEFAULT_TASK_FILTERS).some((k) => filters[k] !== DEFAULT_TASK_FILTERS[k]);
+}
+function getTaskFilterOptions(tasks) {
+  const types = [], tags = [];
+  (tasks || []).forEach((t2) => {
+    const it = t2.itemType || "task";
+    if (!types.includes(it)) types.push(it);
+    const tg = (t2.tag || "").trim();
+    if (tg && !tags.includes(tg)) tags.push(tg);
+  });
+  return { types, tags };
+}
+// `allTasks` (added alongside item 101's dependency work) is the full,
+// unfiltered list to resolve blocking-task lookups against - a blocker
+// might not itself be in the currently-filtered/visible subset, so this
+// must never be the same array being filtered.
+function taskMatchesFilters(task, filters, refDate, allTasks) {
+  if (filters.scope === "today" && !isTaskDueOn(task, refDate)) return false;
+  if (filters.priority !== "all" && String(task.priority) !== String(filters.priority)) return false;
+  if (filters.type !== "all" && (task.itemType || "task") !== filters.type) return false;
+  if (filters.quad !== "all" && task.quad !== filters.quad) return false;
+  if (filters.tag !== "all" && (task.tag || "").trim() !== filters.tag) return false;
+  if (filters.blocked && filters.blocked !== "all") {
+    const isBlocked = !!blockingTaskFor(task, allTasks);
+    if (filters.blocked === "blocked" && !isBlocked) return false;
+    if (filters.blocked === "unblocked" && isBlocked) return false;
+  }
+  return true;
+}
+function filterTaskList(tasks, filters, refDate, allTasks) {
+  const source = allTasks || tasks;
+  return (tasks || []).filter((t2) => taskMatchesFilters(t2, filters, refDate, source));
+}
+function sortTaskList(tasks, sortBy) {
+  const arr = (tasks || []).slice();
+  if (sortBy === "priority") arr.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  else if (sortBy === "type") arr.sort((a, b) => taskTypeLabel(a.itemType).localeCompare(taskTypeLabel(b.itemType), "fa"));
+  else if (sortBy === "tag") arr.sort((a, b) => (a.tag || "").localeCompare(b.tag || "", "fa"));
+  else if (sortBy === "quad") arr.sort((a, b) => (a.quad || "").localeCompare(b.quad || ""));
+  return arr;
+}
+function groupTaskList(tasks, groupBy) {
+  if (groupBy === "none") return null;
+  const keyFn = groupBy === "type" ? (t2) => t2.itemType || "task" : groupBy === "priority" ? (t2) => String(t2.priority) : groupBy === "quad" ? (t2) => t2.quad || "" : (t2) => (t2.tag || "").trim() || "__no_tag__";
+  const labelFn = groupBy === "type" ? (k) => taskTypeLabel(k) : groupBy === "priority" ? (k) => (PRIORITIES.find((p) => String(p.level) === k) || {}).label || k : groupBy === "quad" ? (k) => (QUADRANTS.find((q) => q.id === k) || {}).label || k : (k) => k === "__no_tag__" ? "\u0628\u062F\u0648\u0646 \u0628\u0631\u0686\u0633\u0628" : k;
+  const groups = [];
+  (tasks || []).forEach((t2) => {
+    const key = keyFn(t2);
+    let g = groups.find((g2) => g2.key === key);
+    if (!g) {
+      g = { key, label: labelFn(key), items: [] };
+      groups.push(g);
+    }
+    g.items.push(t2);
+  });
+  return groups;
+}
+// --- Lane 8 part 2 (spec items 134-136): quick-add text parsing --------
+// Parses a single free-text line into task fields for the QuickAddBar
+// below. Deliberately TIME-of-day only, not a real calendar date: the
+// task model has no date field (only `time`, a same-day HH:MM used for
+// daypart/planner positioning - see isTaskDueOn above), so words like
+// "\u0641\u0631\u062F\u0627" (tomorrow) or a weekday name are NOT recognized/
+// consumed here. Silently pretending to schedule "tomorrow" while the
+// model can only represent same-day time would be worse than not
+// supporting it at all (same reasoning as the quadrant/subsection note
+// above, and documented again in the section 4.9 log).
+// Recognizes, in this order (each match is stripped from the title):
+//   #\u0628\u0631\u0686\u0633\u0628        -> tag (first match only - Task.tag is a single string)
+//   !\u0628\u0627\u0644\u0627 / !3      -> priority, either a PRIORITIES label word or a 1-4 digit
+//   \u0633\u0627\u0639\u062A 5 \u0639\u0635\u0631 / \u0633\u0627\u0639\u062A 14:30 -> time (HH:MM) + daypart if a
+//                     \u0635\u0628\u062D/\u0638\u0647\u0631/\u0639\u0635\u0631/\u0634\u0628 word follows
+//   14:30           -> bare time, tried only if the above didn't match
+//   \u0639\u0635\u0631 (alone)      -> daypart only, tried only if no time was found
+var PERSIAN_DIGIT_MAP = { "\u06F0": "0", "\u06F1": "1", "\u06F2": "2", "\u06F3": "3", "\u06F4": "4", "\u06F5": "5", "\u06F6": "6", "\u06F7": "7", "\u06F8": "8", "\u06F9": "9" };
+function normalizePersianDigits(s) {
+  return String(s || "").replace(/[\u06F0-\u06F9]/g, (d) => PERSIAN_DIGIT_MAP[d]);
+}
+var PRIORITY_WORD_TO_LEVEL = { "\u067E\u0627\u06CC\u06CC\u0646": 1, "\u0645\u062A\u0648\u0633\u0637": 2, "\u0628\u0627\u0644\u0627": 3, "\u0628\u062D\u0631\u0627\u0646\u06CC": 4 };
+var DAYPART_WORD_TO_ID = { "\u0635\u0628\u062D": "morning", "\u0638\u0647\u0631": "noon", "\u0639\u0635\u0631": "evening", "\u0634\u0628": "night" };
+function parseQuickAddInput(raw) {
+  let text = normalizePersianDigits(raw);
+  let tag = "", priority = null, time = null, daypart = null;
+  text = text.replace(/#([\p{L}\p{N}_-]+)/u, (m, g1) => {
+    tag = g1;
+    return " ";
+  });
+  text = text.replace(/!([\p{L}0-9]+)/u, (m, g1) => {
+    if (PRIORITY_WORD_TO_LEVEL[g1] != null) priority = PRIORITY_WORD_TO_LEVEL[g1];
+    else if (/^[1-4]$/.test(g1)) priority = Number(g1);
+    return " ";
+  });
+  text = text.replace(/\u0633\u0627\u0639\u062A\s*(\d{1,2})(?::(\d{2}))?\s*(\u0635\u0628\u062D|\u0638\u0647\u0631|\u0639\u0635\u0631|\u0634\u0628)?/u, (m, h, mm, part) => {
+    let hour = Number(h) % 24;
+    if ((part === "\u0639\u0635\u0631" || part === "\u0634\u0628") && hour < 12) hour += 12;
+    time = `${String(hour).padStart(2, "0")}:${mm || "00"}`;
+    if (part) daypart = DAYPART_WORD_TO_ID[part];
+    return " ";
+  });
+  if (!time) {
+    text = text.replace(/\b(\d{1,2}):(\d{2})\b/, (m, h, mm) => {
+      time = `${h.padStart(2, "0")}:${mm}`;
+      return " ";
+    });
+  }
+  if (!time) {
+    for (const word of Object.keys(DAYPART_WORD_TO_ID)) {
+      const re = new RegExp("(^|\\s)" + word + "(\\s|$)", "u");
+      if (re.test(text)) {
+        daypart = DAYPART_WORD_TO_ID[word];
+        text = text.replace(re, " ");
+        break;
+      }
+    }
+  }
+  return { title: text.replace(/\s+/g, " ").trim(), tag, priority, time, daypart };
+}
+// --- end Lane 8 part 2 helpers ------------------------------------------
+// --- Lane 8 part 3 (spec items 109-112): Inbox --------------------------
+// Splits inbox tasks (Task.inbox === true, registered in section 0.7.5)
+// into the two buckets item 112 asks for: ones with a rough daypart
+// intention already ("this week, but no exact hour" - the closest honest
+// stand-in for a real calendar week given the model has no date field,
+// same reasoning as the quadrant/time-only notes above) vs bare captures
+// with no timing intention at all yet.
+function splitInboxTasks(tasks) {
+  const withDaypart = [], bare = [];
+  (tasks || []).filter((t2) => t2.inbox).forEach((t2) => {
+    if (t2.daypart) withDaypart.push(t2);
+    else bare.push(t2);
+  });
+  return { withDaypart, bare };
+}
+// --- end Lane 8 part 3 helpers -------------------------------------------
+// --- Lane 8 part 4 (item 101): task dependencies -------------------------
+// Returns the blocking task object if `task` has an unfinished dependency,
+// else null. Used both for the toggleTask enforcement above and for the
+// "blocked" badge on TaskRow below - single source of truth for what
+// "blocked" means, so the two can't drift out of sync.
+function blockingTaskFor(task, tasks) {
+  if (!task || !task.dependsOn) return null;
+  const blocker = (tasks || []).find((t2) => t2.id === task.dependsOn);
+  return blocker && blocker.status !== "done" ? blocker : null;
+}
+// A progressive task completes by reaching its target, not via the checkbox
+// that toggleTask guards - so without this, logging progress was a back
+// door around the dependency block. Only the update that would COMPLETE
+// the task is refused (partial progress on a blocked task is still fine,
+// matching toggleTask which only guards the todo->done transition).
+function wouldCompleteWhileBlocked(task, amount, tasks) {
+  if (!task || task.progressType !== "progressive") return false;
+  const next = Math.min(task.progressTarget, (task.progressCurrent || 0) + amount);
+  return next >= task.progressTarget && !!blockingTaskFor(task, tasks);
+}
+// KanbanBoard's drag handler (moveTask) can put a task straight into the
+// "done" column, a third route to completion besides toggleTask and
+// addTaskProgress. Same rule as those: only the transition INTO done is
+// refused while blocked; moving a blocked task between todo/doing is fine
+// and un-completing is always allowed. Behavior for every other move is
+// byte-for-byte what moveTask did before (it never touched completedDate).
+function applyMoveTask(tasks, id, status) {
+  return (tasks || []).map((t2) => {
+    if (t2.id !== id) return t2;
+    if (status === "done" && t2.status !== "done" && blockingTaskFor(t2, tasks)) return t2;
+    return { ...t2, status };
+  });
+}
+// --- end Lane 8 part 4 helpers --------------------------------------------
+// --- Lane 8 part 5 (item 7, "pinned shortcuts" half only): dashboard pins --
+// Resolves settings.pinnedTaskIds (an array of ids, order = pin order) to
+// the actual live task objects, silently dropping any id whose task was
+// deleted - defensive on read, so a stray dangling id can never crash the
+// dashboard even before any cleanup runs on the settings side.
+function getPinnedTasks(tasks, pinnedTaskIds) {
+  const byId = new Map((tasks || []).map((t2) => [t2.id, t2]));
+  return (pinnedTaskIds || []).map((id) => byId.get(id)).filter(Boolean);
+}
+// --- end Lane 8 part 5 helpers ----------------------------------------------
+// --- Lane 8 part 6 (item 102, scoped): custom status LABELS -------------
+// Scoping decision (see PROGRESS.md 4.9 for the full write-up): this is a
+// purely informational label layer, deliberately NOT a replacement of the
+// real todo/doing/done state machine that kanban/stats/streak/dependency-
+// blocking all key off `task.status` for. `task.customStatusId` just adds
+// an optional colored badge - "\u0645\u0633\u062F\u0648\u062F", "\u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631\u0650 \u0628\u0627\u0632\u062E\u0648\u0631\u062F", whatever the
+// user defines - on top of the existing status, without touching any of
+// the places that check `status === "done"`.
+var DEFAULT_CUSTOM_STATUSES = [];
+var CUSTOM_STATUS_COLOR_PRESETS = ["#F59E0B", "#EF4444", "#3B82F6", "#10B981", "#8B5CF6", "#DB2777", "#22D3EE", "#C026D3"];
+function getCustomStatus(customStatusId, customStatuses) {
+  if (!customStatusId) return null;
+  return (customStatuses || []).find((s) => s.id === customStatusId) || null;
+}
+// Called when a status definition is deleted - clears the dangling
+// reference on every task that had it, same "no dangling references"
+// spirit as the dependsOn/pinnedTaskIds cleanups above.
+function clearDeletedCustomStatus(tasks, deletedId) {
+  return (tasks || []).map((t2) => t2.customStatusId === deletedId ? { ...t2, customStatusId: null } : t2);
+}
+// --- end Lane 8 part 6 helpers --------------------------------------------
+// --- Lane 8 part 7 (item 7, second half - scoped): dashboard section
+// show/hide -----------------------------------------------------------
+// Scoping decision (full write-up in PROGRESS.md 4.9): show/hide only,
+// NOT reordering. A drag-reorderable dashboard would mean restructuring
+// the existing hand-tuned two-column JSX (main column: task-oriented
+// GlassCards; side column: Journal/Gamification/AI cards) into a fully
+// data-driven render, which is a much bigger and riskier change than
+// wrapping each section's existing render condition with one more check.
+// This still delivers real value (hide sections you don't care about)
+// with minimal risk to a dashboard that's already working correctly.
+var DASHBOARD_SECTION_LABELS = {
+  dayArc: "\u062D\u0644\u0642\u0647\u200C\u06CC \u0631\u0648\u0632",
+  stats: "\u06A9\u0627\u0631\u062A\u200C\u0647\u0627\u06CC \u0622\u0645\u0627\u0631\u06CC",
+  weeklyChart: "\u0646\u0645\u0648\u062F\u0627\u0631 \u0647\u0641\u062A\u06AF\u06CC",
+  urgentImportant: "\u0641\u0648\u0631\u06CC \u0648 \u0645\u0647\u0645",
+  pinned: "\u067E\u06CC\u0646\u200C\u0634\u062F\u0647\u200C\u0647\u0627",
+  todaysPlan: "\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u06CC \u0627\u0645\u0631\u0648\u0632",
+  journal: "\u06CC\u0627\u062F\u062F\u0627\u0634\u062A \u0631\u0648\u0632\u0627\u0646\u0647",
+  gamification: "\u062F\u0633\u062A\u0627\u0648\u0631\u062F\u0647\u0627",
+  aiSummary: "\u062E\u0644\u0627\u0635\u0647\u200C\u06CC \u0647\u0648\u0634\u0645\u0646\u062F"
+};
+var DASHBOARD_SECTION_ORDER = ["dayArc", "stats", "weeklyChart", "urgentImportant", "pinned", "todaysPlan", "journal", "gamification", "aiSummary"];
+// Absent key AND absent object both mean "visible" - this is what makes
+// old saved settings (predating this field) and any future new section
+// id both work correctly with zero migration/merge-function needed.
+function isDashboardSectionVisible(id, dashboardSectionVisibility) {
+  return (dashboardSectionVisibility || {})[id] !== false;
+}
+// --- end Lane 8 part 7 helpers ---------------------------------------------
+// --- end Lane 8 helpers -------------------------------------------------
 var BOOK_STATUSES = [
   { id: "want", label: "\u0645\u06CC\u200C\u062E\u0648\u0627\u0645 \u0628\u062E\u0648\u0646\u0645", color: "#6B7280" },
   { id: "reading", label: "\u062F\u0631 \u062D\u0627\u0644 \u0645\u0637\u0627\u0644\u0639\u0647", color: "#22D3EE" },
@@ -821,6 +1092,35 @@ function GlobalSearchModal({ onClose, onNavigate, tasks, books, videos, podcasts
     ...exercises.filter((e) => match(e.name)).map((e) => ({ id: "e" + e.id, label: e.name, sub: "\u062A\u0645\u0631\u06CC\u0646", tab: "fitness", icon: "dumbbell", color: "#DB2777" })),
     ...projects.filter((p) => match(p.title)).map((p) => ({ id: "pr" + p.id, label: p.title, sub: "\u0645\u0648\u0636\u0648\u0639 \u06CC\u0627\u062F\u06AF\u06CC\u0631\u06CC", tab: "learning", icon: "graduation-cap", color: "#C026D3" }))
   ];
+  // Lane 8 (items 134/137): keyboard-driven navigation of results, and
+  // Escape-to-close - GlobalSearchModal is a plain fixed-overlay div (not
+  // routed through the ModalShell/Obsidian-Modal wrapper, which already
+  // gets Escape/click-outside for free - see the big comment on
+  // ModalShell above), so both have to be handled explicitly here.
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+  const selectResult = (r) => {
+    if (!r) return;
+    onNavigate(r.tab);
+    onClose();
+  };
+  const onInputKeyDown = (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (results.length) setSelectedIndex((i) => (i + 1) % results.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (results.length) setSelectedIndex((i) => (i - 1 + results.length) % results.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      selectResult(results[selectedIndex]);
+    }
+  };
   return /* @__PURE__ */ React.createElement("div", { className: "fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col", onClick: onClose }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto w-full px-4 pt-8", onClick: (e) => e.stopPropagation() }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex-1 flex items-center gap-2 bg-white/[0.06] border border-white/10 rounded-xl px-3 py-2.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 16, className: "text-slate-400 shrink-0" }), /* @__PURE__ */ React.createElement(
     "input",
     {
@@ -828,16 +1128,15 @@ function GlobalSearchModal({ onClose, onNavigate, tasks, books, videos, podcasts
       autoFocus: true,
       value: q,
       onChange: (e) => setQ(e.target.value),
+      onKeyDown: onInputKeyDown,
       placeholder: "\u062C\u0633\u062A\u062C\u0648\u06CC \u0633\u0631\u0627\u0633\u0631\u06CC \u2014 \u062A\u0633\u06A9\u060C \u06A9\u062A\u0627\u0628\u060C \u0648\u06CC\u062F\u06CC\u0648\u060C \u062A\u0645\u0631\u06CC\u0646...",
       className: "flex-1 bg-transparent text-white text-sm outline-none placeholder:text-slate-500"
     }
-  )), /* @__PURE__ */ React.createElement("button", { onClick: onClose, className: "text-slate-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 22 }))), /* @__PURE__ */ React.createElement("div", { className: "space-y-2 overflow-y-auto max-h-[70vh]" }, query.length > 0 && results.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-6" }, "\u0646\u062A\u06CC\u062C\u0647\u200C\u0627\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F"), results.map((r) => {
+  )), /* @__PURE__ */ React.createElement("button", { onClick: onClose, className: "text-slate-400" }, /* @__PURE__ */ React.createElement(Ic, { name: "x", size: 22 }))), /* @__PURE__ */ React.createElement("div", { className: "space-y-2 overflow-y-auto max-h-[70vh]" }, query.length > 0 && results.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-6" }, "\u0646\u062A\u06CC\u062C\u0647\u200C\u0627\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F"), results.map((r, idx) => {
     const glyph = r.icon;
-    return /* @__PURE__ */ React.createElement("button", { key: r.id, onClick: () => {
-      onNavigate(r.tab);
-      onClose();
-    }, className: "w-full flex items-center gap-3 bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2.5 text-right" }, /* @__PURE__ */ React.createElement("div", { className: "w-8 h-8 rounded-lg flex items-center justify-center shrink-0", style: { background: `${r.color}22` } }, /* @__PURE__ */ React.createElement(Ic, { name: glyph, size: 14 })), /* @__PURE__ */ React.createElement("div", { className: "min-w-0 flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-100 truncate" }, r.label), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, r.sub)));
-  }))));
+    const active = idx === selectedIndex;
+    return /* @__PURE__ */ React.createElement("button", { key: r.id, onMouseEnter: () => setSelectedIndex(idx), onClick: () => selectResult(r), className: `w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-right border ${active ? "bg-white/[0.09] border-fuchsia-400/40" : "bg-white/[0.04] border-white/[0.07]"}` }, /* @__PURE__ */ React.createElement("div", { className: "w-8 h-8 rounded-lg flex items-center justify-center shrink-0", style: { background: `${r.color}22` } }, /* @__PURE__ */ React.createElement(Ic, { name: glyph, size: 14 })), /* @__PURE__ */ React.createElement("div", { className: "min-w-0 flex-1" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-100 truncate" }, r.label), /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-500" }, r.sub)));
+  })), results.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "text-[10px] text-slate-600 text-center mt-3" }, "\u2191\u2193 \u067E\u06CC\u0645\u0627\u06CC\u0634 \xB7 Enter \u0627\u0646\u062A\u062E\u0627\u0628 \xB7 Esc \u0628\u0633\u062A\u0646")));
 }
 var ICON_PATHS = {
   plus: "M12 5v14M5 12h14",
@@ -882,6 +1181,8 @@ var ICON_PATHS = {
   copy: "M8 8V5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-3",
   upload: "M12 21V9M7 13l5-5 5 5M5 4h14",
   settings: "M10.5 3h3l.5 2.2a7 7 0 0 1 2 1.15l2.15-.75 1.5 2.6-1.7 1.5a7 7 0 0 1 0 2.3l1.7 1.5-1.5 2.6-2.15-.75a7 7 0 0 1-2 1.15L13.5 21h-3l-.5-2.2a7 7 0 0 1-2-1.15l-2.15.75-1.5-2.6 1.7-1.5a7 7 0 0 1 0-2.3l-1.7-1.5 1.5-2.6 2.15.75a7 7 0 0 1 2-1.15Z M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z",
+  inbox: "M2 12h6l2 3h4l2-3h6M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z",
+  pin: "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",
   // Lane 9 (multi-calendar/automation): used for the "manage calendars"
   // entry points and anywhere we need to represent "more than one
   // independent calendar stacked together" rather than a single calendar.
@@ -958,6 +1259,216 @@ function Chip({ active, onClick, children, color }) {
     children
   );
 }
+// --- Lane 8 (task productivity layer, spec items 61-67) ---------------
+function FilterSelect({ label, value, onChange, options }) {
+  return /* @__PURE__ */ React.createElement(
+    "label",
+    { className: "flex flex-col gap-1 text-[10px] text-slate-500 shrink-0" },
+    label,
+    /* @__PURE__ */ React.createElement(
+      "select",
+      {
+        value,
+        onChange: (e) => onChange(e.target.value),
+        className: "bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 outline-none max-w-[9.5rem]"
+      },
+      options.map((o) => /* @__PURE__ */ React.createElement("option", { key: o.value, value: o.value, className: "bg-[#120814]" }, o.label))
+    )
+  );
+}
+function TaskFilterBar({ filters, setFilters, sortBy, setSortBy, groupBy, setGroupBy, tasks }) {
+  const { types, tags } = useMemo(() => getTaskFilterOptions(tasks), [tasks]);
+  const setFilter = (key, value) => setFilters((prev) => ({ ...prev, [key]: value }));
+  const active = isTaskFilterActive(filters);
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "flex flex-wrap items-end gap-2 mb-3 pb-3 border-b border-white/[0.06]" },
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0632\u0645\u0627\u0646",
+      value: filters.scope,
+      onChange: (v) => setFilter("scope", v),
+      options: [
+        { value: "all", label: "\u0647\u0645\u0647" },
+        { value: "today", label: "\u0627\u0645\u0631\u0648\u0632" }
+      ]
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0627\u0648\u0644\u0648\u06CC\u062A",
+      value: filters.priority,
+      onChange: (v) => setFilter("priority", v),
+      options: [{ value: "all", label: "\u0647\u0645\u0647 \u0627\u0648\u0644\u0648\u06CC\u062A\u200C\u0647\u0627" }].concat(PRIORITIES.map((p) => ({ value: String(p.level), label: p.label })))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0646\u0648\u0639",
+      value: filters.type,
+      onChange: (v) => setFilter("type", v),
+      options: [{ value: "all", label: "\u0647\u0645\u0647 \u0627\u0646\u0648\u0627\u0639" }].concat(types.map((tp) => ({ value: tp, label: taskTypeLabel(tp) })))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0631\u0628\u0639",
+      value: filters.quad,
+      onChange: (v) => setFilter("quad", v),
+      options: [{ value: "all", label: "\u0647\u0645\u0647 \u0631\u0628\u0639\u200C\u0647\u0627" }].concat(QUADRANTS.map((q) => ({ value: q.id, label: q.label })))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0628\u0631\u0686\u0633\u0628",
+      value: filters.tag,
+      onChange: (v) => setFilter("tag", v),
+      options: [{ value: "all", label: "\u0647\u0645\u0647 \u0628\u0631\u0686\u0633\u0628\u200C\u0647\u0627" }].concat(tags.map((tg) => ({ value: tg, label: tg })))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0648\u0627\u0628\u0633\u062A\u06AF\u06CC",
+      value: filters.blocked || "all",
+      onChange: (v) => setFilter("blocked", v),
+      options: [
+        { value: "all", label: "\u0647\u0645\u0647" },
+        { value: "blocked", label: "\u0641\u0642\u0637 \u0645\u0633\u062F\u0648\u062F\u0647\u0627" },
+        { value: "unblocked", label: "\u0641\u0642\u0637 \u063A\u06CC\u0631\u0645\u0633\u062F\u0648\u062F\u0647\u0627" }
+      ]
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u0645\u0631\u062A\u0628\u200C\u0633\u0627\u0632\u06CC",
+      value: sortBy,
+      onChange: setSortBy,
+      options: TASK_SORT_OPTIONS.map((o) => ({ value: o.id, label: o.label }))
+    }),
+    /* @__PURE__ */ React.createElement(FilterSelect, {
+      label: "\u06AF\u0631\u0648\u0647\u200C\u0628\u0646\u062F\u06CC",
+      value: groupBy,
+      onChange: setGroupBy,
+      options: TASK_GROUP_OPTIONS.map((o) => ({ value: o.id, label: o.label }))
+    }),
+    active && /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setFilters(DEFAULT_TASK_FILTERS),
+        className: "text-[10px] text-fuchsia-300 mb-1.5 hover:underline shrink-0"
+      },
+      "\u067E\u0627\u06A9 \u06A9\u0631\u062F\u0646 \u0641\u06CC\u0644\u062A\u0631\u0647\u0627"
+    )
+  );
+}
+// --- end Lane 8 UI --------------------------------------------------
+// --- Lane 8 part 2 (spec items 134-135): quick-add bar ------------------
+function QuickAddBar({ onAdd, taskDefaults }) {
+  const [value, setValue] = useState("");
+  const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
+  const submit = () => {
+    const parsed = parseQuickAddInput(value);
+    if (!parsed.title) return;
+    onAdd({
+      id: uid(),
+      title: parsed.title,
+      desc: "",
+      quad: defaults.quad,
+      priority: parsed.priority != null ? parsed.priority : defaults.priority,
+      status: "todo",
+      completedDate: null,
+      daypart: parsed.daypart || defaults.daypart,
+      tag: parsed.tag || "",
+      time: parsed.time || null,
+      duration: defaults.duration,
+      recurrence: "none",
+      reminder: false,
+      subtasks: [],
+      progressType: "binary",
+      progressLog: []
+    });
+    setValue("");
+  };
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "flex items-center gap-2 mb-3" },
+    /* @__PURE__ */ React.createElement("input", {
+      type: "text",
+      value,
+      onChange: (e) => setValue(e.target.value),
+      onKeyDown: (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          submit();
+        }
+      },
+      placeholder: "\u0627\u0641\u0632\u0648\u062F\u0646 \u0633\u0631\u06CC\u0639 \u2014 \u0645\u062B\u0644\u0627\u064B: \u062E\u0631\u06CC\u062F \u0646\u0627\u0646 \u0633\u0627\u0639\u062A \u06F5 \u0639\u0635\u0631 #\u062E\u0627\u0646\u0647 !\u0645\u062A\u0648\u0633\u0637",
+      className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-500"
+    }),
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: submit,
+        disabled: !value.trim(),
+        className: "mod-cta rounded-xl px-4 py-2.5 text-sm font-bold disabled:opacity-40 shrink-0"
+      },
+      "\u0627\u0641\u0632\u0648\u062F\u0646"
+    )
+  );
+}
+// --- end Lane 8 part 2 UI ------------------------------------------------
+// --- Lane 8 part 3 (item 109): Inbox capture bar -------------------------
+// Deliberately simpler than QuickAddBar: true GTD-style "capture" means
+// zero decisions at the moment of writing it down - just a title. No tag/
+// priority/time parsing here (unlike QuickAddBar), and daypart is left
+// null (not defaulted from taskDefaults) so a bare capture lands in the
+// splitInboxTasks() "bare" bucket, not the "has daypart" one.
+function InboxCaptureBar({ onCapture, taskDefaults }) {
+  const [value, setValue] = useState("");
+  const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
+  const submit = () => {
+    const title = value.trim();
+    if (!title) return;
+    onCapture({
+      id: uid(),
+      title,
+      desc: "",
+      quad: defaults.quad,
+      priority: defaults.priority,
+      status: "todo",
+      completedDate: null,
+      daypart: null,
+      tag: "",
+      time: null,
+      duration: defaults.duration,
+      recurrence: "none",
+      reminder: false,
+      subtasks: [],
+      progressType: "binary",
+      progressLog: [],
+      inbox: true
+    });
+    setValue("");
+  };
+  return /* @__PURE__ */ React.createElement(
+    "div",
+    { className: "flex items-center gap-2 mb-3" },
+    /* @__PURE__ */ React.createElement(Ic, { name: "inbox", size: 16, className: "text-slate-500 shrink-0" }),
+    /* @__PURE__ */ React.createElement("input", {
+      type: "text",
+      value,
+      onChange: (e) => setValue(e.target.value),
+      onKeyDown: (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          submit();
+        }
+      },
+      placeholder: "\u0647\u0631\u0686\u06CC \u0628\u0647 \u0630\u0647\u0646\u062A \u0631\u0633\u06CC\u062F \u0632\u0648\u062F \u0627\u06CC\u0646\u062C\u0627 \u062A\u0627\u06CC\u067E \u06A9\u0646\u060C \u0628\u0639\u062F\u0627\u064B \u062A\u0631\u062A\u06CC\u0628\u0634 \u06A9\u0646",
+      className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-500"
+    }),
+    /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: submit,
+        disabled: !value.trim(),
+        className: "mod-cta rounded-xl px-4 py-2.5 text-sm font-bold disabled:opacity-40 shrink-0"
+      },
+      "\u062B\u0628\u062A"
+    )
+  );
+}
+// --- end Lane 8 part 3 UI (capture bar) -----------------------------------
 // Item 22 (رنگ‌بندی گسترده) - shared palette + picker for *per-instance*
 // custom colors (subtask/subsection/learning-topic), as opposed to the
 // per-*type* palettes above (quadrant/exercise-type) which mutate one
@@ -1202,13 +1713,16 @@ function colorForTag(tag) {
   for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
   return INSTANCE_COLOR_PALETTE[h % INSTANCE_COLOR_PALETTE.length];
 }
-function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, calendars, customActionButtons, onRunAction }) {
+function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, onDefer, blockedByTitle, onTogglePin, pinned, calendars, customActionButtons, onRunAction, customStatuses }) {
   const q = QUADRANTS.find((x) => x.id === task.quad) || QUADRANTS[1];
   // Lane 9 (بند ۹۷): وقتی کاربر بیش از یک تقویم دارد، رنگ/نام تقویمِ
   // تسک را کنارِ بقیه‌ی برچسب‌ها نشان می‌دهیم. `calendars` اختیاری است —
   // نبودنش (مثلاً در جاهایی که این prop هنوز پاس داده نشده) هیچ خطایی
   // ایجاد نمی‌کند و فقط نقطه‌ی تقویم نمایش داده نمی‌شود.
   const taskCal = calendars && calendars.length > 1 ? calendars.find((c) => c.id === getTaskCalendarId(task)) : null;
+  // Lane 8 (item 102, scoped): purely informational - see the
+  // DEFAULT_CUSTOM_STATUSES comment for why this never touches `status`.
+  const customStatus = getCustomStatus(task.customStatusId, customStatuses);
   const [openSched, setOpenSched] = useState(false);
   // بند ۱۲۷: دکمه‌های عملیاتیِ سفارشی هم اختیاری‌اند (prop نبودنش خطا
   // نمی‌دهد) و فقط وقتی کاربر حداقل یکی ساخته باشد، دکمه‌ی ⚡ ظاهر می‌شود.
@@ -1219,11 +1733,13 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
     "button",
     {
       onClick: () => onToggle(task.id),
-      className: "w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0",
+      disabled: !!blockedByTitle,
+      title: blockedByTitle ? "\u0645\u0646\u062A\u0638\u0631: " + blockedByTitle : void 0,
+      className: `w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${blockedByTitle ? "opacity-40 cursor-not-allowed" : ""}`,
       style: { borderColor: task.status === "done" ? q.color : "rgba(255,255,255,.25)", background: task.status === "done" ? q.color : "transparent" }
     },
     task.status === "done" && /* @__PURE__ */ React.createElement(Ic, { name: "check", size: 14, color: "#0A0A0A", strokeWidth: 3 })
-  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm flex items-center gap-1.5 ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.icon && /* @__PURE__ */ React.createElement(Ic, { name: task.icon, size: 12, className: "shrink-0 text-slate-400" }), task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
+  ), /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { className: `text-sm flex items-center gap-1.5 ${task.status === "done" ? "text-slate-500 line-through" : "text-slate-100"}` }, task.icon && /* @__PURE__ */ React.createElement(Ic, { name: task.icon, size: 12, className: "shrink-0 text-slate-400" }), task.title), isProgressive && /* @__PURE__ */ React.createElement(ProgressiveTaskBar, { task, onAddProgress }), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mt-0.5 flex-wrap" }, /* @__PURE__ */ React.createElement("span", { className: "text-[10px] px-1.5 py-0.5 rounded-md", style: { background: `${q.color}22`, color: q.color } }, q.label), taskCal && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-400 flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: taskCal.color } }), taskCal.name), customStatus && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-1 rounded-md px-1.5 py-0.5", style: { color: customStatus.color, background: `${customStatus.color}1A` } }, /* @__PURE__ */ React.createElement("span", { className: "w-1.5 h-1.5 rounded-full shrink-0", style: { background: customStatus.color } }), customStatus.label), blockedByTitle && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-amber-300 flex items-center gap-0.5 bg-amber-500/10 rounded-md px-1.5 py-0.5", title: blockedByTitle }, /* @__PURE__ */ React.createElement(Ic, { name: "lock", size: 10 }), "\u0645\u0646\u062A\u0638\u0631: ", blockedByTitle), task.tag && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] flex items-center gap-0.5", style: { color: colorForTag(task.tag) } }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 10, color: colorForTag(task.tag) }), task.tag), task.recurrence !== "none" && /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-slate-500 flex items-center gap-0.5 bg-white/[0.04] rounded-md px-1.5 py-0.5" }, /* @__PURE__ */ React.createElement(Ic, { name: "repeat", size: 10 }), " ", recurrenceLabel(task)), task.reminder && /* @__PURE__ */ React.createElement(Ic, { name: "bell", size: 11, className: "text-slate-500" }), /* @__PURE__ */ React.createElement(PriorityBars, { level: task.priority }))), /* @__PURE__ */ React.createElement(
     "button",
     {
       onClick: () => setOpenSched((v) => !v),
@@ -1233,7 +1749,7 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
     /* @__PURE__ */ React.createElement(Ic, { name: "clock", size: 12 }),
     " ",
     task.time || "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC"
-  ), hasActionButtons && /* @__PURE__ */ React.createElement("button", { onClick: () => setOpenActions((v) => !v), className: `shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${openActions ? "text-amber-300 bg-amber-500/10" : "text-slate-400 hover:text-amber-300 hover:bg-amber-500/10"}`, "aria-label": "\u062F\u06A9\u0645\u0647\u200C\u0647\u0627\u06CC \u0639\u0645\u0644\u06CC\u0627\u062A\u06CC" }, /* @__PURE__ */ React.createElement(Ic, { name: "zap", size: 14 })), onEdit && /* @__PURE__ */ React.createElement("button", { onClick: () => onEdit(task), className: "shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-fuchsia-300 hover:bg-fuchsia-500/10" }, /* @__PURE__ */ React.createElement(Ic, { name: "edit", size: 14 })), onDelete && /* @__PURE__ */ React.createElement("button", { onClick: () => onDelete(task.id), className: "shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 }))), openActions && hasActionButtons && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap mt-2 mr-9" }, customActionButtons.map((b) => /* @__PURE__ */ React.createElement(
+  ), onTogglePin && /* @__PURE__ */ React.createElement("button", { onClick: () => onTogglePin(task.id), title: pinned ? "\u0628\u0631\u062F\u0627\u0634\u062A\u0646 \u0627\u0632 \u067E\u06CC\u0646\u200C\u0634\u062F\u0647\u200C\u0647\u0627" : "\u067E\u06CC\u0646 \u0628\u0647 \u062F\u0627\u0634\u0628\u0648\u0631\u062F", className: `shrink-0 w-7 h-7 rounded-lg flex items-center justify-center hover:bg-amber-500/10 ${pinned ? "text-amber-300" : "text-slate-400 hover:text-amber-300"}` }, /* @__PURE__ */ React.createElement(Ic, { name: "pin", size: 14 })), onDefer && /* @__PURE__ */ React.createElement("button", { onClick: () => onDefer(task.id), title: "\u0628\u0631\u06AF\u0631\u062F\u0627\u0646\u062F\u0646 \u0628\u0647 Inbox \u0628\u0631\u0627\u06CC \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0631\u06CC\u0632\u06CC \u0645\u062C\u062F\u062F", className: "shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-amber-300 hover:bg-amber-500/10" }, /* @__PURE__ */ React.createElement(Ic, { name: "inbox", size: 14 })), hasActionButtons && /* @__PURE__ */ React.createElement("button", { onClick: () => setOpenActions((v) => !v), className: `shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${openActions ? "text-amber-300 bg-amber-500/10" : "text-slate-400 hover:text-amber-300 hover:bg-amber-500/10"}`, "aria-label": "\u062F\u06A9\u0645\u0647\u200C\u0647\u0627\u06CC \u0639\u0645\u0644\u06CC\u0627\u062A\u06CC" }, /* @__PURE__ */ React.createElement(Ic, { name: "zap", size: 14 })), onEdit && /* @__PURE__ */ React.createElement("button", { onClick: () => onEdit(task), className: "shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-fuchsia-300 hover:bg-fuchsia-500/10" }, /* @__PURE__ */ React.createElement(Ic, { name: "edit", size: 14 })), onDelete && /* @__PURE__ */ React.createElement("button", { onClick: () => onDelete(task.id), className: "shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10" }, /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 }))), openActions && hasActionButtons && /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap mt-2 mr-9" }, customActionButtons.map((b) => /* @__PURE__ */ React.createElement(
     "button",
     {
       key: b.id,
@@ -1266,9 +1782,17 @@ function TaskRow({ task, onToggle, onSchedule, onDelete, onEdit, onAddProgress, 
     }
   ))));
 }
-function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, calendars, customItemTypes }) {
+function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, tasks, calendars, customStatuses, customItemTypes }) {
   const isEdit = !!initialTask;
   const defaults = taskDefaults || DEFAULT_TASK_DEFAULTS;
+  // Lane 8 (item 101): task dependencies. `tasks` is a new optional prop
+  // (only one AddTaskModal call site in the file, so this is a safe,
+  // low-risk addition) used solely to populate the "depends on" picker -
+  // AddTaskModal doesn't otherwise need the full list.
+  const [dependsOn, setDependsOn] = useState(initialTask && initialTask.dependsOn || null);
+  // Lane 8 (item 102, scoped): purely informational status label - see
+  // the DEFAULT_CUSTOM_STATUSES comment above for the scoping rationale.
+  const [customStatusId, setCustomStatusId] = useState(initialTask && initialTask.customStatusId || null);
   // Lane 9 (بند ۹۴): اگر تسک قبلاً به تقویمی نسبت داده شده همان انتخاب
   // می‌شود؛ برای تسک جدید هم اولین تقویمِ موجود (که همیشه حداقل تقویمِ
   // پیش‌فرض است) انتخاب پیش‌فرض است.
@@ -1344,7 +1868,9 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
       progressUnit: progressType === "progressive" ? progressUnit.trim() || "\u0648\u0627\u062D\u062F" : void 0,
       progressTarget: progressType === "progressive" ? Math.max(1, Number(progressTarget) || 1) : void 0,
       progressCurrent: progressType === "progressive" ? progressCurrent : void 0,
-      progressLog: isEdit ? initialTask.progressLog || [] : []
+      progressLog: isEdit ? initialTask.progressLog || [] : [],
+      dependsOn: dependsOn || null,
+      customStatusId: customStatusId || null
     });
     onClose();
   };
@@ -1551,7 +2077,33 @@ function AddTaskModal({ onClose, onAdd, initialTask, taskDefaults, prefillTime, 
           "aria-label": "\u0627\u0641\u0632\u0648\u062F\u0646 \u0632\u06CC\u0631\u062A\u0633\u06A9"
         },
         /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 15 })
-      ))
+      )),
+      /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2 mt-4" }, "\u0648\u0627\u0628\u0633\u062A\u0647 \u0628\u0647 \u062A\u0633\u06A9 \u062F\u06CC\u06AF\u0631 (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC) \u2014 \u062A\u0627 \u0622\u0646 \u062A\u0645\u0627\u0645 \u0646\u0634\u0648\u062F\u060C \u0627\u06CC\u0646 \u062A\u0633\u06A9 \u0642\u0641\u0644 \u0645\u06CC‌\u0645\u0627\u0646\u062F"),
+      /* @__PURE__ */ React.createElement(
+        "select",
+        {
+          value: dependsOn || "",
+          onChange: (e) => setDependsOn(e.target.value || null),
+          className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
+        },
+        [/* @__PURE__ */ React.createElement("option", { key: "none", value: "", className: "bg-[#120814]" }, "\u0647\u06CC\u0686‌\u06A9\u062F\u0627\u0645 \u2014 \u0645\u0633\u062F\u0648\u062F \u0646\u06CC\u0633\u062A")].concat(
+          (tasks || []).filter((t2) => t2.id !== (initialTask && initialTask.id) && t2.dependsOn !== (initialTask && initialTask.id)).map((t2) => /* @__PURE__ */ React.createElement("option", { key: t2.id, value: t2.id, className: "bg-[#120814]" }, t2.title))
+        )
+      ),
+      customStatuses && customStatuses.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null,
+        /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mb-2 mt-4" }, "\u0648\u0636\u0639\u06CC\u062A \u0633\u0641\u0627\u0631\u0634\u06CC (\u0627\u062E\u062A\u06CC\u0627\u0631\u06CC \u2014 \u06CC\u06A9 \u0628\u0631\u0686\u0633\u0628\u0650 \u0646\u0645\u0627\u06CC\u0634\u06CC \u0627\u0633\u062A\u060C \u0631\u0648\u06CC \u0648\u0636\u0639\u06CC\u062A \u0648\u0627\u0642\u0639\u06CC \u062A\u0633\u06A9 \u0627\u062B\u0631\u06CC \u0646\u062F\u0627\u0631\u062F)"),
+        /* @__PURE__ */ React.createElement(
+          "select",
+          {
+            value: customStatusId || "",
+            onChange: (e) => setCustomStatusId(e.target.value || null),
+            className: "w-full bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-white text-sm outline-none"
+          },
+          [/* @__PURE__ */ React.createElement("option", { key: "none", value: "", className: "bg-[#120814]" }, "\u0647\u06CC\u0686‌\u06A9\u062F\u0627\u0645")].concat(
+            customStatuses.map((st) => /* @__PURE__ */ React.createElement("option", { key: st.id, value: st.id, className: "bg-[#120814]" }, st.label))
+          )
+        )
+      )
     )
   );
 }
@@ -4104,7 +4656,7 @@ function BackupModal({ onClose, currentData, onRestore, onDownload }) {
     "\u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646\u06CC \u0627\u06CC\u0646 \u0646\u0633\u062E\u0647"
   ) : /* @__PURE__ */ React.createElement("div", { className: "rounded-xl border border-rose-400/30 bg-rose-500/5 p-3" }, /* @__PURE__ */ React.createElement("p", { className: "text-xs text-rose-300 mb-3" }, "\u0645\u0637\u0645\u0626\u0646\u06CC\u061F \u062F\u0627\u062F\u0647\u200C\u0647\u0627\u06CC \u0641\u0639\u0644\u06CC \u0628\u0627 \u0627\u06CC\u0646 \u0646\u0633\u062E\u0647 \u062C\u0627\u06CC\u06AF\u0632\u06CC\u0646 \u0645\u06CC\u200C\u0634\u0646 (\u0627\u06CC\u0646 \u06A9\u0627\u0631 \u0628\u0631\u06AF\u0634\u062A\u200C\u067E\u0630\u06CC\u0631 \u0646\u06CC\u0633\u062A\u060C \u0645\u06AF\u0631 \u0627\u06CC\u0646\u06A9\u0647 \u0627\u0644\u0627\u0646 \u06CC\u0647 \u0628\u06A9\u0627\u067E \u0627\u0632 \u0648\u0636\u0639\u06CC\u062A \u0641\u0639\u0644\u06CC \u0628\u06AF\u06CC\u0631\u06CC)."), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setConfirming(false), className: "flex-1 rounded-lg py-2 text-xs font-medium bg-white/[0.05] border border-white/10" }, "\u0627\u0646\u0635\u0631\u0627\u0641"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: restoreSelected, className: "flex-1 rounded-lg py-2 text-xs font-bold text-white bg-rose-500" }, "\u0628\u0644\u0647\u060C \u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646")))));
 }
-function SettingsModal({ onClose, settings, onChangeSettings, onOpenAutomation }) {
+function SettingsModal({ onClose, settings, onChangeSettings, onOpenAutomation, onOpenCustomStatuses, onOpenDashboardVisibility }) {
   const [aiCfg, setAiCfg] = useState(() => loadAiConfig());
   const lang = settings.language;
   const updateAi = (patch) => {
@@ -4153,6 +4705,24 @@ function SettingsModal({ onClose, settings, onChangeSettings, onOpenAutomation }
       className: "w-full flex items-center justify-between gap-2 rounded-xl py-2.5 px-3 mb-5 text-sm font-medium text-slate-200 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition"
     },
     /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement(Ic, { name: "zap", size: 15, className: "text-amber-300" }), "\u0642\u0648\u0627\u0646\u06CC\u0646 \u062E\u0648\u062F\u06A9\u0627\u0631"),
+    /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 14, className: "text-slate-500" })
+  ), onOpenCustomStatuses && /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      type: "button",
+      onClick: onOpenCustomStatuses,
+      className: "w-full flex items-center justify-between gap-2 rounded-xl py-2.5 px-3 mb-5 text-sm font-medium text-slate-200 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition"
+    },
+    /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement(Ic, { name: "tag", size: 15, className: "text-amber-300" }), "\u0648\u0636\u0639\u06CC\u062A\u200C\u0647\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC"),
+    /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 14, className: "text-slate-500" })
+  ), onOpenDashboardVisibility && /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      type: "button",
+      onClick: onOpenDashboardVisibility,
+      className: "w-full flex items-center justify-between gap-2 rounded-xl py-2.5 px-3 mb-5 text-sm font-medium text-slate-200 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition"
+    },
+    /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement(Ic, { name: "layers", size: 15, className: "text-amber-300" }), "\u0628\u062E\u0634‌\u0647\u0627\u06CC \u062F\u0627\u0634\u0628\u0648\u0631\u062F"),
     /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 14, className: "text-slate-500" })
   ), /* @__PURE__ */ React.createElement("p", { className: "text-xs font-bold text-slate-300 mb-2" }, t("ai_provider_section", lang)), /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 mb-3 leading-5" }, t("ai_provider_hint", lang)), /* @__PURE__ */ React.createElement("label", { className: "block text-[11px] text-slate-500 mb-1" }, t("ai_provider", lang)), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap mb-3" }, AI_PROVIDERS.map((p) => /* @__PURE__ */ React.createElement(Chip, { key: p.id, active: aiCfg.provider === p.id, color: "#22D3EE", onClick: () => updateAi({ provider: p.id }) }, p.label))), /* @__PURE__ */ React.createElement("label", { className: "block text-[11px] text-slate-500 mb-1" }, t("api_key", lang)), /* @__PURE__ */ React.createElement(
     "input",
@@ -4268,6 +4838,122 @@ function CalendarManagerModal({ onClose, calendars, onAdd, onRename, onRecolor, 
 // استفاده می‌شود هم برای فرمِ دکمه‌ی عملیاتیِ سفارشی (بندِ ۱۲۷)، چون هر
 // دو دقیقاً از یک واژگانِ عمل (`AUTOMATION_ACTIONS`/`applyAutomationAction`)
 // استفاده می‌کنند — فقط طرزِ اجراشدن‌شان فرق دارد (خودکار در برابرِ کلیکی).
+// --- Lane 8 (item 102, scoped): custom status label manager ------------
+// Modeled closely on Lane 9's CalendarManagerModal right above (same
+// add/rename/recolor/delete list pattern) since it's the exact same shape
+// of problem: a small user-managed list of {id, label/name, color}. No
+// visibility toggle and no "at least one must remain" restriction here,
+// unlike calendars - every task always has a valid state without any
+// custom status at all (`customStatusId: null` is the normal case), so
+// deleting the last one is perfectly fine.
+function CustomStatusManagerModal({ onClose, customStatuses, onAdd, onRename, onRecolor, onDelete }) {
+  const [newLabel, setNewLabel] = useState("");
+  const [newColor, setNewColor] = useState(CUSTOM_STATUS_COLOR_PRESETS[customStatuses.length % CUSTOM_STATUS_COLOR_PRESETS.length]);
+  const submitNew = () => {
+    const label = newLabel.trim();
+    if (!label) return;
+    onAdd({ id: uid(), label, color: newColor });
+    setNewLabel("");
+    setNewColor(CUSTOM_STATUS_COLOR_PRESETS[(customStatuses.length + 1) % CUSTOM_STATUS_COLOR_PRESETS.length]);
+  };
+  return /* @__PURE__ */ React.createElement(
+    ModalShell,
+    { title: "\u0648\u0636\u0639\u06CC\u062A\u200C\u0647\u0627\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC", onClose },
+    /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-3 leading-5" }, "\u0627\u06CC\u0646\u200C\u0647\u0627 \u0641\u0642\u0637 \u06CC\u06A9 \u0628\u0631\u0686\u0633\u0628\u0650 \u0646\u0645\u0627\u06CC\u0634\u06CC \u0631\u0648\u06CC \u062A\u0633\u06A9 \u0647\u0633\u062A\u0646\u062F \u2014 \u0645\u062B\u0644\u0627\u064B \u00AB\u0645\u0633\u062F\u0648\u062F\u00BB \u06CC\u0627 \u00AB\u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631\u0650 \u0628\u0627\u0632\u062E\u0648\u0631\u062F\u00BB. \u0647\u06CC\u0686 \u0627\u0631\u062A\u0628\u0627\u0637\u06CC \u0628\u0647 \u0648\u0636\u0639\u06CC\u062A\u0650 \u0627\u0646\u062C\u0627\u0645/\u0646\u0634\u062F\u0647\u200C\u06CC \u0648\u0627\u0642\u0639\u06CC \u062A\u0633\u06A9 \u0646\u062F\u0627\u0631\u0646\u062F \u2014 \u0641\u0642\u0637 \u06CC\u06A9 \u0646\u0634\u0627\u0646\u0647\u200C\u06CC \u0631\u0646\u06AF\u06CC \u0627\u0636\u0627\u0641\u0647 \u0647\u0633\u062A\u0646\u062F."),
+    customStatuses.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3 mb-2" }, "\u0647\u0646\u0648\u0632 \u0648\u0636\u0639\u06CC\u062A\u0650 \u0633\u0641\u0627\u0631\u0634\u06CC\u200C\u0627\u06CC \u0646\u0633\u0627\u062E\u062A\u0647‌\u0627\u06CC"),
+    /* @__PURE__ */ React.createElement("div", { className: "space-y-2 mb-4" }, customStatuses.map((st) => /* @__PURE__ */ React.createElement(
+      "div",
+      { key: st.id, className: "flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5" },
+      /* @__PURE__ */ React.createElement(
+        "input",
+        {
+          type: "text",
+          value: st.label,
+          onChange: (e) => onRename(st.id, e.target.value),
+          className: "flex-1 min-w-0 bg-transparent text-white text-sm outline-none"
+        }
+      ),
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 shrink-0" }, CUSTOM_STATUS_COLOR_PRESETS.map((c) => /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          key: c,
+          type: "button",
+          onClick: () => onRecolor(st.id, c),
+          "aria-label": "\u0627\u0646\u062A\u062E\u0627\u0628 \u0631\u0646\u06AF \u0648\u0636\u0639\u06CC\u062A",
+          className: "w-4 h-4 rounded-full shrink-0",
+          style: { background: c, boxShadow: st.color === c ? "0 0 0 2px rgba(255,255,255,.8)" : "none" }
+        }
+      ))),
+      /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => onDelete(st.id),
+          className: "shrink-0 opacity-70 hover:opacity-100",
+          "aria-label": "\u062D\u0630\u0641 \u0648\u0636\u0639\u06CC\u062A"
+        },
+        /* @__PURE__ */ React.createElement(Ic, { name: "trash", size: 14 })
+      )
+    ))),
+    /* @__PURE__ */ React.createElement(FieldLabel, null, "\u0627\u0641\u0632\u0648\u062F\u0646 \u0648\u0636\u0639\u06CC\u062A \u062C\u062F\u06CC\u062F"),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-2" }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "text",
+        value: newLabel,
+        onChange: (e) => setNewLabel(e.target.value),
+        onKeyDown: (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submitNew();
+          }
+        },
+        placeholder: "\u0645\u062B\u0644\u0627\u064B \u0645\u0633\u062F\u0648\u062F\u060C \u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631\u0650 \u0628\u0627\u0632\u062E\u0648\u0631\u062F...",
+        className: "flex-1 min-w-0 bg-white/[0.05] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder:text-slate-500 text-sm outline-none focus:border-fuchsia-400/60"
+      }
+    ), /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: submitNew,
+        disabled: !newLabel.trim(),
+        className: "shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border border-white/10 bg-white/[0.05] disabled:opacity-30",
+        "aria-label": "\u0627\u0641\u0632\u0648\u062F\u0646 \u0648\u0636\u0639\u06CC\u062A"
+      },
+      /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 })
+    )),
+    /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 flex-wrap" }, CUSTOM_STATUS_COLOR_PRESETS.map((c) => /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: c,
+        type: "button",
+        onClick: () => setNewColor(c),
+        "aria-label": "\u0631\u0646\u06AF \u0648\u0636\u0639\u06CC\u062A \u062C\u062F\u06CC\u062F",
+        className: "w-5 h-5 rounded-full shrink-0",
+        style: { background: c, boxShadow: newColor === c ? "0 0 0 2px rgba(255,255,255,.8)" : "none" }
+      }
+    )))
+  );
+}
+// --- end Lane 8 custom status manager -------------------------------------
+// --- Lane 8 (item 7, second half - scoped): dashboard section visibility ---
+function DashboardVisibilityModal({ onClose, dashboardSectionVisibility, onToggle }) {
+  return /* @__PURE__ */ React.createElement(
+    ModalShell,
+    { title: "\u0628\u062E\u0634‌\u0647\u0627\u06CC \u062F\u0627\u0634\u0628\u0648\u0631\u062F", onClose },
+    /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-400 mb-3 leading-5" }, "\u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646 \u06A9\u062F\u0627\u0645 \u0628\u062E\u0634‌\u0647\u0627 \u0631\u0648\u06CC \u062F\u0627\u0634\u0628\u0648\u0631\u062F \u0646\u0634\u0627\u0646 \u062F\u0627\u062F\u0647 \u0634\u0648\u0646\u062F. \u062A\u0631\u062A\u06CC\u0628 \u0641\u0639\u0644\u0627\u064B \u062B\u0627\u0628\u062A \u0627\u0633\u062A."),
+    /* @__PURE__ */ React.createElement("div", { className: "space-y-1.5" }, DASHBOARD_SECTION_ORDER.map((id) => /* @__PURE__ */ React.createElement(
+      "div",
+      { key: id, className: "flex items-center justify-between gap-2 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5" },
+      /* @__PURE__ */ React.createElement("span", { className: "text-sm text-slate-200" }, DASHBOARD_SECTION_LABELS[id]),
+      /* @__PURE__ */ React.createElement(ToggleSwitch, {
+        on: isDashboardSectionVisible(id, dashboardSectionVisibility),
+        onClick: () => onToggle(id)
+      })
+    )))
+  );
+}
+// --- end Lane 8 dashboard visibility modal ---------------------------------
 function ActionPicker({ actionType, actionValue, onChangeType, onChangeValue, calendars }) {
   const placeholder = actionType === "move_to_calendar" ? "\u06CC\u06A9 \u062A\u0642\u0648\u06CC\u0645 \u0627\u0632 \u067E\u0627\u06CC\u06CC\u0646 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646" : actionType === "add_tag" ? "\u0645\u062B\u0644\u0627\u064B \u0627\u0646\u062C\u0627\u0645\u200C\u0634\u062F" : "۱ تا ۳";
   return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("p", { className: "text-[11px] text-slate-500 mb-1" }, "\u0639\u0645\u0644\u06CC\u0627\u062A"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 flex-wrap mb-2" }, AUTOMATION_ACTIONS.map((a) => /* @__PURE__ */ React.createElement(Chip, { key: a.id, active: actionType === a.id, onClick: () => {
@@ -6251,6 +6937,20 @@ function LifeFlowApp() {
   // را دوباره استفاده می‌کند، فقط بدونِ trigger/condition چون کاربر خودش
   // روی یک تسکِ مشخص کلیک می‌کند تا اجرا شود (نه خودکار).
   const [customActionButtons, setCustomActionButtons] = useState(savedData.customActionButtons || []);
+  // Lane 8 (item 102, scoped): custom status LABELS - see the big comment
+  // on DEFAULT_CUSTOM_STATUSES above for why this doesn't touch the real
+  // todo/doing/done state machine. CRUD mirrors Lane 9's calendar handlers
+  // right above (add/rename/recolor/delete pattern), minus the "at least
+  // one must remain" restriction, since customStatusId is always
+  // optional. Deleting a status also clears it off any task that had it.
+  const [customStatuses, setCustomStatuses] = useState(savedData.customStatuses || DEFAULT_CUSTOM_STATUSES);
+  const addCustomStatus = (st) => setCustomStatuses((p) => [...p, st]);
+  const renameCustomStatus = (id, label) => setCustomStatuses((p) => p.map((s) => s.id === id ? { ...s, label } : s));
+  const recolorCustomStatus = (id, color) => setCustomStatuses((p) => p.map((s) => s.id === id ? { ...s, color } : s));
+  const deleteCustomStatus = (id) => {
+    setCustomStatuses((p) => p.filter((s) => s.id !== id));
+    setTasks((p) => clearDeletedCustomStatus(p, id));
+  };
   const addCustomActionButton = (btn) => setCustomActionButtons((p) => [...p, btn]);
   const deleteCustomActionButton = (id) => setCustomActionButtons((p) => p.filter((b) => b.id !== id));
   const runCustomActionButton = (taskId, action) => setTasks((p) => p.map((t2) => t2.id === taskId ? applyAutomationAction(t2, action) : t2));
@@ -6271,7 +6971,7 @@ function LifeFlowApp() {
   // targeted callback rather than fully lifting the timer's state.
   const [focusMode, setFocusMode] = useState(false);
   useEffect(() => {
-    const fullState = { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, customCalendarViews, pomodoro };
+    const fullState = { tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, customCalendarViews, customStatuses, pomodoro };
     try {
       storage.set(STORAGE_KEY, JSON.stringify(fullState));
     } catch (e) {
@@ -6282,10 +6982,15 @@ function LifeFlowApp() {
       } catch (e) {
       }
     }
-  }, [tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, customCalendarViews, pomodoro]);
+  }, [tasks, books, videos, podcasts, exercises, projects, planning, goals, journal, noteLists, calendars, automationRules, customActionButtons, customCalendarViews, customStatuses, pomodoro]);
   const toggleTask = (id) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id) return t2;
     const willBeDone = t2.status !== "done";
+    // Lane 8 (item 101): a task can't be completed while the task it
+    // depends on isn't done yet. Un-completing is always allowed - this
+    // only guards the todo->done transition. The blocking task is looked
+    // up in `p` (the array as of this update), not a stale closure.
+    if (willBeDone && blockingTaskFor(t2, p)) return t2;
     const next = { ...t2, status: willBeDone ? "done" : "todo", completedDate: willBeDone ? todayKey() : t2.completedDate };
     // Lane 9 (بند ۱۲۶): تنها triggerِ واقعاً اجراشونده همین‌جاست — وقتی
     // تسک از حالتِ ناتمام به تمام می‌رود، قوانینِ فعالِ منطبق روی همین
@@ -6295,6 +7000,7 @@ function LifeFlowApp() {
   }));
   const addTaskProgress = (id, amount, note, detail) => setTasks((p) => p.map((t2) => {
     if (t2.id !== id || t2.progressType !== "progressive") return t2;
+    if (wouldCompleteWhileBlocked(t2, amount, p)) return t2;
     const next = Math.min(t2.progressTarget, (t2.progressCurrent || 0) + amount);
     const done = next >= t2.progressTarget;
     const entry = { id: uid(), date: todayKey(), amount, note: (note || "").trim() };
@@ -6376,10 +7082,39 @@ function LifeFlowApp() {
     } catch (e) {
     }
   }, [now, tasks, settings.notifications, focusMode]);
-  const deleteTask = (id) => setTasks((p) => p.filter((t2) => t2.id !== id));
+  const deleteTask = (id) => {
+    setTasks((p) => p.filter((t2) => t2.id !== id).map((t2) => t2.dependsOn === id ? { ...t2, dependsOn: null } : t2));
+    // Lane 8 (item 7): also unpin a deleted task, same spirit as the
+    // dependsOn cleanup right above - no dangling references left behind.
+    setSettings((s) => s.pinnedTaskIds && s.pinnedTaskIds.includes(id) ? { ...s, pinnedTaskIds: s.pinnedTaskIds.filter((x) => x !== id) } : s);
+  };
+  // Lane 8 (item 7, "pinned shortcuts" half): toggle a task's pin. Lives in
+  // settings, not on the Task object itself - pinning is an arrangement
+  // preference (what shows on MY dashboard), not an intrinsic task property.
+  const togglePinTask = (id) => setSettings((s) => {
+    const current = s.pinnedTaskIds || [];
+    return { ...s, pinnedTaskIds: current.includes(id) ? current.filter((x) => x !== id) : [...current, id] };
+  });
+  // Lane 8 (item 7, second half - scoped): flips one section's visibility.
+  // Absent = visible (see isDashboardSectionVisible above), so toggling
+  // "off" for the first time writes an explicit `false`, and toggling
+  // it back "on" removes the key entirely rather than writing `true` -
+  // keeps the stored object minimal and matches a saved object that
+  // never had this field at all.
+  const toggleDashboardSectionVisibility = (id) => setSettings((s) => {
+    const current = { ...(s.dashboardSectionVisibility || {}) };
+    if (isDashboardSectionVisible(id, current)) current[id] = false;
+    else delete current[id];
+    return { ...s, dashboardSectionVisibility: current };
+  });
   const saveTask = (t2) => setTasks((prev) => prev.some((x) => x.id === t2.id) ? prev.map((x) => x.id === t2.id ? t2 : x) : [t2, ...prev]);
-  const moveTask = (id, status) => setTasks((p) => p.map((t2) => t2.id === id ? { ...t2, status } : t2));
+  const moveTask = (id, status) => setTasks((p) => applyMoveTask(p, id, status));
   const scheduleTask = (id, time, duration) => setTasks((p) => p.map((t2) => t2.id === id ? { ...t2, time, duration } : t2));
+  // Lane 8 (items 110-111): moving in and out of the Inbox. Both reuse the
+  // same setTasks pattern as scheduleTask/moveTask right above rather than
+  // introducing a new update mechanism.
+  const moveInboxItemToCalendar = (id, time, duration) => setTasks((p) => p.map((t2) => t2.id === id ? { ...t2, time, duration, inbox: false } : t2));
+  const deferTaskToInbox = (id) => setTasks((p) => p.map((t2) => t2.id === id ? { ...t2, time: null, inbox: true } : t2));
   const suggestSchedule = () => {
     const order = ["q1", "q2", "q3", "q4"];
     let cursor = 8 * 60;
@@ -6405,7 +7140,37 @@ function LifeFlowApp() {
   };
   const [searchOpen, setSearchOpen] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  // Lane 8 (item 134): app-wide keyboard shortcuts. Deliberately narrow in
+  // scope for this slice - just the two entry points into task creation/
+  // search that already exist as buttons (setSearchOpen/setShowAdd) - not
+  // a general-purpose shortcut framework, and NOT touching modal close/
+  // exit behavior (that overlaps the urgent window-exit bug that's
+  // explicitly Lane 5's territory, not this lane's).
+  useEffect(() => {
+    const isTypingTarget = (el) => {
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+    };
+    const onKeyDown = (e) => {
+      const withModifier = e.ctrlKey || e.metaKey;
+      if (withModifier && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      if (isTypingTarget(e.target) || withModifier || e.altKey) return;
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        setShowAdd(true);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
   const [showCalendarManager, setShowCalendarManager] = useState(false);
+  const [showCustomStatusManager, setShowCustomStatusManager] = useState(false);
+  const [showDashboardVisibilityModal, setShowDashboardVisibilityModal] = useState(false);
   const [showAutomationManager, setShowAutomationManager] = useState(false);
   const streak = 7;
   // Lane 9 (بند ۹۸): وقتی یک تقویم مخفی شود، تسک‌های آن از این سه فهرست
@@ -6417,9 +7182,46 @@ function LifeFlowApp() {
     if (hiddenIds.size === 0) return tasks;
     return tasks.filter((t2) => !hiddenIds.has(getTaskCalendarId(t2)));
   }, [tasks, calendars]);
-  const urgentImportant = useMemo(() => visibleTasks.filter((t2) => t2.quad === "q1" && t2.status !== "done" && isTaskDueOn(t2, now)), [visibleTasks, now]);
-  const todaysPlan = useMemo(() => visibleTasks.filter((t2) => isTaskDueOn(t2, now)), [visibleTasks, now]);
+  // Lane 8 (item 109): inbox items are deliberately excluded from these two
+  // dashboard-level lists (not from isTaskDueOn itself, which every other
+  // lane also relies on) - an unprocessed capture shouldn't show up as
+  // "today's plan" before anyone decided when/whether it happens. Combined
+  // here with Lane 9's visibleTasks (hidden-calendar exclusion) so both
+  // features apply together rather than one silently overriding the other.
+  const urgentImportant = useMemo(() => visibleTasks.filter((t2) => t2.quad === "q1" && t2.status !== "done" && !t2.inbox && isTaskDueOn(t2, now)), [visibleTasks, now]);
+  const todaysPlan = useMemo(() => visibleTasks.filter((t2) => !t2.inbox && isTaskDueOn(t2, now)), [visibleTasks, now]);
   const todayDone = todaysPlan.filter((t2) => t2.status === "done").length;
+  // Lane 8 (spec items 61-67): filter/sort/group state for the task LIST
+  // view only (matrix/kanban/timeline are out of scope for this slice —
+  // see PROGRESS.md 4.8). Kept as plain component state rather than in
+  // `settings` since it's view-session UX, not a persisted preference.
+  const [taskFilters, setTaskFilters] = useState(DEFAULT_TASK_FILTERS);
+  const [taskSort, setTaskSort] = useState("default");
+  const [taskGroup, setTaskGroup] = useState("none");
+  // Lane 8+9 merge note: filters out inbox items (Lane 8) AND tasks whose
+  // calendar is hidden (Lane 9's visibleTasks) before applying the
+  // filter/sort/group pipeline - both exclusions should compose, not
+  // override each other.
+  const filteredSortedTasks = useMemo(
+    () => sortTaskList(filterTaskList(visibleTasks.filter((t2) => !t2.inbox), taskFilters, now, tasks), taskSort),
+    [visibleTasks, taskFilters, taskSort, now, tasks]
+  );
+  const taskGroups = useMemo(() => groupTaskList(filteredSortedTasks, taskGroup), [filteredSortedTasks, taskGroup]);
+  // Lane 8 (items 109/112): inbox items, split per splitInboxTasks above.
+  const inboxSplit = useMemo(() => splitInboxTasks(tasks), [tasks]);
+  // Lane 8 (item 109, follow-up polish): matrix/kanban/timeline are the
+  // other views in the SAME tasks-tab switcher as list/inbox, so an
+  // unprocessed capture shouldn't appear there either - closes the "known
+  // gap" flagged in the original Inbox commit. Deliberately NOT also
+  // applying Lane 9's hidden-calendar visibleTasks filter here - that's
+  // explicitly pending coordination with Lane 3 per Lane 9's own log, not
+  // this lane's call to make unilaterally. Other tabs (planning/learning/
+  // pomodoro) are untouched - those are other lanes' hubs with their own
+  // reasons to see the full task list, including inbox items.
+  const nonInboxTasks = useMemo(() => tasks.filter((t2) => !t2.inbox), [tasks]);
+  // Lane 8 (item 7): resolved pinned tasks for the dashboard's new section.
+  const pinnedTasks = useMemo(() => getPinnedTasks(tasks, settings.pinnedTaskIds), [tasks, settings.pinnedTaskIds]);
+  const inboxCount = inboxSplit.withDaypart.length + inboxSplit.bare.length;
   const showGlobalFab = tab === "dashboard" || tab === "tasks";
   const stats = useMemo(() => computeStats({ tasks, books, videos, podcasts, exercises, projects }), [tasks, books, videos, podcasts, exercises, projects]);
   const exportData = () => {
@@ -6496,8 +7298,13 @@ function LifeFlowApp() {
         " ",
         t(n.labelKey, lang)
       );
-    })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "mod-cta mt-6 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 }), " ", t("add_task", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 15 }), " ", t("backup_manager", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCalendarManager(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "layers", size: 15 }), " ", "مدیریت تقویم‌ها"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 15 }), " ", t("settings", lang)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex items-center gap-1.5 px-2 text-pink-400 text-sm font-bold" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), " ", streak, " \u0631\u0648\u0632 \u0627\u0633\u062A\u0631\u06CC\u06A9")),
-    /* @__PURE__ */ React.createElement("div", { className: "max-w-md lg:max-w-none w-full lg:flex-1 mx-auto px-4 lg:px-10 pt-8 lg:pt-8 pb-28 lg:pb-14 relative z-10" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-6" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-xl font-extrabold tracking-tight lg:hidden" }, lang === "fa" ? "\u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645" : "LifeFlow"), /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mt-0.5" }, getPersianDateLabel(now))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setSearchOpen(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: t("backup_manager", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCalendarManager(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: "مدیریت تقویم‌ها" }, /* @__PURE__ */ React.createElement(Ic, { name: "layers", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: t("settings", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 bg-white/[0.05] border border-white/10 rounded-full px-3 py-1.5 lg:hidden" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), /* @__PURE__ */ React.createElement("span", { className: "text-sm font-bold text-pink-400" }, streak)))), /* @__PURE__ */ React.createElement(PageTransition, { pageKey: tab }, tab === "dashboard" && /* @__PURE__ */ React.createElement("div", { className: "lg:grid lg:grid-cols-3 lg:gap-6 lg:items-start space-y-5 lg:space-y-0" }, /* @__PURE__ */ React.createElement("div", { className: "lg:col-span-2 space-y-5" }, /* @__PURE__ */ React.createElement(GlassCard, { className: "p-5 flex flex-col items-center" }, /* @__PURE__ */ React.createElement(DayArc, { tasks: todaysPlan, lang })), /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clipboard", label: "\u062A\u0633\u06A9 \u0627\u0645\u0631\u0648\u0632", value: `${todayDone}/${tasks.length}`, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "book-open", label: "\u0645\u0637\u0627\u0644\u0639\u0647", value: "\u06F4\u06F5 \u062F", color: "#22D3EE" })), /* @__PURE__ */ React.createElement("div", { className: "hidden lg:block" }, /* @__PURE__ */ React.createElement(WeeklyOverviewChart, { goals, tasks })), urgentImportant.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full bg-[#C026D3]" }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-rose-300" }, t("urgent_important", lang))), urgentImportant.map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-200" }, t("todays_plan", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setTab("tasks"), className: "text-[11px] text-fuchsia-300 flex items-center gap-0.5" }, t("see_all", lang), " ", /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 13 }))), tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_yet", lang)), tasks.length > 0 && todaysPlan.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_today", lang)), todaysPlan.slice(0, 4).map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton })))), /* @__PURE__ */ React.createElement("div", { className: "space-y-5" }, /* @__PURE__ */ React.createElement(JournalCard, { journal, setJournal }), /* @__PURE__ */ React.createElement(GamificationCard, { stats, streak }), /* @__PURE__ */ React.createElement(AiSummaryCard, { stats, streak, lang, onOpenSettings: () => setShowSettings(true) }))), tab === "tasks" && /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1" }, [["list", "\u0644\u06CC\u0633\u062A", "clipboard"], ["matrix", "\u0645\u0627\u062A\u0631\u06CC\u0633", "grid"], ["kanban", "\u06A9\u0627\u0646\u0628\u0627\u0646", "columns"], ["timeline", "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC", "clock"]].filter(([id]) => id !== "matrix" || settings.features?.showMatrix !== false).map(([id, label, Icon]) => /* @__PURE__ */ React.createElement(
+    })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "mod-cta mt-6 flex items-center justify-center gap-2 rounded-xl py-2.5 font-bold text-sm text-white" }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 16 }), " ", t("add_task", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 15 }), " ", t("backup_manager", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCalendarManager(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "layers", size: 15 }), " ", "\u0645\u062F\u06CC\u0631\u06CC\u062A \u062A\u0642\u0648\u06CC\u0645\u200C\u0647\u0627"), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "mt-2 flex items-center justify-center gap-2 rounded-xl py-2.5 font-medium text-sm text-slate-300 bg-white/[0.05] border border-white/10 hover:bg-white/10 transition" }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 15 }), " ", t("settings", lang)), /* @__PURE__ */ React.createElement("div", { className: "mt-auto flex items-center gap-1.5 px-2 text-pink-400 text-sm font-bold" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), " ", streak, " \u0631\u0648\u0632 \u0627\u0633\u062A\u0631\u06CC\u06A9")),
+    /* @__PURE__ */ React.createElement("div", { className: "max-w-md lg:max-w-none w-full lg:flex-1 mx-auto px-4 lg:px-10 pt-8 lg:pt-8 pb-28 lg:pb-14 relative z-10" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-6" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("h1", { className: "text-xl font-extrabold tracking-tight lg:hidden" }, lang === "fa" ? "\u0632\u0646\u062F\u06AF\u06CC\u200C\u0622\u0631\u0627\u0645" : "LifeFlow"), /* @__PURE__ */ React.createElement("p", { className: "text-slate-400 text-xs mt-0.5" }, getPersianDateLabel(now))), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => setSearchOpen(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: "\u062C\u0633\u062A\u062C\u0648\u06CC \u0633\u0631\u0627\u0633\u0631\u06CC (Ctrl+K)" }, /* @__PURE__ */ React.createElement(Ic, { name: "search", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowBackupModal(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center", title: t("backup_manager", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "folder", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowCalendarManager(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u062A\u0642\u0648\u06CC\u0645\u200C\u0647\u0627" }, /* @__PURE__ */ React.createElement(Ic, { name: "layers", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("button", { onClick: () => setShowSettings(true), className: "w-8 h-8 rounded-full bg-white/[0.05] border border-white/10 flex items-center justify-center lg:hidden", title: t("settings", lang) }, /* @__PURE__ */ React.createElement(Ic, { name: "settings", size: 14, className: "text-slate-300" })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1.5 bg-white/[0.05] border border-white/10 rounded-full px-3 py-1.5 lg:hidden" }, /* @__PURE__ */ React.createElement(Ic, { name: "flame", size: 15, color: "var(--interactive-accent)" }), /* @__PURE__ */ React.createElement("span", { className: "text-sm font-bold text-pink-400" }, streak)))), /* @__PURE__ */ React.createElement(PageTransition, { pageKey: tab }, tab === "dashboard" && /* @__PURE__ */ React.createElement("div", { className: "lg:grid lg:grid-cols-3 lg:gap-6 lg:items-start space-y-5 lg:space-y-0" }, /* @__PURE__ */ React.createElement("div", { className: "lg:col-span-2 space-y-5" }, isDashboardSectionVisible("dayArc", settings.dashboardSectionVisibility) && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-5 flex flex-col items-center" }, /* @__PURE__ */ React.createElement(DayArc, { tasks: todaysPlan, lang })), isDashboardSectionVisible("stats", settings.dashboardSectionVisibility) && /* @__PURE__ */ React.createElement("div", { className: "flex gap-3" }, /* @__PURE__ */ React.createElement(StatPill, { icon: "clipboard", label: "\u062A\u0633\u06A9 \u0627\u0645\u0631\u0648\u0632", value: `${todayDone}/${tasks.length}`, color: "#C026D3" }), /* @__PURE__ */ React.createElement(StatPill, { icon: "book-open", label: "\u0645\u0637\u0627\u0644\u0639\u0647", value: "\u06F4\u06F5 \u062F", color: "#22D3EE" })), isDashboardSectionVisible("weeklyChart", settings.dashboardSectionVisibility) && /* @__PURE__ */ React.createElement("div", { className: "hidden lg:block" }, /* @__PURE__ */ React.createElement(WeeklyOverviewChart, { goals, tasks })), isDashboardSectionVisible("urgentImportant", settings.dashboardSectionVisibility) && urgentImportant.length > 0 && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-1" }, /* @__PURE__ */ React.createElement("span", { className: "w-2 h-2 rounded-full bg-[#C026D3]" }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-rose-300" }, t("urgent_important", lang))), urgentImportant.map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onDefer: deferTaskToInbox, blockedByTitle: blockingTaskFor(task, tasks)?.title || null, calendars, customActionButtons, onRunAction: runCustomActionButton, customStatuses }))), isDashboardSectionVisible("pinned", settings.dashboardSectionVisibility) && pinnedTasks.length > 0 && /* @__PURE__ */ React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-2 mb-1" }, /* @__PURE__ */ React.createElement(Ic, { name: "pin", size: 13, className: "text-amber-300" }), /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-200" }, "\u067E\u06CC\u0646\u200C\u0634\u062F\u0647\u200C\u0647\u0627")),
+      pinnedTasks.map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onTogglePin: togglePinTask, pinned: true, onDefer: deferTaskToInbox, blockedByTitle: blockingTaskFor(task, tasks)?.title || null, customStatuses }))
+    ), isDashboardSectionVisible("todaysPlan", settings.dashboardSectionVisibility) && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-2" }, /* @__PURE__ */ React.createElement("p", { className: "text-sm font-bold text-slate-200" }, t("todays_plan", lang)), /* @__PURE__ */ React.createElement("button", { onClick: () => setTab("tasks"), className: "text-[11px] text-fuchsia-300 flex items-center gap-0.5" }, t("see_all", lang), " ", /* @__PURE__ */ React.createElement(Ic, { name: "chevron-left", size: 13 }))), tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_yet", lang)), tasks.length > 0 && todaysPlan.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-3" }, t("no_tasks_today", lang)), todaysPlan.slice(0, 4).map((task) => /* @__PURE__ */ React.createElement(TaskRow, { key: task.id, task, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onDefer: deferTaskToInbox, blockedByTitle: blockingTaskFor(task, tasks)?.title || null, calendars, customActionButtons, onRunAction: runCustomActionButton, customStatuses })))), /* @__PURE__ */ React.createElement("div", { className: "space-y-5" }, isDashboardSectionVisible("journal", settings.dashboardSectionVisibility) && /* @__PURE__ */ React.createElement(JournalCard, { journal, setJournal }), isDashboardSectionVisible("gamification", settings.dashboardSectionVisibility) && /* @__PURE__ */ React.createElement(GamificationCard, { stats, streak }), isDashboardSectionVisible("aiSummary", settings.dashboardSectionVisibility) && /* @__PURE__ */ React.createElement(AiSummaryCard, { stats, streak, lang, onOpenSettings: () => setShowSettings(true) }))), tab === "tasks" && /* @__PURE__ */ React.createElement("div", { className: "space-y-4" }, view === "inbox" ? /* @__PURE__ */ React.createElement(InboxCaptureBar, { onCapture: saveTask, taskDefaults: settings.taskDefaults }) : /* @__PURE__ */ React.createElement(QuickAddBar, { onAdd: saveTask, taskDefaults: settings.taskDefaults }), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 overflow-x-auto pb-1" }, [["list", "\u0644\u06CC\u0633\u062A", "clipboard"], ["matrix", "\u0645\u0627\u062A\u0631\u06CC\u0633", "grid"], ["kanban", "\u06A9\u0627\u0646\u0628\u0627\u0646", "columns"], ["timeline", "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC", "clock"], ["inbox", inboxCount > 0 ? `\u0635\u0646\u062F\u0648\u0642 \u0648\u0631\u0648\u062F\u06CC (${Jalali.toFaDigits(inboxCount)})` : "\u0635\u0646\u062F\u0648\u0642 \u0648\u0631\u0648\u062F\u06CC", "inbox"]].filter(([id]) => id !== "matrix" || settings.features?.showMatrix !== false).map(([id, label, Icon]) => /* @__PURE__ */ React.createElement(
       "button",
       {
         key: id,
@@ -6508,7 +7315,44 @@ function LifeFlowApp() {
       /* @__PURE__ */ React.createElement(Ic, { name: Icon, size: 13 }),
       " ",
       label
-    ))), view === "list" && /* @__PURE__ */ React.createElement(GlassCard, { className: "p-4" }, tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"), visibleTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, calendars, customActionButtons, onRunAction: runCustomActionButton }))), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })), customViews: customCalendarViews, onAddCustomView: addCustomCalendarView, onUpdateCustomView: updateCustomCalendarView, onDeleteCustomView: deleteCustomCalendarView }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
+    ))), view === "list" && /* @__PURE__ */ React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      tasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0647\u0646\u0648\u0632 \u062A\u0633\u06A9\u06CC \u0627\u0636\u0627\u0641\u0647 \u0646\u06A9\u0631\u062F\u06CC \u2014 \u0628\u0627 \u062F\u06A9\u0645\u0647\u200C\u06CC \u0627\u0641\u0632\u0648\u062F\u0646 \u0634\u0631\u0648\u0639 \u06A9\u0646"),
+      tasks.length > 0 && /* @__PURE__ */ React.createElement(TaskFilterBar, {
+        filters: taskFilters,
+        setFilters: setTaskFilters,
+        sortBy: taskSort,
+        setSortBy: setTaskSort,
+        groupBy: taskGroup,
+        setGroupBy: setTaskGroup,
+        tasks
+      }),
+      tasks.length > 0 && filteredSortedTasks.length === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0628\u0627 \u0627\u06CC\u0646 \u0641\u06CC\u0644\u062A\u0631\u0647\u0627 \u062A\u0633\u06A9\u06CC \u067E\u06CC\u062F\u0627 \u0646\u0634\u062F"),
+      !taskGroups && filteredSortedTasks.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onDefer: deferTaskToInbox, blockedByTitle: blockingTaskFor(t2, tasks)?.title || null, onTogglePin: togglePinTask, pinned: (settings.pinnedTaskIds || []).includes(t2.id), calendars, customActionButtons, onRunAction: runCustomActionButton, customStatuses })),
+      taskGroups && taskGroups.map((g) => /* @__PURE__ */ React.createElement(
+        "div",
+        { key: g.key, className: "mb-3 last:mb-0" },
+        /* @__PURE__ */ React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-1.5 px-0.5" }, g.label, " ", /* @__PURE__ */ React.createElement("span", { className: "text-slate-600 font-normal" }, "(", g.items.length, ")")),
+        g.items.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onDefer: deferTaskToInbox, blockedByTitle: blockingTaskFor(t2, tasks)?.title || null, onTogglePin: togglePinTask, pinned: (settings.pinnedTaskIds || []).includes(t2.id), calendars, customActionButtons, onRunAction: runCustomActionButton, customStatuses }))
+      ))
+    ), view === "inbox" && /* @__PURE__ */ React.createElement(
+      GlassCard,
+      { className: "p-4" },
+      inboxCount === 0 && /* @__PURE__ */ React.createElement("p", { className: "text-xs text-slate-500 text-center py-4" }, "\u0635\u0646\u062F\u0648\u0642 \u0648\u0631\u0648\u062F\u06CC \u062E\u0627\u0644\u06CC \u0627\u0633\u062A \u2014 \u0647\u0631\u0686\u06CC \u0628\u0647 \u0630\u0647\u0646\u062A \u0631\u0633\u06CC\u062F \u0647\u0645\u06CC\u0646‌\u062C\u0627 \u0633\u0631\u06CC\u0639 \u0628\u0646\u0648\u06CC\u0633"),
+      inboxSplit.bare.length > 0 && /* @__PURE__ */ React.createElement(
+        "div",
+        { className: "mb-3" },
+        /* @__PURE__ */ React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-1.5 px-0.5" }, "\u0628\u062F\u0648\u0646 \u0647\u06CC\u0686 \u0628\u0631\u0646\u0627\u0645\u0647‌\u0627\u06CC"),
+        inboxSplit.bare.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: moveInboxItemToCalendar, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, blockedByTitle: blockingTaskFor(t2, tasks)?.title || null, calendars, customActionButtons, onRunAction: runCustomActionButton, customStatuses }))
+      ),
+      inboxSplit.withDaypart.length > 0 && /* @__PURE__ */ React.createElement(
+        "div",
+        null,
+        /* @__PURE__ */ React.createElement("p", { className: "text-[11px] font-bold text-slate-400 mb-1.5 px-0.5" }, "\u0627\u06CC\u0646 \u0647\u0641\u062A\u0647\u060C \u0628\u062F\u0648\u0646 \u0633\u0627\u0639\u062A \u0645\u0634\u062E\u0635"),
+        inboxSplit.withDaypart.map((t2) => /* @__PURE__ */ React.createElement(TaskRow, { key: t2.id, task: t2, onToggle: toggleTask, onSchedule: moveInboxItemToCalendar, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, blockedByTitle: blockingTaskFor(t2, tasks)?.title || null, calendars, customActionButtons, onRunAction: runCustomActionButton, customStatuses }))
+      )
+    ), view === "matrix" && /* @__PURE__ */ React.createElement(EisenhowerBoard, { tasks: nonInboxTasks, onToggle: toggleTask, onDelete: deleteTask }), view === "kanban" && /* @__PURE__ */ React.createElement(KanbanBoard, { tasks: nonInboxTasks, onMove: moveTask, onDelete: deleteTask }), view === "timeline" && /* @__PURE__ */ React.createElement(TimelineView, { tasks: nonInboxTasks, onSchedule: scheduleTask, onSuggest: suggestSchedule })), tab === "planning" && /* @__PURE__ */ React.createElement(PlanningHub, { planning, setPlanning, goals, setGoals, projects, tasks, pomodoro, onAddProgress: addTaskProgress }), tab === "calendar" && /* @__PURE__ */ React.createElement(CalendarViews, { tasks, onToggle: toggleTask, onSchedule: scheduleTask, onDelete: deleteTask, onEdit: setEditingTask, onAddProgress: addTaskProgress, onCreateAt: openAddAt, scheduling: settings.scheduling, appearance: settings.appearance, onChangeAppearance: (patch) => setSettings((s) => ({ ...s, appearance: { ...s.appearance, ...patch } })), customViews: customCalendarViews, onAddCustomView: addCustomCalendarView, onUpdateCustomView: updateCustomCalendarView, onDeleteCustomView: deleteCustomCalendarView }), tab === "study" && /* @__PURE__ */ React.createElement(StudyHub, { books, videos, podcasts, setBooks, setVideos, setPodcasts }), tab === "fitness" && /* @__PURE__ */ React.createElement(FitnessHub, { exercises, setExercises }), tab === "learning" && /* @__PURE__ */ React.createElement(LearningHub, { projects, setProjects, tasks, onAddProgress: addTaskProgress, saveTask, deleteTask }), tab === "pomodoro" && /* @__PURE__ */ React.createElement(PomodoroHub, { pomodoro, setPomodoro, tasks, onAddProgress: addTaskProgress, onToggle: toggleTask, lang, notifSettings: settings.notifications, onFocusChange: setFocusMode }), tab === "notes" && /* @__PURE__ */ React.createElement(NotesHub, { noteLists, setNoteLists, journal, setJournal, lang }))),
     showGlobalFab && /* @__PURE__ */ React.createElement("button", { onClick: () => setShowAdd(true), className: "fixed bottom-24 left-1/2 -translate-x-1/2 lg:hidden w-14 h-14 rounded-full flex items-center justify-center z-30", style: { background: "var(--interactive-accent)" } }, /* @__PURE__ */ React.createElement(Ic, { name: "plus", size: 24, color: "var(--text-on-accent)" })),
     /* @__PURE__ */ React.createElement("div", { className: "fixed bottom-0 left-0 right-0 z-20 lg:hidden" }, /* @__PURE__ */ React.createElement("div", { className: "max-w-md mx-auto px-3 pb-3" }, /* @__PURE__ */ React.createElement("div", { className: "glass-strong flex items-center justify-between rounded-2xl px-2 py-2 relative overflow-hidden" }, /* @__PURE__ */ React.createElement("div", { className: "glass-sheen" }), /* @__PURE__ */ React.createElement(
       "div",
@@ -6530,7 +7374,7 @@ function LifeFlowApp() {
       setShowAdd(false);
       setEditingTask(null);
       setPrefillTime(null);
-    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, customItemTypes: settings.customItemTypes, prefillTime, calendars }),
+    }, onAdd: saveTask, initialTask: editingTask, taskDefaults: settings.taskDefaults, customItemTypes: settings.customItemTypes, prefillTime, tasks, calendars, customStatuses }),
     searchOpen && /* @__PURE__ */ React.createElement(
       GlobalSearchModal,
       {
@@ -6562,6 +7406,14 @@ function LifeFlowApp() {
         onOpenAutomation: () => {
           setShowSettings(false);
           setShowAutomationManager(true);
+        },
+        onOpenCustomStatuses: () => {
+          setShowSettings(false);
+          setShowCustomStatusManager(true);
+        },
+        onOpenDashboardVisibility: () => {
+          setShowSettings(false);
+          setShowDashboardVisibilityModal(true);
         }
       }
     ),
@@ -6575,6 +7427,25 @@ function LifeFlowApp() {
         onRecolor: recolorCalendar,
         onToggleVisible: toggleCalendarVisible,
         onDelete: deleteCalendar
+      }
+    ),
+    showCustomStatusManager && /* @__PURE__ */ React.createElement(
+      CustomStatusManagerModal,
+      {
+        onClose: () => setShowCustomStatusManager(false),
+        customStatuses,
+        onAdd: addCustomStatus,
+        onRename: renameCustomStatus,
+        onRecolor: recolorCustomStatus,
+        onDelete: deleteCustomStatus
+      }
+    ),
+    showDashboardVisibilityModal && /* @__PURE__ */ React.createElement(
+      DashboardVisibilityModal,
+      {
+        onClose: () => setShowDashboardVisibilityModal(false),
+        dashboardSectionVisibility: settings.dashboardSectionVisibility,
+        onToggle: toggleDashboardSectionVisibility
       }
     ),
     showAutomationManager && /* @__PURE__ */ React.createElement(
